@@ -20,15 +20,25 @@ VERSION = "0.0.0"
 
 
 def app_document(
-    version: str = VERSION, *, dist: bool = True, enroll: bool = True
+    version: str = VERSION,
+    *,
+    dist: bool = True,
+    enroll: bool = True,
+    public_url: str | None = None,
 ) -> dict[str, Any]:
     """The goldens describe every route; a served document only those its server serves."""
     return openapi(
-        app_inventory(app_specs(), output_schemas=True), version=version, dist=dist, enroll=enroll
+        app_inventory(app_specs(), output_schemas=True),
+        version=version,
+        public_url=public_url,
+        dist=dist,
+        enroll=enroll,
     )
 
 
-def admin_document(version: str = VERSION, *, dist: bool = True) -> dict[str, Any]:
+def admin_document(
+    version: str = VERSION, *, dist: bool = True, public_url: str | None = None
+) -> dict[str, Any]:
     error_codes.register()  # as AdminApi does
     hints.register()
     declared = tuple(served(spec) for spec in admin_specs())
@@ -37,6 +47,7 @@ def admin_document(version: str = VERSION, *, dist: bool = True) -> dict[str, An
         version=version,
         commands=COMMANDS,
         admin=True,
+        public_url=public_url,
         dist=dist,
     )
 

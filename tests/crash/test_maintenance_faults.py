@@ -15,7 +15,14 @@ from support.stores import FaultSwitch
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli_admin.maintenance_cli.commands.graph import app_inventory
-from graph_cli_admin.services_admin import audit, graphs, sources
+from graph_cli_admin.services_admin import (
+    audit,
+    authored_views,
+    graphs,
+    marking_warnings,
+    sources,
+    sources_push,
+)
 from graph_cli_admin.services_admin.actions import publish as publish_actions
 from graph_cli_admin.services_admin.authored_views import publish as publish_views
 from graph_cli_admin.services_admin.check import check
@@ -308,8 +315,8 @@ def test_a_push_interrupted_between_the_release_and_the_functions_is_stale_and_r
     path = work / "functions" / "items_in_location.yaml"
     path.write_text(path.read_text().replace("located_in", "stored_in"))
 
-    def run() -> sources.Pushed:
-        return sources.push(
+    def run() -> sources_push.Pushed:
+        return sources_push.push(
             ctx,
             graph_ref="example_graph",
             source=work,
@@ -356,8 +363,8 @@ def test_a_push_interrupted_between_the_release_and_the_actions_is_stale_and_rep
     path = work / "actions" / "move_item.yaml"
     path.write_text(path.read_text().replace("located_in", "stored_in"))
 
-    def run() -> sources.Pushed:
-        return sources.push(
+    def run() -> sources_push.Pushed:
+        return sources_push.push(
             ctx,
             graph_ref="example_graph",
             source=work,
@@ -406,8 +413,8 @@ def test_a_push_interrupted_between_the_release_and_the_views_is_stale_and_repea
         path = work / folder / f"{name}.yaml"
         path.write_text(path.read_text().replace("located_in", "stored_in"))
 
-    def run() -> sources.Pushed:
-        return sources.push(
+    def run() -> sources_push.Pushed:
+        return sources_push.push(
             ctx,
             graph_ref="example_graph",
             source=work,
@@ -433,3 +440,46 @@ def test_a_push_interrupted_between_the_release_and_the_views_is_stale_and_repea
     check(ctx, graph_ref="example_graph", source=None, module=None)
     republished = ctx.catalog.read_views(graph.id)
     assert republished is not None and republished.published_against.version == "2.0.0"
+
+
+@pytest.mark.parametrize("kind", ["actions", "views"])
+def test_a_warning_that_fails_after_a_push_leaves_the_writes_and_the_base_in_place(
+    ctx: AdminContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    """The warnings of a push are judged after the writes and after the new base is recorded:
+    a warning check that raises fails the command, but the graph and the workspace hold the push."""
+    create(ctx)
+    publish_functions(ctx, graph_ref="example_graph", source=FUNCTIONS, reason=None, dry_run=False)
+    work = tmp_path / "work"
+    sources.pull(ctx, graph_ref="example_graph", target=work, version=None, force=False)
+    fixture = ACTIONS if kind == "actions" else VIEWS
+    (work / kind).mkdir()
+    for path in fixture.iterdir():
+        (work / kind / path.name).write_text(path.read_text())
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise GraphCliError("backend.unavailable", "a warning check failed")
+
+    module = marking_warnings if kind == "actions" else authored_views
+    monkeypatch.setattr(
+        module, "precondition_warnings" if kind == "actions" else "deprecated_warnings", boom
+    )
+    with pytest.raises(GraphCliError) as caught:
+        sources_push.push(
+            ctx,
+            graph_ref="example_graph",
+            source=work,
+            reason=None,
+            dry_run=False,
+            inventory=app_inventory(),
+        )
+    assert caught.value.code == "backend.unavailable"
+    graph = ctx.catalog.resolve("example_graph")
+    slot = (
+        ctx.catalog.read_actions(graph.id)
+        if kind == "actions"
+        else ctx.catalog.read_views(graph.id)
+    )
+    assert slot is not None
+    base = sources.read_base(work)
+    assert (base.actions if kind == "actions" else base.views) == slot.hash

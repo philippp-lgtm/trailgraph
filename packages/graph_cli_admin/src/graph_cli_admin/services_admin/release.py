@@ -62,7 +62,7 @@ under a name declared without that marking is refused (``ontology.marking_name_r
 warns ``admin.marking_removed``.
 
 ``plan`` makes every check under the lock and ``write`` writes, so
-``graph push`` (``sources``) runs a release, a skill publish and a function and
+``graph push`` (``sources_push``) runs a release, a skill publish and a function and
 action publish under one lock, checking all before the first write.
 """
 

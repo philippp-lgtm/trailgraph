@@ -231,6 +231,21 @@ def test_unknown_major() -> None:
         ('format_version = 1\n[output]\nspill_dir = "spill"\n', "output.spill_dir"),
         ("format_version = 1\n[activity]\nsignal_reads = 1\n", "activity.signal_reads"),
         ('format_version = 1\n[audit]\naccess_log = "yes"\n', "audit.access_log"),
+        ('format_version = 1\n[remote]\nadmin_token_file = "token"\n', "remote.admin_token_file"),
+        ('format_version = 1\n[remote]\nallow_plain_http = "yes"\n', "remote.allow_plain_http"),
+        ('format_version = 1\n[files]\nstore = "ftp"\n', "files.store"),
+        ("format_version = 1\n[files]\nstore = 3\n", "files.store"),
+        ("format_version = 1\n[files]\ns3 = 3\n", "files.s3"),
+        ('format_version = 1\n[files.s3]\nsecret = "x"\n', "files.s3.secret"),
+        ("format_version = 1\n[files.s3]\nbucket = 3\n", "files.s3.bucket"),
+        ('format_version = 1\n[files.s3]\naddressing = "both"\n', "files.s3.addressing"),
+        ('format_version = 1\n[files.s3]\nallow_plain_http = "yes"\n', "files.s3.allow_plain_http"),
+        ("format_version = 1\n[server]\nadmin_api = 1\n", "server.admin_api"),
+        ('format_version = 1\n[server]\ndist = "no"\n', "server.dist"),
+        ("format_version = 1\n[server]\ncors_origins = 3\n", "server.cors_origins"),
+        ("format_version = 1\n[device]\nname = 3\n", "device.name"),
+        ("format_version = 1\n[runtime]\nendpoint = 3\n", "runtime.endpoint"),
+        ("format_version = 1\n[runtime]\nmode = 3\n", "runtime.mode"),
     ],
 )
 def test_defects_are_config_invalid(body: str, key: str) -> None:
@@ -238,6 +253,148 @@ def test_defects_are_config_invalid(body: str, key: str) -> None:
         parse_config(body.encode(), path=PATH)
     assert caught.value.code == "config.invalid"
     assert caught.value.details["key"] == key
+
+
+# Each body has two defects; the key that comes first in the reading order is the one reported.
+_REMOTE_BAD_ENDPOINT = 'format_version = 1\n[runtime]\nmode = "remote"\nendpoint = "ftp://x"\n'
+
+
+@pytest.mark.parametrize(
+    ("body", "key"),
+    [
+        # the top-level keys are walked in sorted order, before any value is read
+        ("format_version = 1\ndevice = 3\naudit = 3\n", "audit"),
+        ("format_version = 1\ndevice = 3\nunknown = 1\nruntime = 3\n", "device"),
+        # the values are read table by table in a fixed order ...
+        (
+            'format_version = 1\n[runtime]\nmode = "cloud"\n[remote]\ntoken_file = "t"\n',
+            "runtime.mode",
+        ),
+        (
+            "format_version = 1\n[runtime]\nendpoint = 3\n[remote]\ntoken_file = 3\n",
+            "runtime.endpoint",
+        ),
+        (
+            'format_version = 1\n[remote]\ntoken_file = "t"\nadmin_token_file = "a"\n',
+            "remote.token_file",
+        ),
+        (
+            'format_version = 1\n[remote]\nadmin_token_file = "a"\nallow_plain_http = 1\n',
+            "remote.admin_token_file",
+        ),
+        (
+            "format_version = 1\n[remote]\nallow_plain_http = 1\ntimeout_s = 0\n",
+            "remote.allow_plain_http",
+        ),
+        # ... the check of a remote endpoint comes after all keys of [remote]
+        (_REMOTE_BAD_ENDPOINT + "[remote]\ntimeout_s = 0\n", "remote.timeout_s"),
+        (
+            _REMOTE_BAD_ENDPOINT + '[paths]\ndata_root = "relative"\n',
+            "runtime.endpoint",
+        ),
+        (
+            'format_version = 1\n[paths]\ndata_root = "relative"\n[storage]\ndurability = "none"\n',
+            "paths.data_root",
+        ),
+        (
+            'format_version = 1\n[identity]\nproviders = "os"\n[paths]\ndata_root = "relative"\n',
+            "paths.data_root",
+        ),
+        (
+            'format_version = 1\n[identity]\nproviders = "os"\n[storage]\nlock_timeout_s = 0\n',
+            "identity.providers",
+        ),
+        (
+            'format_version = 1\n[storage]\nlock_timeout_s = 0\ndurability = "none"\n',
+            "storage.lock_timeout_s",
+        ),
+        (
+            'format_version = 1\n[storage]\ndurability = "none"\n[output]\ndefault = "yaml"\n',
+            "storage.durability",
+        ),
+        (
+            'format_version = 1\n[output]\ndefault = "yaml"\nspill_bytes = -1\n',
+            "output.default",
+        ),
+        (
+            'format_version = 1\n[output]\nspill_bytes = -1\nspill_dir = "s"\n',
+            "output.spill_bytes",
+        ),
+        (
+            'format_version = 1\n[output]\nspill_dir = "s"\n[audit]\nrecord_data_root = 1\n',
+            "output.spill_dir",
+        ),
+        (
+            "format_version = 1\n[audit]\nrecord_data_root = 1\naccess_log = 1\n"
+            "[files]\nmax_bytes = 0\n",
+            "audit.record_data_root",
+        ),
+        (
+            "format_version = 1\n[audit]\naccess_log = 1\n[files]\nmax_bytes = 0\n",
+            "audit.access_log",
+        ),
+        ("format_version = 1\n[files]\nmax_bytes = 0\nstore = 3\n", "files.max_bytes"),
+        (
+            'format_version = 1\n[files]\nstore = "x"\n[files.s3]\nbucket = 3\n',
+            "files.store",
+        ),
+        (
+            "format_version = 1\n[files.s3]\nbucket = 3\n[extract]\ntimeout_seconds = 0\n",
+            "files.s3.bucket",
+        ),
+        (
+            "format_version = 1\n[extract]\ntimeout_seconds = 0\nmax_memory_mib = 1\n",
+            "extract.timeout_seconds",
+        ),
+        (
+            "format_version = 1\n[extract]\nmax_memory_mib = 1\n[activity]\nsignal_reads = 1\n",
+            "extract.max_memory_mib",
+        ),
+        (
+            "format_version = 1\n[activity]\nsignal_reads = 1\n[server]\nadmin_api = 1\n",
+            "activity.signal_reads",
+        ),
+        (
+            "format_version = 1\n[server]\ncors_origins = 3\nadmin_api = 1\n",
+            "server.cors_origins",
+        ),
+        (
+            'format_version = 1\n[server]\nadmin_api = 1\nclient_builds = "any"\n',
+            "server.admin_api",
+        ),
+        (
+            'format_version = 1\n[server]\nclient_builds = "any"\ndist = 1\n',
+            "server.client_builds",
+        ),
+        ("format_version = 1\n[server]\ndist = 1\npublic_url = 3\n", "server.dist"),
+        (
+            'format_version = 1\n[server]\npublic_url = "x"\n[roots]\nNotes = "/n"\n',
+            "server.public_url",
+        ),
+        # ... [roots] comes after every other table and [device] comes last
+        ('format_version = 1\n[roots]\nNotes = "/n"\n[device]\nname = 3\n', "roots.Notes"),
+        ('format_version = 1\n[device]\nid = 7\n[output]\ndefault = "yaml"\n', "output.default"),
+        ("format_version = 1\n[device]\nid = 7\nname = 3\n", "device.id"),
+    ],
+)
+def test_the_first_defect_in_reading_order_is_reported(body: str, key: str) -> None:
+    with pytest.raises(GraphCliError) as caught:
+        parse_config(body.encode(), path=PATH)
+    assert caught.value.code == "config.invalid"
+    assert caught.value.details["key"] == key
+
+
+def test_unknown_keys_do_not_survive_a_defect() -> None:
+    body = b'format_version = 1\ncolour = "x"\n[device]\nserial = 3\n[output]\ndefault = "yaml"\n'
+    with pytest.raises(GraphCliError) as caught:
+        parse_config(body, path=PATH)
+    assert caught.value.details["key"] == "output.default"
+
+
+def test_the_names_in_roots_are_not_unknown_keys() -> None:
+    config, warnings = parse_config(b'format_version = 1\n[roots]\nnotes = "/n"\n', path=PATH)
+    assert config.file_roots == {"notes": "/n"}
+    assert warnings == ()
 
 
 def test_new_config_round_trips() -> None:

@@ -125,8 +125,13 @@ actor, model parts) and `graph_cli_admin.maintenance_cli.output_schemas`
 enrollment). The admin skills are package data of `graph_cli_admin`
 (`bundled_skills/`), read by `maintenance_cli.admin_skills` and installed
 with `graph_cli.skills.install`, whose scan sees only one owner's skills
-(`Owner`: marker kinds and names). Query planning (`graph_cli.query.plan`) turns `find`
-and `neighbors` flags into the query AST, `graph_cli.query.lookup` plans,
+(`Owner`: marker kinds and names). `graph_cli.skills.graph_skill` renders a
+graph skill and is a package: `render` (template to files), `budget` (size
+checks), `model` (reads the model documents), `pieces` (the Markdown pieces
+the blocks share) and one module per section of the generated skill (`start`,
+`type_blocks`, `relations`, `naming`, `catalogs`, `reference`, `modules`).
+Query planning (`graph_cli.query.plan`) turns `find` and `neighbors` flags
+into the query AST, `graph_cli.query.lookup` plans,
 matches and ranks `lookup`, `graph_cli.query.search` the same for `search`
 (match keys and trigrams in `kernel.text`); `services.read` and `services.describe` answer
 them; `services.schema_search` ranks the terms of the model and the functions, actions and views
@@ -293,7 +298,7 @@ compiled catalog as one more document and render the `functions` block and
 pages (the actions only as far as the installing reader may run them);
 `graph_cli_admin.services_admin.functions` and `.actions` publish a folder of
 function or action files into the graph's slot (one maintenance operation,
-audited as `change.functions` or `change.actions`); and `services_admin.release` and `sources` check the
+audited as `change.functions` or `change.actions`); and `services_admin.release` and `sources_push` check the
 published catalogs against the model a release gives the graph, so a catalog
 that stays published always resolves against the pinned ontology. The slot
 layout is in [Storage](storage.md#filestore), its verification in
@@ -329,7 +334,7 @@ nothing is filtered and nothing is paid.
 | `services.migration`, `kernel.migration_marker` | `build_migration_tx`: the `AuthorizedTx` of a migration plan (changeset `graph_cli.migration/1` with no ops and a `migration` record, no aliases, no idempotency key), committed only by `MaintenanceSession.migrate`; `MigrationMarker` and `marker_committed`, the note of a migration that is not finished and the identity check of whether its tx is in the log |
 | `services.migration_state` | the app's view of a migration that is committed but not pinned (`GraphEntry.migration`, set by the app's catalog only while the pin is not switched; a marker file left after the switch is no state): `refuse_write` (`write.migration_incomplete`, for `WriteService` before and under the lock) and `read_warning` (`graph.migration_incomplete` when no writer holds the lock, which means the release crashed) |
 | `services.names` | read-time mapping: `NameMaps` builds the `NameMap` of a graph at its pin from the pin history and the installed release files, `MappedSnapshot` hands out past revisions under the pin's names; a server builds its read service per request and passes every one the same `NameMapCache` (complete maps by graph and pin, bounded, thread safe) |
-| `graph_cli_admin.services_admin.migration` | the migration of a release for the maintenance tools: parse and judge `migration.yaml` against the old and new model (`migration.invalid`, `admin.migration_unexpected`, `admin.migration_from_mismatch`), plan the data change with the stamp of its tx, judge the migrated overlay (`admin.migration_required`), describe it for the answers; `services_admin.release` writes it, `check` and `sources` use it |
+| `graph_cli_admin.services_admin.migration` | the migration of a release for the maintenance tools: parse and judge `migration.yaml` against the old and new model (`migration.invalid`, `admin.migration_unexpected`, `admin.migration_from_mismatch`), plan the data change with the stamp of its tx, judge the migrated overlay (`admin.migration_required`), describe it for the answers; `services_admin.release` writes it, `check` and `sources_push` use it |
 | `temporal_knowledge.name_map` | `NameMap`: the renames and re-keyings between consecutive pinned versions (`Hop`s from the two compiled models and the installed `migration.yaml`) composed from a revision's version to the pin; `MappedSnapshot` and the mapped revisions are built on it in `services.names` |
 | `app_cli.rename_hints` | `term.unknown` for an old name says what it is called now (message and `details.renamed`), around every command; the old name is never accepted |
 | `graph_cli_admin.services_admin.catalog_follow` | published function and action catalogs across a release with renames: `follow` decides nothing to do, republish (same sources, new compiled document) or refuse; `write` is the catalog switch shared with `graph <kind> publish` and `graph push` |

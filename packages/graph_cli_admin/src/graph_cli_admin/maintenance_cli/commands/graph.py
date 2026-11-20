@@ -46,6 +46,7 @@ from graph_cli_admin.services_admin import (
     graphs,
     skill,
     sources,
+    sources_push,
 )
 from graph_cli_admin.services_admin.check import check
 from graph_cli_admin.services_admin.reindex import reindex
@@ -299,7 +300,7 @@ def push(
     data_root: str | None,
 ) -> Result:
     ctx = admin_context(state, data_root)
-    pushed = sources.push(
+    pushed = sources_push.push(
         ctx,
         graph_ref=ref,
         source=Path(source),  # as given: messages name it as the caller typed it
@@ -413,7 +414,7 @@ PULL_OUTPUT: Final = obj(  # services_admin.sources.pull
         "pulled": RETURNED_FILES,
     },
 )
-PUSH_OUTPUT: Final = obj(  # services_admin.sources.push
+PUSH_OUTPUT: Final = obj(  # services_admin.sources_push.push
     {
         "graph_id": STRING,
         "ontology": ref("release"),

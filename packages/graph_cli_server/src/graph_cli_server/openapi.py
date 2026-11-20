@@ -205,17 +205,89 @@ def openapi(
 ) -> dict[str, JsonValue]:
     """``admin``: the admin API's document (its commands under ``commands``). ``dist`` and
     ``enroll``: the server serves those routes (the document describes only what it does)."""
-    schemas = {name: _components(schema) for name, schema in req_obj(inventory, "$defs").items()}
-    categories = {
+    schemas = _component_schemas(inventory)
+    categories = _error_categories(inventory)
+    _add_shared_schemas(schemas)
+    paths = _public_routes()
+    if dist:
+        paths.update(_dist_routes())
+    paths.update(_admin_routes() if admin else _app_routes(schemas))
+    if enroll and not admin:
+        paths.update(_enroll_routes(schemas))
+    paths.update(_command_routes(inventory, schemas, categories, commands=commands, admin=admin))
+    return _document(
+        version=version, admin=admin, public_url=public_url, schemas=schemas, paths=paths
+    )
+
+
+def _component_schemas(inventory: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    """The inventory's ``$defs`` under their names."""
+    return {name: _components(schema) for name, schema in req_obj(inventory, "$defs").items()}
+
+
+def _error_categories(inventory: Mapping[str, JsonValue]) -> dict[str, ErrorCategory]:
+    """The category of each error code of the inventory."""
+    return {
         req_str(entry, "code"): ErrorCategory(req_str(entry, "category"))
         for entry in (as_object(e, "error_code") for e in req_list(inventory, "error_codes"))
     }
+
+
+def _add_shared_schemas(schemas: dict[str, JsonValue]) -> None:
+    """The schemas every error answer refers to; the inventory's ``envelope`` must be there."""
     _add(schemas, _FAILED, _failed(as_object(schemas["envelope"], "envelope")))
     _add(schemas, _PROBLEM, dict(PROBLEM))
     _add(schemas, _ERROR_TYPE, dict(ERROR_TYPE))
-    upload = {"put": _operation("upload", "Stage bytes for a file parameter.", _json(UPLOADED))}
+
+
+def _document(
+    *,
+    version: str,
+    admin: bool,
+    public_url: str | None,
+    schemas: Mapping[str, JsonValue],
+    paths: dict[str, JsonValue],
+) -> dict[str, JsonValue]:
+    """The document around its routes: info, ``servers`` with a public URL, components and the
+    bearer security."""
+    title = "graph_cli server admin API" if admin else "graph_cli server API"
+    document: dict[str, JsonValue] = {
+        "openapi": "3.1.0",
+        "info": {"title": title, "version": version, "x-api": API_VERSION},
+    }
+    if public_url is not None:
+        document["servers"] = [{"url": public_url}]
+    document.update(
+        components=_components_section(schemas),
+        security=[{"bearer": []}],
+        paths=paths,
+    )
+    return document
+
+
+def _components_section(schemas: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    """The ``components`` of the document: the bearer scheme, the two response headers and
+    the collected schemas in name order."""
+    return {
+        "securitySchemes": {"bearer": {"type": "http", "scheme": "bearer"}},
+        "headers": {
+            _EXIT_HEADER: {
+                "description": "The exit code the program would have (B9.4).",
+                "schema": dict(INTEGER),
+            },
+            _RETRY_HEADER: {
+                "description": "Seconds to wait before a retry; on a retryable error only.",
+                "schema": dict(INTEGER),
+            },
+        },
+        "schemas": dict(sorted(schemas.items())),
+    }
+
+
+def _public_routes() -> dict[str, JsonValue]:
+    """Health and the error registry: no token needed."""
     listed = obj({"errors": {"type": "array", "items": _ref(_ERROR_TYPE)}})
-    paths: dict[str, JsonValue] = {
+    return {
         "/v1/health": {
             "get": _public(
                 _operation("health", "Liveness and version; no token needed.", _json(HEALTH))
@@ -233,8 +305,17 @@ def openapi(
             ),
         },
     }
-    if dist:
-        paths["/v1/dist/manifest"] = {
+
+
+def _dist_routes() -> dict[str, JsonValue]:
+    """The programs the server hands out."""
+    file = _operation(
+        "dist_file",
+        "A file the manifest lists; the graph-admin wheel needs an admin token.",
+        _bytes(dist=True),
+    )
+    return {
+        "/v1/dist/manifest": {
             "get": _public(
                 _operation(
                     "dist_manifest",
@@ -242,59 +323,64 @@ def openapi(
                     _json(MANIFEST),
                 )
             )
-        }
-        file = _operation(
-            "dist_file",
-            "A file the manifest lists; the graph-admin wheel needs an admin token.",
-            _bytes(dist=True),
-        )
-        paths["/v1/dist/{file}"] = {
+        },
+        "/v1/dist/{file}": {
             "parameters": _in_path("file"),
             "get": {**file, "security": [{}, {"bearer": []}]},
-        }
-    inventory_answer = _json(_ref("inventory"))
-    document_answer = _json(DOCUMENT)
-    if admin:
-        paths["/v1/admin/inventory"] = {
-            "get": _operation("inventory", "The admin inventory.", inventory_answer)
-        }
-        paths["/v1/admin/openapi.json"] = {
-            "get": _operation("openapi", "This document.", document_answer)
-        }
-        paths["/v1/uploads"] = upload
-    else:
-        _add(schemas, "graph_skill_data", GRAPH_SKILL)
-        paths.update(
-            {
-                "/v1/inventory": {
-                    "get": _operation("inventory", "The command inventory.", inventory_answer)
-                },
-                "/v1/openapi.json": {
-                    "get": _operation("openapi", "This document.", document_answer)
-                },
-                "/v1/uploads": upload,
-                "/v1/graphs/{graph}/files/{ref}": {
-                    "parameters": _in_path("graph", "ref"),
-                    "get": _operation(
-                        "file_bytes",
-                        "The stored file of an entity, as file path.",
-                        _bytes(),
-                        unchanged=True,
-                    ),
-                },
-                "/v1/graphs/{graph}/skill": {
-                    "parameters": _in_path("graph"),
-                    "post": _operation(
-                        "graph_skill",
-                        "The graph's published skill, rendered.",
-                        _json(_answer(schemas, "graph_skill_data")),
-                    ),
-                },
-            }
-        )
-    if enroll and not admin:
-        _add(schemas, "enroll_data", ENROLLED)
-        paths["/v1/enroll"] = {
+        },
+    }
+
+
+def _upload_route() -> dict[str, JsonValue]:
+    """The path item of ``/v1/uploads``: one ``put`` that stages bytes."""
+    return {"put": _operation("upload", "Stage bytes for a file parameter.", _json(UPLOADED))}
+
+
+def _admin_routes() -> dict[str, JsonValue]:
+    """What only the admin API has: its inventory and document, and the uploads."""
+    return {
+        "/v1/admin/inventory": {
+            "get": _operation("inventory", "The admin inventory.", _json(_ref("inventory")))
+        },
+        "/v1/admin/openapi.json": {"get": _operation("openapi", "This document.", _json(DOCUMENT))},
+        "/v1/uploads": _upload_route(),
+    }
+
+
+def _app_routes(schemas: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    """What only the app surface has; adds the ``graph_skill`` data to ``schemas``."""
+    _add(schemas, "graph_skill_data", GRAPH_SKILL)
+    return {
+        "/v1/inventory": {
+            "get": _operation("inventory", "The command inventory.", _json(_ref("inventory")))
+        },
+        "/v1/openapi.json": {"get": _operation("openapi", "This document.", _json(DOCUMENT))},
+        "/v1/uploads": _upload_route(),
+        "/v1/graphs/{graph}/files/{ref}": {
+            "parameters": _in_path("graph", "ref"),
+            "get": _operation(
+                "file_bytes",
+                "The stored file of an entity, as file path.",
+                _bytes(),
+                unchanged=True,
+            ),
+        },
+        "/v1/graphs/{graph}/skill": {
+            "parameters": _in_path("graph"),
+            "post": _operation(
+                "graph_skill",
+                "The graph's published skill, rendered.",
+                _json(_answer(schemas, "graph_skill_data")),
+            ),
+        },
+    }
+
+
+def _enroll_routes(schemas: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    """The exchange of an enrollment code; adds the ``enroll`` data to ``schemas``."""
+    _add(schemas, "enroll_data", ENROLLED)
+    return {
+        "/v1/enroll": {
             "post": _public(
                 _operation(
                     "enroll",
@@ -311,57 +397,60 @@ def openapi(
                 )
             )
         }
+    }
+
+
+def _command_routes(
+    inventory: Mapping[str, JsonValue],
+    schemas: dict[str, JsonValue],
+    categories: Mapping[str, ErrorCategory],
+    *,
+    commands: str,
+    admin: bool,
+) -> dict[str, JsonValue]:
+    """One route per command the server runs, in inventory order; adds the ``data`` of each
+    command to ``schemas``."""
+    routes: dict[str, JsonValue] = {}
     for value in req_list(inventory, "commands"):
         command = as_object(value, "command")
         if command.get("remote") not in _SERVED:
             continue
         path = [str(part) for part in as_list(command["path"], "path")]
-        operation_id = "_".join(path)
-        params = [
-            as_object(p, "param")
-            for key in ("args", "options")
-            for p in as_list(command.get(key, []), key)
-        ]
-        _add(schemas, f"{operation_id}_data", _components(command["output"]))
-        codes = [str(c) for c in as_list(command["errors"], "errors")]
-        operation = _operation(
-            operation_id,
-            str(command.get("summary", "")),
-            _json(_answer(schemas, f"{operation_id}_data"), exit_code=True),
-            errors=_errors(codes, categories),
-            body=_args_schema(params, admin),
-        )
-        if any(p.get("name") == _KEY_OPTION for p in params):
-            operation["parameters"] = [_key_header()]
-        operation["x-graph-cli-kind"] = command.get("kind")
-        operation["x-graph-cli-remote"] = command.get("remote")
-        paths[commands + "/".join(path)] = {"post": operation}
-    title = "graph_cli server admin API" if admin else "graph_cli server API"
-    document: dict[str, JsonValue] = {
-        "openapi": "3.1.0",
-        "info": {"title": title, "version": version, "x-api": API_VERSION},
-    }
-    if public_url is not None:
-        document["servers"] = [{"url": public_url}]
-    document.update(
-        components={
-            "securitySchemes": {"bearer": {"type": "http", "scheme": "bearer"}},
-            "headers": {
-                _EXIT_HEADER: {
-                    "description": "The exit code the program would have (B9.4).",
-                    "schema": dict(INTEGER),
-                },
-                _RETRY_HEADER: {
-                    "description": "Seconds to wait before a retry; on a retryable error only.",
-                    "schema": dict(INTEGER),
-                },
-            },
-            "schemas": dict(sorted(schemas.items())),
-        },
-        security=[{"bearer": []}],
-        paths=paths,
+        operation = _command_operation(command, path, schemas, categories, admin=admin)
+        routes[commands + "/".join(path)] = {"post": operation}
+    return routes
+
+
+def _command_operation(
+    command: Mapping[str, JsonValue],
+    path: list[str],
+    schemas: dict[str, JsonValue],
+    categories: Mapping[str, ErrorCategory],
+    *,
+    admin: bool,
+) -> dict[str, JsonValue]:
+    """The operation of one command: its ``args`` as the request body, its ``data`` as the
+    answer (added to ``schemas`` as ``<operationId>_data``), one response per error status."""
+    operation_id = "_".join(path)
+    params = [
+        as_object(p, "param")
+        for key in ("args", "options")
+        for p in as_list(command.get(key, []), key)
+    ]
+    _add(schemas, f"{operation_id}_data", _components(command["output"]))
+    codes = [str(c) for c in as_list(command["errors"], "errors")]
+    operation = _operation(
+        operation_id,
+        str(command.get("summary", "")),
+        _json(_answer(schemas, f"{operation_id}_data"), exit_code=True),
+        errors=_errors(codes, categories),
+        body=_args_schema(params, admin),
     )
-    return document
+    if any(p.get("name") == _KEY_OPTION for p in params):
+        operation["parameters"] = [_key_header()]
+    operation["x-graph-cli-kind"] = command.get("kind")
+    operation["x-graph-cli-remote"] = command.get("remote")
+    return operation
 
 
 def _operation(
