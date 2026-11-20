@@ -205,14 +205,9 @@ def openapi(
 ) -> dict[str, JsonValue]:
     """``admin``: the admin API's document (its commands under ``commands``). ``dist`` and
     ``enroll``: the server serves those routes (the document describes only what it does)."""
-    schemas = {name: _components(schema) for name, schema in req_obj(inventory, "$defs").items()}
-    categories = {
-        req_str(entry, "code"): ErrorCategory(req_str(entry, "category"))
-        for entry in (as_object(e, "error_code") for e in req_list(inventory, "error_codes"))
-    }
-    _add(schemas, _FAILED, _failed(as_object(schemas["envelope"], "envelope")))
-    _add(schemas, _PROBLEM, dict(PROBLEM))
-    _add(schemas, _ERROR_TYPE, dict(ERROR_TYPE))
+    schemas = _component_schemas(inventory)
+    categories = _error_categories(inventory)
+    _add_shared_schemas(schemas)
     paths = _public_routes()
     if dist:
         paths.update(_dist_routes())
@@ -220,6 +215,40 @@ def openapi(
     if enroll and not admin:
         paths.update(_enroll_routes(schemas))
     paths.update(_command_routes(inventory, schemas, categories, commands=commands, admin=admin))
+    return _document(
+        version=version, admin=admin, public_url=public_url, schemas=schemas, paths=paths
+    )
+
+
+def _component_schemas(inventory: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    """The inventory's ``$defs`` under their names."""
+    return {name: _components(schema) for name, schema in req_obj(inventory, "$defs").items()}
+
+
+def _error_categories(inventory: Mapping[str, JsonValue]) -> dict[str, ErrorCategory]:
+    return {
+        req_str(entry, "code"): ErrorCategory(req_str(entry, "category"))
+        for entry in (as_object(e, "error_code") for e in req_list(inventory, "error_codes"))
+    }
+
+
+def _add_shared_schemas(schemas: dict[str, JsonValue]) -> None:
+    """The schemas every error answer refers to; the inventory's ``envelope`` must be there."""
+    _add(schemas, _FAILED, _failed(as_object(schemas["envelope"], "envelope")))
+    _add(schemas, _PROBLEM, dict(PROBLEM))
+    _add(schemas, _ERROR_TYPE, dict(ERROR_TYPE))
+
+
+def _document(
+    *,
+    version: str,
+    admin: bool,
+    public_url: str | None,
+    schemas: Mapping[str, JsonValue],
+    paths: dict[str, JsonValue],
+) -> dict[str, JsonValue]:
+    """The document around its routes: info, ``servers`` with a public URL, components and the
+    bearer security."""
     title = "graph_cli server admin API" if admin else "graph_cli server API"
     document: dict[str, JsonValue] = {
         "openapi": "3.1.0",
@@ -228,24 +257,28 @@ def openapi(
     if public_url is not None:
         document["servers"] = [{"url": public_url}]
     document.update(
-        components={
-            "securitySchemes": {"bearer": {"type": "http", "scheme": "bearer"}},
-            "headers": {
-                _EXIT_HEADER: {
-                    "description": "The exit code the program would have (B9.4).",
-                    "schema": dict(INTEGER),
-                },
-                _RETRY_HEADER: {
-                    "description": "Seconds to wait before a retry; on a retryable error only.",
-                    "schema": dict(INTEGER),
-                },
-            },
-            "schemas": dict(sorted(schemas.items())),
-        },
+        components=_components_section(schemas),
         security=[{"bearer": []}],
         paths=paths,
     )
     return document
+
+
+def _components_section(schemas: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    return {
+        "securitySchemes": {"bearer": {"type": "http", "scheme": "bearer"}},
+        "headers": {
+            _EXIT_HEADER: {
+                "description": "The exit code the program would have (B9.4).",
+                "schema": dict(INTEGER),
+            },
+            _RETRY_HEADER: {
+                "description": "Seconds to wait before a retry; on a retryable error only.",
+                "schema": dict(INTEGER),
+            },
+        },
+        "schemas": dict(sorted(schemas.items())),
+    }
 
 
 def _public_routes() -> dict[str, JsonValue]:
