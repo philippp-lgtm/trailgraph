@@ -14,13 +14,6 @@ the same render installs the same files.
 
 Blocks (each one optional):
 
-- ``start``: load the ``graph-cli`` skill before the first command, how to tell the graph is
-  reachable, the graph language, and the rules of working with ``graph`` that apply from the
-  first call (plain calls, the envelope, asking for less, never guessing, functions and
-  actions first, dry runs, ``--reason`` and ``--expect``, findings), so that a graph skill
-  loaded without skill 1 still leads to safe calls (F42, F74); for a model with
-  ``files:File``, one line on the file workflow; for a graph with published views a clause
-  on the ``graph view`` rule that names ``graph describe views``.
 - ``modules``: the subject areas (ontology modules) of the graph as a table (module, prefix,
   summary, number of types, links to other modules; built-in modules in one line) and the
   commands to read one module (``describe module``), find a term (``describe search``) and
@@ -48,12 +41,6 @@ input document, present only when the graph has actions the reader may see; it i
 the same way: an ``Actions`` column, an ``Actions`` section on every module page and
 ``references/actions.md`` for a single-module graph. A graph without active actions renders
 exactly as before.
-
-The compiled view catalog (``graph_cli.view_catalog/1``, the key ``views``) is one more input
-document, present only when the graph has views the reader may see. Only its presence shows: one
-clause in the ``start`` block says the graph has views and where to list them (no list in
-level 0: discovery is ``graph describe views`` and ``describe search``). A graph without active
-views renders exactly as before.
 
 ``measure`` sizes the rendered ``SKILL.md`` against the level 0 budget of every graph
 (``L0_BUDGET`` parts, single-module graphs included) and its curated text against
@@ -94,6 +81,7 @@ from graph_cli.skills.graph_skill.relations import (
     relation_notes,
     render_relations,
 )
+from graph_cli.skills.graph_skill.start import render_start
 from graph_cli.skills.graph_skill.type_blocks import (
     lifecycle_attr,
     marked_notes,
@@ -113,7 +101,6 @@ from graph_cli.skills.tree import SKILL_FILE, Problem, SkillFiles, validate
 FEATURED_LIMIT: Final = 12  # functions listed in ``SKILL.md``, however many a graph has
 ACTIONS_FEATURED_LIMIT: Final = 8  # actions listed in ``SKILL.md``, however many a graph has
 GENERATOR: Final = "graph_cli.skills"
-LANG_BASES: Final = frozenset({"lang_string", "lang_text"})
 FIELD_COLUMNS: Final = (
     "Field",
     "Type",
@@ -134,7 +121,6 @@ VALUE_SHAPES: Final[Mapping[str, str]] = {
     "lang_text": '`"<text>"@<tag>` or `{"lang": <tag>, "value": <text>}`; untagged: the graph'
     " language",
 }
-FILE_TYPE: Final = "files:File"  # the standard module files (B7.8), not graph vocabulary
 # Level 0 of the disclosure levels: the most bytes ``SKILL.md`` of a graph's skill should
 # have (about 5000 tokens at 4 bytes a token, the size the Agent Skills guidance suggests for
 # a skill body), single-module graphs included. A test holds ``L0_BASE`` for 50 modules of any
@@ -298,110 +284,6 @@ def _frontmatter_end(lines: list[str]) -> int:
 
 
 # ---- blocks ------------------------------------------------------------------------
-
-
-def _patterns_source(doc: Model) -> str:
-    """Where the query patterns are read: the whole schema, or one module at a time."""
-    if doc.modular:
-        return (
-            f"read the module first with `graph describe module <module> --graph {doc.name}`;"
-            f" `graph describe schema --module <module> --graph {doc.name} --compact --json`"
-            " lists its patterns"
-        )
-    return "`graph describe schema --compact --json` lists the patterns"
-
-
-def _start(doc: Model) -> list[str]:
-    name = doc.name
-    title = f" (title: {plain(doc.title)})" if doc.title else ""
-    return [
-        "Load the `graph-cli` skill as well before your first `graph` command: it has every"
-        " command with its options, the change sets of `graph apply` and the error codes. The"
-        " rules of working with `graph` below hold from the first call, with or without it.",
-        "",
-        f"Run `graph graphs --json`. Use this skill only if an item named {code(name)} is"
-        f" listed{title}. Pass `--graph {name}` to every command, as the examples here do,"
-        f" so they work in every directory; a project whose pointer makes {code(name)}"
-        " the default may leave it out.",
-        *_language(doc),
-        "",
-        "Working with `graph`:",
-        "",
-        "- Run each call as a plain command that starts with `graph` and passes `--json`"
-        + (
-            " (the module views of `graph describe module` read better as text)"
-            if doc.modular
-            else ""
-        )
-        + ": no `cd`, variables, loops, pipes or heredocs, which a restricted harness refuses."
-        " If a call is refused, run it again in that form before you give up.",
-        "- Read the answer: `ok`, then `data`; on failure `error.hint` is the command to run"
-        " next. Never cut an answer short; ask for less: `--fields <attr>,<attr>` on `find`,"
-        " `get` and `neighbors`, or `graph query` with `RETURN` of just the columns you need"
-        f" ({_patterns_source(doc)}).",
-        "- For what is known about one entity, `graph view <id> --json` answers in one call (key"
-        " fields, relations with counts, files, what applies next): use it before walking edges"
-        " with `get` and `neighbors`."
-        + (
-            f" The graph also has published views: `graph describe views --graph {name}`."
-            if doc.views
-            else ""
-        ),
-        "- Never guess an option, type, field, relation or state: `graph <command> --help`"
-        f" lists the options, `graph describe type <type> --graph {name} --json` the fields,"
-        " states and relations.",
-        *(
-            [
-                "- For a question, run a named function when one fits (`graph run <function>"
-                " --param <name>=<value>`); write a `graph query` only when none does. An empty"
-                " value in a function's answer means nothing is recorded: say so instead of"
-                " searching further."
-            ]
-            if doc.functions
-            else []
-        ),
-        (
-            "- For a change, run a named action when one fits (`graph do <action> --param"
-            " <name>=<value> --dry-run`, read what it will change, then run it without"
-            " `--dry-run`). Otherwise preview"
-            if doc.actions
-            else "- Preview"
-        )
-        + " `create`, `apply`, `transition`, `supersede` and `retract` with `--dry-run`, then"
-        " run them without; one `update`, `link` or `unlink` may run directly. Say why in"
-        " `--reason` (in English, whatever language the values are in), and pass `--expect"
-        " <rev>` when the write depends on what you read. A"
-        " change set for `graph apply` goes into a file in the working directory.",
-        "- Read `data.findings` of every write and tell the user about each warning.",
-        *(
-            [
-                "",
-                f"The graph stores files: `graph file add <file> --graph {name} --json`"
-                " stores one, and entities point to it with `files:from_file` and the page;"
-                " the `graph-cli` skill section Files says how.",
-            ]
-            if FILE_TYPE in doc.types
-            else []
-        ),
-    ]
-
-
-def _language(doc: Model) -> list[str]:
-    """The graph language, and the tagged form when the model has language-tagged fields."""
-    if doc.language is None:
-        return []
-    text = f"Text values are written in the graph language {code(doc.language)}."
-    tagged = any(
-        req_str(f, "base") in LANG_BASES
-        for body in doc.types.values()
-        for f in objects(body, "fields")
-    )
-    if tagged:
-        text += (
-            " A field of base `lang_string` or `lang_text` takes another language as"
-            f" `<text>@<tag>`; without a tag it gets {code(doc.language)}."
-        )
-    return ["", text]
 
 
 def _module_links(item: JsonObject) -> str:
@@ -656,7 +538,7 @@ def _model_pointer(doc: Model) -> list[str]:
 
 
 _BLOCKS: Final[Mapping[str, Callable[[Model], list[str]]]] = {
-    "start": _start,
+    "start": render_start,
     "modules": _modules,
     "types": render_types,
     "relations": render_relations,
