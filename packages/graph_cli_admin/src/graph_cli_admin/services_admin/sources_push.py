@@ -32,66 +32,39 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Final
 
 from graph_cli.kernel.authz import Decision
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
-from graph_cli.kernel.ports.catalog import (
-    GraphEntry,
-    KineticSlot,
-    SkillSlot,
-    SlotKind,
-    skill_hash,
-    sources_hash,
-)
+from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot, SkillSlot
 from graph_cli.kernel.ports.storage import MaintenanceSession
 from graph_cli.kernel.records import OntologyPin, RequestMeta
-from graph_cli.kernel.skill_marker import graph_skill_name
 from graph_cli.kinetic.compile import compile_catalog
 from graph_cli.kinetic.entries import FunctionEntry, load_entries
 from graph_cli.kinetic.format import FILE_SUFFIX
-from graph_cli.kinetic.params import Problem as KineticProblem
 from graph_cli.ontology_layer.diff import derive_renames
 from graph_cli.ontology_layer.model import CompiledModel
-from graph_cli.ontology_layer.semver import Version, is_version
-from graph_cli.skills.tree import Problem, read_tree
-from graph_cli.storage.files.layout import GraphLayout
-from graph_cli.storage.files.releases import release_hashes
 from graph_cli.temporal_knowledge.name_map import Hop
 from graph_cli_admin.services_admin import (
     actions,
     authored_views,
     catalog_follow,
     functions,
-    kinetic_slots,
     marking_warnings,
     release,
     skill,
 )
 from graph_cli_admin.services_admin.catalog_follow import Republish, function_entries, names_of
 from graph_cli_admin.services_admin.context import AdminContext
-from graph_cli_admin.services_admin.ontology import (
-    Compiled,
-    compile_source,
-    pinned_model,
-    read_migration,
-)
+from graph_cli_admin.services_admin.ontology import pinned_model
 from graph_cli_admin.services_admin.sources import (
-    ACTIONS,
-    FUNCTIONS,
-    ONTOLOGY,
-    SKILL,
-    VIEWS,
     Base,
     base_document,
     read_base,
-    release_sources,
     usage_error,
     write_base,
 )
-
-_EMPTY: Final = sources_hash({})  # a missing slot and an empty one are the same
+from graph_cli_admin.services_admin.sources_push_read import EMPTY, Workspace, read_workspace
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,44 +73,6 @@ class Pushed:
     data: dict[str, JsonValue]
     seq: int
     warnings: tuple[WarningRecord, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class _Folder:
-    """The ``functions/``, ``actions/`` or ``views/`` folder of a workspace."""
-
-    directory: Path
-    files: dict[str, bytes]
-    problems: list[KineticProblem]
-    hash: str  # of the files; the hash of no files for a missing folder
-    changed: bool  # the hash differs from the base's
-
-
-@dataclass(frozen=True, slots=True)
-class _SkillTree:
-    """The skill tree of a workspace; ``files`` is ``None`` without a skill directory."""
-
-    name: str  # the skill's name for this graph (and the name of its directory)
-    directory: Path | None
-    files: dict[str, bytes] | None
-    problems: list[Problem]
-    hash: str | None
-    changed: bool
-
-
-@dataclass(frozen=True, slots=True)
-class _Workspace:
-    """Everything a push reads of the workspace before it takes the lock."""
-
-    source: Path
-    base: Base
-    compiled: Compiled
-    migration: bytes | None  # the raw ``migration.yaml`` of the ontology directory
-    skill: _SkillTree
-    functions: _Folder
-    actions: _Folder
-    views: _Folder
-    ontology_changed: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,15 +99,15 @@ class _Current:
 
     @property
     def functions_hash(self) -> str:
-        return self.functions.hash if self.functions is not None else _EMPTY
+        return self.functions.hash if self.functions is not None else EMPTY
 
     @property
     def actions_hash(self) -> str:
-        return self.actions.hash if self.actions is not None else _EMPTY
+        return self.actions.hash if self.actions is not None else EMPTY
 
     @property
     def views_hash(self) -> str:
-        return self.views.hash if self.views is not None else _EMPTY
+        return self.views.hash if self.views is not None else EMPTY
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,7 +132,7 @@ class _Locked:
     ctx: AdminContext
     entry: GraphEntry  # re-read under the lock
     after: GraphEntry  # the entry with the pin the release will set; the writes return the real one
-    ws: _Workspace
+    ws: Workspace
     current: _Current
     publishes: _Publishing
     planned: release.Planned | None
@@ -209,7 +144,7 @@ class _Locked:
         cls,
         ctx: AdminContext,
         entry: GraphEntry,
-        ws: _Workspace,
+        ws: Workspace,
         current: _Current,
         publishes: _Publishing,
         planned: release.Planned | None,
@@ -285,7 +220,7 @@ def push(
         )
     if not dry_run and not os.access(source, os.W_OK):
         raise usage_error(f"{source} is not writable: push records the new base there")
-    ws = _read_workspace(ctx, entry, source, base)
+    ws = read_workspace(ctx, entry, source, base)
     auth = _authorize(ctx, entry, ws, reason=reason, dry_run=dry_run)
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
         entry = session.manifest().entry  # W.6: re-read under the lock
@@ -515,7 +450,7 @@ def _warnings(
 
 
 def _authorize(
-    ctx: AdminContext, entry: GraphEntry, ws: _Workspace, *, reason: str | None, dry_run: bool
+    ctx: AdminContext, entry: GraphEntry, ws: Workspace, *, reason: str | None, dry_run: bool
 ) -> _Authorized:
     """The decisions a push needs, before the lock: ``maint.graph_configure`` for the
     publishes, and the release's own decisions when the ontology is a new release."""
@@ -527,7 +462,7 @@ def _authorize(
         "actions": ws.actions.hash,
         "dry_run": dry_run,
     }
-    if ws.views.hash != _EMPTY or ws.base.views is not None:  # a graph without views: as it was
+    if ws.views.hash != EMPTY or ws.base.views is not None:  # a graph without views: as it was
         arguments["views"] = ws.views.hash
     meta = RequestMeta.of("graph push", arguments)
     resource = f"graph:{entry.id}"
@@ -548,7 +483,7 @@ def _authorize(
     return _Authorized(meta=meta, configure=configure, decisions=decisions)
 
 
-def _publishing(ws: _Workspace, current: _Current) -> _Publishing:
+def _publishing(ws: Workspace, current: _Current) -> _Publishing:
     """Which of the function, action and view folders the push publishes, and the names the
     functions and the actions will have."""
     functions_published = ws.functions.changed and current.functions_hash != ws.functions.hash
@@ -568,7 +503,7 @@ def _publishing(ws: _Workspace, current: _Current) -> _Publishing:
 
 
 def _views_for_release(
-    ws: _Workspace, current: _Current, publishes: _Publishing
+    ws: Workspace, current: _Current, publishes: _Publishing
 ) -> tuple[bool, tuple[FunctionEntry, ...] | None]:
     """Whether the release leaves the published views to the push, and else the functions it
     judges them with. The published views are checked in the release with the functions the
@@ -591,7 +526,7 @@ def _views_for_release(
 def _plan_release(
     ctx: AdminContext,
     session: MaintenanceSession,
-    ws: _Workspace,
+    ws: Workspace,
     current: _Current,
     publishes: _Publishing,
     *,
@@ -762,7 +697,7 @@ def _read_current(session: MaintenanceSession) -> _Current:
 
 
 def _check_unmoved(
-    ws: _Workspace, entry: GraphEntry, current: _Current, target_pin: OntologyPin
+    ws: Workspace, entry: GraphEntry, current: _Current, target_pin: OntologyPin
 ) -> None:
     """``admin.source_conflict`` unless every part of the graph is still what the base says
     or already what the push makes of it (a repeated push)."""
@@ -774,96 +709,11 @@ def _check_unmoved(
     if (
         entry.pin not in (base.pin, target_pin)
         or current.skill_hash not in (base.skill, target_skill)
-        or current.functions_hash not in (base.functions or _EMPTY, target_functions)
-        or current.actions_hash not in (base.actions or _EMPTY, target_actions)
-        or current.views_hash not in (base.views or _EMPTY, target_views)
+        or current.functions_hash not in (base.functions or EMPTY, target_functions)
+        or current.actions_hash not in (base.actions or EMPTY, target_actions)
+        or current.views_hash not in (base.views or EMPTY, target_views)
     ):
         raise _conflict(ws.source, entry, base, current)
-
-
-def _read_workspace(ctx: AdminContext, entry: GraphEntry, source: Path, base: Base) -> _Workspace:
-    """Read everything a push takes from the workspace, before the lock. The order decides
-    which usage error wins when several parts are broken: the ontology (and its migration
-    file), the skill, the function, action and view folders, then whether the ontology is a
-    new release (``admin.release_exists``)."""
-    compiled, ontology_dir = _ontology(source, base)
-    migration = read_migration(ontology_dir)
-    skill_tree = _read_skill_tree(source, entry, base)
-    function_folder = _read_folder(source, FUNCTIONS, "functions", base.functions)
-    action_folder = _read_folder(source, ACTIONS, "actions", base.actions)
-    view_folder = _read_folder(source, VIEWS, "views", base.views)
-    ontology_changed = _ontology_changed(ctx, entry, base, compiled, source / ONTOLOGY)
-    return _Workspace(
-        source=source,
-        base=base,
-        compiled=compiled,
-        migration=migration,
-        skill=skill_tree,
-        functions=function_folder,
-        actions=action_folder,
-        views=view_folder,
-        ontology_changed=ontology_changed,
-    )
-
-
-def _read_skill_tree(source: Path, entry: GraphEntry, base: Base) -> _SkillTree:
-    """The skill tree of the workspace, hashed and compared with the base's skill."""
-    name = graph_skill_name(entry.name)
-    directory = _skill_dir(source, name)
-    files: dict[str, bytes] | None = None
-    problems: list[Problem] = []
-    if directory is not None:
-        try:
-            files, problems = read_tree(directory)
-        except OSError as exc:
-            raise usage_error(f"cannot read {directory}: {exc.strerror or exc}") from exc
-    pushed = skill_hash(files) if files is not None else None
-    return _SkillTree(
-        name, directory, files, problems, pushed, pushed is not None and pushed != base.skill
-    )
-
-
-def _read_folder(source: Path, part: str, kind: SlotKind, base_hash: str | None) -> _Folder:
-    """``functions/``, ``actions/`` or ``views/`` of the workspace, hashed and compared with the
-    base's hash (a missing folder and a graph without that catalog are both the empty one)."""
-    directory = source / part
-    files, problems = _kinetic_files(directory, kind)
-    pushed = sources_hash(files)
-    return _Folder(directory, files, problems, pushed, pushed != (base_hash or _EMPTY))
-
-
-def _ontology(source: Path, base: Base) -> tuple[Compiled, Path]:
-    """The highest version directory of ``ontology/``, compiled with the base's main
-    module, and the directory; its name must be the version its main module declares."""
-    directory = source / ONTOLOGY
-    try:
-        versions = sorted(
-            (Version.parse(p.name) for p in directory.iterdir() if is_version(p.name)),
-            reverse=True,
-        )
-    except OSError as exc:
-        raise usage_error(f"cannot read {directory}: {exc.strerror or exc}") from exc
-    if not versions:
-        raise usage_error(f"{directory} holds no version directory (<major>.<minor>.<patch>)")
-    latest = directory / str(versions[0])
-    main = base.pin.bundle
-    compiled = compile_source(latest, main if (latest / f"{main}.yaml").is_file() else None)
-    declared = compiled.model.bundle_version
-    if declared != latest.name:
-        raise usage_error(
-            f"{latest} declares version {declared}; name the directory after the version"
-            " (bump the module version in a new directory)"
-        )
-    return compiled, latest
-
-
-def _kinetic_files(
-    directory: Path, kind: SlotKind
-) -> tuple[dict[str, bytes], list[KineticProblem]]:
-    """The files of ``functions/`` or ``actions/``; a missing folder is an empty one."""
-    if not directory.is_dir():
-        return {}, []
-    return kinetic_slots.read_dir(directory, kind)
 
 
 def _after(republish: Republish | None, published: KineticSlot | None) -> KineticSlot | None:
@@ -875,51 +725,6 @@ def _after(republish: Republish | None, published: KineticSlot | None) -> Kineti
 def _stems(files: Mapping[str, bytes]) -> frozenset[str]:
     """The names the files of a kinetic folder claim (``<name>.yaml``)."""
     return frozenset(n.removesuffix(FILE_SUFFIX) for n in files)
-
-
-def _skill_dir(source: Path, name: str) -> Path | None:
-    """``skill/<name>/`` when it exists; any other entry of ``skill/`` is a usage error
-    (a renamed graph, a typo), except hidden files such as ``.DS_Store``."""
-    directory = source / SKILL
-    try:
-        found = sorted(p.name for p in directory.iterdir() if not p.name.startswith("."))
-    except FileNotFoundError:
-        return None
-    except OSError as exc:
-        raise usage_error(f"cannot read {directory}: {exc.strerror or exc}") from exc
-    other = [n for n in found if n != name]
-    if other:
-        raise usage_error(
-            f"{directory} holds {', '.join(other)}; the skill of this graph is {name}"
-        )
-    return directory / name if found else None
-
-
-def _ontology_changed(
-    ctx: AdminContext, entry: GraphEntry, base: Base, compiled: Compiled, directory: Path
-) -> bool:
-    """Whether the workspace's ontology is a new release. The base version is compared by
-    its authored modules (the compiled hash may change with the compiler while they do
-    not); edited modules under the base version are ``admin.release_exists``: a release
-    never changes, so even an edited comment needs a new version."""
-    if compiled.pin.version != base.pin.version:
-        return True
-    installed = release_hashes(GraphLayout(ctx.catalog.graphs_dir / str(entry.id)))
-    if base.pin.version not in installed:
-        return True  # cannot happen after a pull; the release decides
-    _, modules = release_sources(ctx, entry, base.pin.version, installed[base.pin.version])
-    if dict(compiled.sources) == modules:
-        return False
-    raise GraphCliError(
-        "admin.release_exists",
-        f"{directory} differs from release {base.pin.version}; copy it to a new version"
-        " directory and bump the module version there",
-        details={
-            "version": base.pin.version,
-            "expected": installed[base.pin.version],
-            "actual": compiled.pin.artifact_hash,
-        },
-    )
 
 
 def _conflict(source: Path, entry: GraphEntry, base: Base, current: _Current) -> GraphCliError:
