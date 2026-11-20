@@ -174,6 +174,20 @@ class _Current:
         return self.views.hash if self.views is not None else _EMPTY
 
 
+@dataclass(frozen=True, slots=True)
+class _Publishing:
+    """What a push really writes: a kind is published when its folder differs from the base
+    and from what the graph holds; and the names each catalog will have."""
+
+    functions: bool
+    actions: bool
+    views: bool
+    # One namespace per graph: each kind is checked against the names of the other kind the
+    # graph will have (the pushed files if the push publishes them, else the published).
+    function_names: frozenset[str]
+    action_names: frozenset[str]
+
+
 def push(
     ctx: AdminContext,
     *,
@@ -201,55 +215,15 @@ def push(
         target_pin = ws.compiled.pin if ws.ontology_changed else base.pin
         current = _read_current(session)
         _check_unmoved(ws, entry, current, target_pin)
-        publishing_functions = ws.functions.changed and current.functions_hash != ws.functions.hash
-        publishing_actions = ws.actions.changed and current.actions_hash != ws.actions.hash
-        publishing_views = ws.views.changed and current.views_hash != ws.views.hash
-        # One namespace per graph: each kind is checked against the names of the other kind
-        # the graph will have (the pushed files if the push publishes them, else the published).
-        function_names = (
-            _stems(ws.functions.files) if publishing_functions else names_of(current.functions)
-        )
-        action_names = _stems(ws.actions.files) if publishing_actions else names_of(current.actions)
-        # The published views are checked in the release with the functions the graph will have;
-        # pushed functions that do not compile, or take the name of an action, are refused below
-        # (``functions.check_files``), before any write, so the release leaves the views to that
-        # refusal and the user sees the function problems first.
-        pushed_entries: tuple[FunctionEntry, ...] | None = None
-        leave_views = publishing_views
-        if (
-            ws.ontology_changed
-            and publishing_functions
-            and not publishing_views
-            and current.views is not None
-        ):
-            built, found = compile_catalog(ws.functions.files, ws.compiled.model)
-            if found or ws.functions.problems or _stems(ws.functions.files) & action_names:
-                leave_views = True
-            else:
-                pushed_entries = load_entries(built)
-        planned = (
-            release.plan(
-                ctx,
-                session,
-                ws.compiled,
-                migration=ws.migration,
-                dry_run=dry_run,
-                functions_replaced=publishing_functions,
-                actions_replaced=publishing_actions,
-                function_names=function_names,
-                views_replaced=leave_views,
-                function_entries=pushed_entries,
-            )
-            if ws.ontology_changed
-            else None
-        )
+        publishes = _publishing(ws, current)
+        planned = _plan_release(ctx, session, ws, current, publishes, dry_run=dry_run)
         releasing = planned is not None and not planned.unchanged
         after = replace(entry, pin=target_pin) if releasing else entry
         publishing = ws.skill.changed and current.skill_hash != ws.skill.hash
         # The functions the graph will have must resolve against the ontology it will have.
         pending = _pending_hop(entry, planned) if releasing else None
         function_slot = None
-        if publishing_functions:
+        if publishes.functions:
             label_f: Path | str = ws.functions.directory
             model_f = ws.compiled.model if releasing else pinned_model(ctx.catalog, after)
             checked_f = functions.check_files(
@@ -259,19 +233,19 @@ def push(
                 model_f,
                 label=label_f,
                 # one namespace per graph: no function named like a published action
-                taken=action_names,
+                taken=publishes.action_names,
                 hints=catalog_follow.rename_hints(ctx, entry, model_f, pending),
                 # the published views must hold with the functions: the ones the release
                 # compiled again, the pushed ones replace them
                 views=None
-                if publishing_views
+                if publishes.views
                 else _after(planned.views if planned is not None else None, current.views),
             )
             function_slot = functions.slot_of(checked_f, after)
         else:
             functions.refuse(ws.functions.directory, after, ws.functions.problems)
         action_slot = None
-        if publishing_actions:
+        if publishes.actions:
             model_a = ws.compiled.model if releasing else pinned_model(ctx.catalog, after)
             checked_a = actions.check_files(
                 after,
@@ -279,14 +253,14 @@ def push(
                 ws.actions.problems,
                 model_a,
                 label=ws.actions.directory,
-                function_names=function_names,
+                function_names=publishes.function_names,
                 hints=catalog_follow.rename_hints(ctx, entry, model_a, pending),
             )
             action_slot = actions.slot_of(checked_a, after)
         else:
             actions.refuse(ws.actions.directory, after, ws.actions.problems)
         view_slot = None
-        if publishing_views:
+        if publishes.views:
             model_v = ws.compiled.model if releasing else pinned_model(ctx.catalog, after)
             # the functions the graph will have: the pushed ones, else the published ones as
             # the release leaves them
@@ -503,6 +477,69 @@ def _authorize(
         else None
     )
     return _Authorized(meta, configure, decisions)
+
+
+def _publishing(ws: _Workspace, current: _Current) -> _Publishing:
+    """Which of the function, action and view folders the push publishes, and the names the
+    functions and the actions will have."""
+    functions_published = ws.functions.changed and current.functions_hash != ws.functions.hash
+    actions_published = ws.actions.changed and current.actions_hash != ws.actions.hash
+    views_published = ws.views.changed and current.views_hash != ws.views.hash
+    function_names = (
+        _stems(ws.functions.files) if functions_published else names_of(current.functions)
+    )
+    action_names = _stems(ws.actions.files) if actions_published else names_of(current.actions)
+    return _Publishing(
+        functions_published, actions_published, views_published, function_names, action_names
+    )
+
+
+def _views_for_release(
+    ws: _Workspace, current: _Current, publishes: _Publishing
+) -> tuple[bool, tuple[FunctionEntry, ...] | None]:
+    """Whether the release leaves the published views to the push, and else the functions it
+    judges them with. The published views are checked in the release with the functions the
+    graph will have; pushed functions that do not compile, or take the name of an action, are
+    refused later (``functions.check_files``), before any write, so the release leaves the
+    views to that refusal and the user sees the function problems first."""
+    if not (
+        ws.ontology_changed
+        and publishes.functions
+        and not publishes.views
+        and current.views is not None
+    ):
+        return publishes.views, None
+    built, found = compile_catalog(ws.functions.files, ws.compiled.model)
+    if found or ws.functions.problems or _stems(ws.functions.files) & publishes.action_names:
+        return True, None
+    return False, load_entries(built)
+
+
+def _plan_release(
+    ctx: AdminContext,
+    session: MaintenanceSession,
+    ws: _Workspace,
+    current: _Current,
+    publishes: _Publishing,
+    *,
+    dry_run: bool,
+) -> release.Planned | None:
+    """The release the push makes, ``None`` when the ontology is not a new release."""
+    if not ws.ontology_changed:
+        return None
+    leave_views, pushed_entries = _views_for_release(ws, current, publishes)
+    return release.plan(
+        ctx,
+        session,
+        ws.compiled,
+        migration=ws.migration,
+        dry_run=dry_run,
+        functions_replaced=publishes.functions,
+        actions_replaced=publishes.actions,
+        function_names=publishes.function_names,
+        views_replaced=leave_views,
+        function_entries=pushed_entries,
+    )
 
 
 def _read_current(session: MaintenanceSession) -> _Current:
