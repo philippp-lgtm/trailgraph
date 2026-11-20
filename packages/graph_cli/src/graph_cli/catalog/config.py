@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 import tomllib
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Final, Literal
 
@@ -147,33 +147,10 @@ def load_config(path: Path) -> tuple[Config, tuple[WarningRecord, ...]]:
 def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecord, ...]]:
     document = _read_document(data, path)
     t, warnings = _read_tables(path, document)
-    mode = t.get("runtime.mode", str, "a string")
-    if mode not in (None, "local", "remote"):
-        raise _invalid(path, "runtime.mode", "must be 'local' or 'remote'")
-    endpoint = t.get("runtime.endpoint", str, "a string")
-    token_file = t.get("remote.token_file", str, "a string")
-    if token_file is not None and not token_file.startswith(("/", "~/")):
-        raise _invalid(path, "remote.token_file", "must be an absolute path or start with ~/")
-    admin_token_file = t.get("remote.admin_token_file", str, "a string")
-    if admin_token_file is not None and not admin_token_file.startswith(("/", "~/")):
-        raise _invalid(path, "remote.admin_token_file", "must be an absolute path or start with ~/")
-    allow_plain_http = t.get("remote.allow_plain_http", bool, "a boolean")
-    remote_timeout = t.get("remote.timeout_s", (int, float), "a number")
-    if remote_timeout is not None and not 1 <= remote_timeout <= 3600:
-        raise _invalid(path, "remote.timeout_s", "must be between 1 and 3600 seconds")
-    if mode == "remote":
-        if endpoint is None:
-            raise _invalid(path, "runtime.endpoint", "is required with mode 'remote'")
-        found = parse_endpoint(endpoint)
-        if isinstance(found, str):
-            raise _invalid(path, "runtime.endpoint", found)
-        if found.plain_http and not found.loopback and not allow_plain_http:
-            raise _invalid(
-                path,
-                "runtime.endpoint",
-                "is plain http:// to a host that is not loopback: the token would travel"
-                " in clear; use https:// (or set [remote] allow_plain_http = true)",
-            )
+    config = Config(path, exists=True)
+    config = _read_runtime(t, config)
+    config = _read_remote(t, config)
+    config = _check_endpoint(t, config)
     data_root = t.get("paths.data_root", str, "a string")
     if data_root is not None and not (data_root.startswith(("/", "~/"))):
         raise _invalid(path, "paths.data_root", "must be an absolute path or start with ~/")
@@ -239,10 +216,9 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
             "must be an http(s) URL without credentials, query or fragment",
         )
     file_roots = _file_roots(path, t.tables.get("roots", {}))
-    defaults = Config(path)
-    config = Config(
-        path=path,
-        exists=True,
+    defaults = config
+    config = replace(
+        config,
         device_id=t.get("device.id", str, "a string"),
         device_name=t.get("device.name", str, "a string"),
         data_root=data_root,
@@ -272,14 +248,6 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         client_builds=client_builds or defaults.client_builds,
         dist=dist if dist is not None else defaults.dist,
         public_url=public_url.rstrip("/") if public_url is not None else None,
-        mode=mode or defaults.mode,
-        endpoint=endpoint,
-        token_file=token_file,
-        admin_token_file=admin_token_file,
-        allow_plain_http=bool(allow_plain_http),
-        remote_timeout_s=float(remote_timeout)
-        if remote_timeout is not None
-        else defaults.remote_timeout_s,
     )
     return config, tuple(warnings)
 
@@ -334,6 +302,59 @@ def _read_tables(path: Path, document: Mapping[str, Any]) -> tuple[_Tables, list
                     _unknown(path, f"{key}.{k}") for k in sorted(set(document[key]) - _KEYS[key])
                 ]
     return _Tables(path, tables), warnings
+
+
+def _read_runtime(t: _Tables, config: Config) -> Config:
+    """``[runtime]``: the mode and the endpoint as written (checked with the remote keys)."""
+    mode = t.get("runtime.mode", str, "a string")
+    if mode not in (None, "local", "remote"):
+        raise _invalid(t.path, "runtime.mode", "must be 'local' or 'remote'")
+    endpoint = t.get("runtime.endpoint", str, "a string")
+    return replace(config, mode=mode or config.mode, endpoint=endpoint)
+
+
+def _read_remote(t: _Tables, config: Config) -> Config:
+    """``[remote]``: the token files, the plain-http switch and the timeout."""
+    token_file = t.get("remote.token_file", str, "a string")
+    if token_file is not None and not token_file.startswith(("/", "~/")):
+        raise _invalid(t.path, "remote.token_file", "must be an absolute path or start with ~/")
+    admin_token_file = t.get("remote.admin_token_file", str, "a string")
+    if admin_token_file is not None and not admin_token_file.startswith(("/", "~/")):
+        raise _invalid(
+            t.path, "remote.admin_token_file", "must be an absolute path or start with ~/"
+        )
+    allow_plain_http = t.get("remote.allow_plain_http", bool, "a boolean")
+    remote_timeout = t.get("remote.timeout_s", (int, float), "a number")
+    if remote_timeout is not None and not 1 <= remote_timeout <= 3600:
+        raise _invalid(t.path, "remote.timeout_s", "must be between 1 and 3600 seconds")
+    return replace(
+        config,
+        token_file=token_file,
+        admin_token_file=admin_token_file,
+        allow_plain_http=bool(allow_plain_http),
+        remote_timeout_s=float(remote_timeout)
+        if remote_timeout is not None
+        else config.remote_timeout_s,
+    )
+
+
+def _check_endpoint(t: _Tables, config: Config) -> Config:
+    """In remote mode the endpoint is required and must be safe to send a token to. It is
+    checked after the keys of ``[remote]`` because ``allow_plain_http`` takes part."""
+    if config.mode == "remote":
+        if config.endpoint is None:
+            raise _invalid(t.path, "runtime.endpoint", "is required with mode 'remote'")
+        found = parse_endpoint(config.endpoint)
+        if isinstance(found, str):
+            raise _invalid(t.path, "runtime.endpoint", found)
+        if found.plain_http and not found.loopback and not config.allow_plain_http:
+            raise _invalid(
+                t.path,
+                "runtime.endpoint",
+                "is plain http:// to a host that is not loopback: the token would travel"
+                " in clear; use https:// (or set [remote] allow_plain_http = true)",
+            )
+    return config
 
 
 def _s3_table(path: Path, table: object) -> S3Table:
