@@ -213,104 +213,12 @@ def openapi(
     _add(schemas, _FAILED, _failed(as_object(schemas["envelope"], "envelope")))
     _add(schemas, _PROBLEM, dict(PROBLEM))
     _add(schemas, _ERROR_TYPE, dict(ERROR_TYPE))
-    upload = {"put": _operation("upload", "Stage bytes for a file parameter.", _json(UPLOADED))}
-    listed = obj({"errors": {"type": "array", "items": _ref(_ERROR_TYPE)}})
-    paths: dict[str, JsonValue] = {
-        "/v1/health": {
-            "get": _public(
-                _operation("health", "Liveness and version; no token needed.", _json(HEALTH))
-            )
-        },
-        "/v1/errors": {
-            "get": _public(
-                _operation("errors", "The error codes problem types point to.", _json(listed))
-            )
-        },
-        "/v1/errors/{code}": {
-            "parameters": _in_path("code"),
-            "get": _public(
-                _operation("error", "One error code of the registry.", _json(_ref(_ERROR_TYPE)))
-            ),
-        },
-    }
+    paths = _public_routes()
     if dist:
-        paths["/v1/dist/manifest"] = {
-            "get": _public(
-                _operation(
-                    "dist_manifest",
-                    "The programs the server hands out; no token needed.",
-                    _json(MANIFEST),
-                )
-            )
-        }
-        file = _operation(
-            "dist_file",
-            "A file the manifest lists; the graph-admin wheel needs an admin token.",
-            _bytes(dist=True),
-        )
-        paths["/v1/dist/{file}"] = {
-            "parameters": _in_path("file"),
-            "get": {**file, "security": [{}, {"bearer": []}]},
-        }
-    inventory_answer = _json(_ref("inventory"))
-    document_answer = _json(DOCUMENT)
-    if admin:
-        paths["/v1/admin/inventory"] = {
-            "get": _operation("inventory", "The admin inventory.", inventory_answer)
-        }
-        paths["/v1/admin/openapi.json"] = {
-            "get": _operation("openapi", "This document.", document_answer)
-        }
-        paths["/v1/uploads"] = upload
-    else:
-        _add(schemas, "graph_skill_data", GRAPH_SKILL)
-        paths.update(
-            {
-                "/v1/inventory": {
-                    "get": _operation("inventory", "The command inventory.", inventory_answer)
-                },
-                "/v1/openapi.json": {
-                    "get": _operation("openapi", "This document.", document_answer)
-                },
-                "/v1/uploads": upload,
-                "/v1/graphs/{graph}/files/{ref}": {
-                    "parameters": _in_path("graph", "ref"),
-                    "get": _operation(
-                        "file_bytes",
-                        "The stored file of an entity, as file path.",
-                        _bytes(),
-                        unchanged=True,
-                    ),
-                },
-                "/v1/graphs/{graph}/skill": {
-                    "parameters": _in_path("graph"),
-                    "post": _operation(
-                        "graph_skill",
-                        "The graph's published skill, rendered.",
-                        _json(_answer(schemas, "graph_skill_data")),
-                    ),
-                },
-            }
-        )
+        paths.update(_dist_routes())
+    paths.update(_admin_routes() if admin else _app_routes(schemas))
     if enroll and not admin:
-        _add(schemas, "enroll_data", ENROLLED)
-        paths["/v1/enroll"] = {
-            "post": _public(
-                _operation(
-                    "enroll",
-                    "Exchange an enrollment code for a token, or check it; no token needed.",
-                    _json(_answer(schemas, "enroll_data")),
-                    errors=_responses(
-                        {
-                            400: ["usage.invalid_input", "usage.invalid_argument"],
-                            401: ["remote.unauthorized"],
-                            503: ["backend.lock_timeout"],
-                        }
-                    ),
-                    body=dict(ENROLL_BODY),
-                )
-            )
-        }
+        paths.update(_enroll_routes(schemas))
     for value in req_list(inventory, "commands"):
         command = as_object(value, "command")
         if command.get("remote") not in _SERVED:
@@ -362,6 +270,121 @@ def openapi(
         paths=paths,
     )
     return document
+
+
+def _public_routes() -> dict[str, JsonValue]:
+    """Health and the error registry: no token needed."""
+    listed = obj({"errors": {"type": "array", "items": _ref(_ERROR_TYPE)}})
+    return {
+        "/v1/health": {
+            "get": _public(
+                _operation("health", "Liveness and version; no token needed.", _json(HEALTH))
+            )
+        },
+        "/v1/errors": {
+            "get": _public(
+                _operation("errors", "The error codes problem types point to.", _json(listed))
+            )
+        },
+        "/v1/errors/{code}": {
+            "parameters": _in_path("code"),
+            "get": _public(
+                _operation("error", "One error code of the registry.", _json(_ref(_ERROR_TYPE)))
+            ),
+        },
+    }
+
+
+def _dist_routes() -> dict[str, JsonValue]:
+    """The programs the server hands out."""
+    file = _operation(
+        "dist_file",
+        "A file the manifest lists; the graph-admin wheel needs an admin token.",
+        _bytes(dist=True),
+    )
+    return {
+        "/v1/dist/manifest": {
+            "get": _public(
+                _operation(
+                    "dist_manifest",
+                    "The programs the server hands out; no token needed.",
+                    _json(MANIFEST),
+                )
+            )
+        },
+        "/v1/dist/{file}": {
+            "parameters": _in_path("file"),
+            "get": {**file, "security": [{}, {"bearer": []}]},
+        },
+    }
+
+
+def _upload_route() -> dict[str, JsonValue]:
+    return {"put": _operation("upload", "Stage bytes for a file parameter.", _json(UPLOADED))}
+
+
+def _admin_routes() -> dict[str, JsonValue]:
+    """What only the admin API has: its inventory and document, and the uploads."""
+    return {
+        "/v1/admin/inventory": {
+            "get": _operation("inventory", "The admin inventory.", _json(_ref("inventory")))
+        },
+        "/v1/admin/openapi.json": {"get": _operation("openapi", "This document.", _json(DOCUMENT))},
+        "/v1/uploads": _upload_route(),
+    }
+
+
+def _app_routes(schemas: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    """What only the app surface has; adds the ``graph_skill`` data to ``schemas``."""
+    _add(schemas, "graph_skill_data", GRAPH_SKILL)
+    return {
+        "/v1/inventory": {
+            "get": _operation("inventory", "The command inventory.", _json(_ref("inventory")))
+        },
+        "/v1/openapi.json": {"get": _operation("openapi", "This document.", _json(DOCUMENT))},
+        "/v1/uploads": _upload_route(),
+        "/v1/graphs/{graph}/files/{ref}": {
+            "parameters": _in_path("graph", "ref"),
+            "get": _operation(
+                "file_bytes",
+                "The stored file of an entity, as file path.",
+                _bytes(),
+                unchanged=True,
+            ),
+        },
+        "/v1/graphs/{graph}/skill": {
+            "parameters": _in_path("graph"),
+            "post": _operation(
+                "graph_skill",
+                "The graph's published skill, rendered.",
+                _json(_answer(schemas, "graph_skill_data")),
+            ),
+        },
+    }
+
+
+def _enroll_routes(schemas: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    """The exchange of an enrollment code; adds the ``enroll`` data to ``schemas``."""
+    _add(schemas, "enroll_data", ENROLLED)
+    return {
+        "/v1/enroll": {
+            "post": _public(
+                _operation(
+                    "enroll",
+                    "Exchange an enrollment code for a token, or check it; no token needed.",
+                    _json(_answer(schemas, "enroll_data")),
+                    errors=_responses(
+                        {
+                            400: ["usage.invalid_input", "usage.invalid_argument"],
+                            401: ["remote.unauthorized"],
+                            503: ["backend.lock_timeout"],
+                        }
+                    ),
+                    body=dict(ENROLL_BODY),
+                )
+            )
+        }
+    }
 
 
 def _operation(
