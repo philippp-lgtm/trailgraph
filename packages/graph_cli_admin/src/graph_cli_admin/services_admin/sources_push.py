@@ -99,6 +99,44 @@ class Pushed:
     warnings: tuple[WarningRecord, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class _Folder:
+    """The ``functions/``, ``actions/`` or ``views/`` folder of a workspace."""
+
+    directory: Path
+    files: dict[str, bytes]
+    problems: list[KineticProblem]
+    hash: str  # of the files; the hash of no files for a missing folder
+    changed: bool  # the hash differs from the base's
+
+
+@dataclass(frozen=True, slots=True)
+class _SkillTree:
+    """The skill tree of a workspace; ``files`` is ``None`` without a skill directory."""
+
+    name: str  # the skill's name for this graph (and the name of its directory)
+    directory: Path | None
+    files: dict[str, bytes] | None
+    problems: list[Problem]
+    hash: str | None
+    changed: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _Workspace:
+    """Everything a push reads of the workspace before it takes the lock."""
+
+    source: Path
+    base: Base
+    compiled: Compiled
+    migration: bytes | None  # the raw ``migration.yaml`` of the ontology directory
+    skill: _SkillTree
+    functions: _Folder
+    actions: _Folder
+    views: _Folder
+    ontology_changed: bool
+
+
 def push(
     ctx: AdminContext,
     *,
@@ -118,42 +156,17 @@ def push(
         )
     if not dry_run and not os.access(source, os.W_OK):
         raise usage_error(f"{source} is not writable: push records the new base there")
-    compiled, ontology_dir = _ontology(source, base)
-    migration = read_migration(ontology_dir)
-    name = graph_skill_name(entry.name)
-    skill_dir = _skill_dir(source, name)
-    files: dict[str, bytes] | None = None
-    problems: list[Problem] = []
-    if skill_dir is not None:
-        try:
-            files, problems = read_tree(skill_dir)
-        except OSError as exc:
-            raise usage_error(f"cannot read {skill_dir}: {exc.strerror or exc}") from exc
-    pushed = skill_hash(files) if files is not None else None
-    skill_changed = pushed is not None and pushed != base.skill
-    sources_dir = source / FUNCTIONS
-    function_files, function_problems = _kinetic_files(sources_dir, "functions")
-    pushed_functions = sources_hash(function_files)
-    functions_changed = pushed_functions != (base.functions or _EMPTY)
-    actions_dir = source / ACTIONS
-    action_files, action_problems = _kinetic_files(actions_dir, "actions")
-    pushed_actions = sources_hash(action_files)
-    actions_changed = pushed_actions != (base.actions or _EMPTY)
-    views_dir = source / VIEWS
-    view_files, view_problems = _kinetic_files(views_dir, "views")
-    pushed_views = sources_hash(view_files)
-    views_changed = pushed_views != (base.views or _EMPTY)
-    ontology_changed = _ontology_changed(ctx, entry, base, compiled, source / ONTOLOGY)
+    ws = _read_workspace(ctx, entry, source, base)
     arguments: dict[str, JsonValue] = {
         "graph": str(entry.id),
-        "ontology": compiled.pin.to_json(),
-        "skill": pushed,
-        "functions": pushed_functions,
-        "actions": pushed_actions,
+        "ontology": ws.compiled.pin.to_json(),
+        "skill": ws.skill.hash,
+        "functions": ws.functions.hash,
+        "actions": ws.actions.hash,
         "dry_run": dry_run,
     }
-    if pushed_views != _EMPTY or base.views is not None:  # a graph without views: as it was
-        arguments["views"] = pushed_views
+    if ws.views.hash != _EMPTY or base.views is not None:  # a graph without views: as it was
+        arguments["views"] = ws.views.hash
     meta = RequestMeta.of("graph push", arguments)
     resource = f"graph:{entry.id}"
     configure = ctx.authorize(
@@ -165,27 +178,27 @@ def push(
             entry,
             meta,
             reason=reason,
-            migrate=release.wants_migration(ctx, entry, compiled, migration),
+            migrate=release.wants_migration(ctx, entry, ws.compiled, ws.migration),
         )
-        if ontology_changed
+        if ws.ontology_changed
         else None
     )
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
         entry = session.manifest().entry  # W.6: re-read under the lock
         release.check_state(entry)
         current = skill.current_slot(session)
-        target_pin = compiled.pin if ontology_changed else base.pin
-        target_skill = pushed if skill_changed else base.skill
+        target_pin = ws.compiled.pin if ws.ontology_changed else base.pin
+        target_skill = ws.skill.hash if ws.skill.changed else base.skill
         current_skill = current.hash if current is not None else None
         published = functions.current_slot(session)
         current_functions = published.hash if published is not None else _EMPTY
-        target_functions = pushed_functions if functions_changed else base.functions
+        target_functions = ws.functions.hash if ws.functions.changed else base.functions
         catalog = actions.current_slot(session)
         current_actions = catalog.hash if catalog is not None else _EMPTY
-        target_actions = pushed_actions if actions_changed else base.actions
+        target_actions = ws.actions.hash if ws.actions.changed else base.actions
         view_catalog = authored_views.current_slot(session)
         current_views = view_catalog.hash if view_catalog is not None else _EMPTY
-        target_views = pushed_views if views_changed else base.views
+        target_views = ws.views.hash if ws.views.changed else base.views
         if (
             entry.pin not in (base.pin, target_pin)
             or current_skill not in (base.skill, target_skill)
@@ -194,13 +207,13 @@ def push(
             or current_views not in (base.views or _EMPTY, target_views)
         ):
             raise _conflict(source, entry, base, current, published, catalog, view_catalog)
-        publishing_functions = functions_changed and current_functions != pushed_functions
-        publishing_actions = actions_changed and current_actions != pushed_actions
-        publishing_views = views_changed and current_views != pushed_views
+        publishing_functions = ws.functions.changed and current_functions != ws.functions.hash
+        publishing_actions = ws.actions.changed and current_actions != ws.actions.hash
+        publishing_views = ws.views.changed and current_views != ws.views.hash
         # One namespace per graph: each kind is checked against the names of the other kind
         # the graph will have (the pushed files if the push publishes them, else the published).
-        function_names = _stems(function_files) if publishing_functions else names_of(published)
-        action_names = _stems(action_files) if publishing_actions else names_of(catalog)
+        function_names = _stems(ws.functions.files) if publishing_functions else names_of(published)
+        action_names = _stems(ws.actions.files) if publishing_actions else names_of(catalog)
         # The published views are checked in the release with the functions the graph will have;
         # pushed functions that do not compile, or take the name of an action, are refused below
         # (``functions.check_files``), before any write, so the release leaves the views to that
@@ -208,13 +221,13 @@ def push(
         pushed_entries: tuple[FunctionEntry, ...] | None = None
         leave_views = publishing_views
         if (
-            ontology_changed
+            ws.ontology_changed
             and publishing_functions
             and not publishing_views
             and view_catalog is not None
         ):
-            built, found = compile_catalog(function_files, compiled.model)
-            if found or function_problems or _stems(function_files) & action_names:
+            built, found = compile_catalog(ws.functions.files, ws.compiled.model)
+            if found or ws.functions.problems or _stems(ws.functions.files) & action_names:
                 leave_views = True
             else:
                 pushed_entries = load_entries(built)
@@ -222,8 +235,8 @@ def push(
             release.plan(
                 ctx,
                 session,
-                compiled,
-                migration=migration,
+                ws.compiled,
+                migration=ws.migration,
                 dry_run=dry_run,
                 functions_replaced=publishing_functions,
                 actions_replaced=publishing_actions,
@@ -231,22 +244,22 @@ def push(
                 views_replaced=leave_views,
                 function_entries=pushed_entries,
             )
-            if ontology_changed
+            if ws.ontology_changed
             else None
         )
         releasing = planned is not None and not planned.unchanged
         after = replace(entry, pin=target_pin) if releasing else entry
-        publishing = skill_changed and current_skill != pushed
+        publishing = ws.skill.changed and current_skill != ws.skill.hash
         # The functions the graph will have must resolve against the ontology it will have.
         pending = _pending_hop(entry, planned) if releasing else None
         function_slot = None
         if publishing_functions:
-            label_f: Path | str = sources_dir
-            model_f = compiled.model if releasing else pinned_model(ctx.catalog, after)
+            label_f: Path | str = ws.functions.directory
+            model_f = ws.compiled.model if releasing else pinned_model(ctx.catalog, after)
             checked_f = functions.check_files(
                 after,
-                function_files,
-                function_problems,
+                ws.functions.files,
+                ws.functions.problems,
                 model_f,
                 label=label_f,
                 # one namespace per graph: no function named like a published action
@@ -260,25 +273,25 @@ def push(
             )
             function_slot = functions.slot_of(checked_f, after)
         else:
-            functions.refuse(sources_dir, after, function_problems)
+            functions.refuse(ws.functions.directory, after, ws.functions.problems)
         action_slot = None
         if publishing_actions:
-            model_a = compiled.model if releasing else pinned_model(ctx.catalog, after)
+            model_a = ws.compiled.model if releasing else pinned_model(ctx.catalog, after)
             checked_a = actions.check_files(
                 after,
-                action_files,
-                action_problems,
+                ws.actions.files,
+                ws.actions.problems,
                 model_a,
-                label=actions_dir,
+                label=ws.actions.directory,
                 function_names=function_names,
                 hints=catalog_follow.rename_hints(ctx, entry, model_a, pending),
             )
             action_slot = actions.slot_of(checked_a, after)
         else:
-            actions.refuse(actions_dir, after, action_problems)
+            actions.refuse(ws.actions.directory, after, ws.actions.problems)
         view_slot = None
         if publishing_views:
-            model_v = compiled.model if releasing else pinned_model(ctx.catalog, after)
+            model_v = ws.compiled.model if releasing else pinned_model(ctx.catalog, after)
             # the functions the graph will have: the pushed ones, else the published ones as
             # the release leaves them
             entries = function_entries(
@@ -288,30 +301,34 @@ def push(
             )
             checked_v = authored_views.check_files(
                 after,
-                view_files,
-                view_problems,
+                ws.views.files,
+                ws.views.problems,
                 model_v,
-                label=views_dir,
+                label=ws.views.directory,
                 functions=entries,
                 hints=catalog_follow.rename_hints(ctx, entry, model_v, pending),
             )
             view_slot = authored_views.slot_of(checked_v, after)
         else:
-            authored_views.refuse(views_dir, after, view_problems)
+            authored_views.refuse(ws.views.directory, after, ws.views.problems)
         checked: skill.Checked | None = None
         if releasing or publishing:
             # The skill the graph will have must fit the ontology it will have.
-            model = compiled.model if releasing else None
-            label: Path | str = skill_dir or f"the published skill of graph {entry.name}"
-            check = files if files is not None else (current.files if current else None)
+            model = ws.compiled.model if releasing else None
+            label: Path | str = ws.skill.directory or f"the published skill of graph {entry.name}"
+            check = (
+                ws.skill.files
+                if ws.skill.files is not None
+                else (current.files if current else None)
+            )
             if check is not None:
                 checked = skill.check_files(
                     ctx,
                     after,
                     dict(check),
-                    problems,
+                    ws.skill.problems,
                     label=label,
-                    directory=name if files is not None else None,
+                    directory=ws.skill.name if ws.skill.files is not None else None,
                     inventory=inventory,
                     model=model,
                     # the catalogs the graph will have: `graph run <name>` and `graph do <name>` in
@@ -320,11 +337,11 @@ def push(
                     actions=action_slot.compiled if action_slot is not None else None,
                     views=view_slot.compiled if view_slot is not None else None,
                 )
-                skill.refuse(label, after, name, checked.problems)
+                skill.refuse(label, after, ws.skill.name, checked.problems)
         slot = None
         if publishing:
-            assert checked is not None and files is not None and pushed is not None
-            slot = SkillSlot(checked.kind, pushed, after.pin, files)
+            assert checked is not None and ws.skill.files is not None and ws.skill.hash is not None
+            slot = SkillSlot(checked.kind, ws.skill.hash, after.pin, ws.skill.files)
         seq = session.head().seq
         if not dry_run:
             if releasing:
@@ -366,28 +383,28 @@ def push(
             "graph_id": str(entry.id),
             "ontology": {k: v for k, v in ontology.items() if k != "graph_id"},
             "skill": None
-            if files is None
+            if ws.skill.files is None
             else {
-                "skill": name,
+                "skill": ws.skill.name,
                 "from": current.summary() if current is not None else None,
                 "to": final.summary() if final is not None else None,
-                "files": sorted(files),
+                "files": sorted(ws.skill.files),
                 "published": slot is not None and not dry_run,
             },
             "functions": None
-            if not (sources_dir.is_dir() or function_slot is not None)
+            if not (ws.functions.directory.is_dir() or function_slot is not None)
             else {
                 "from": published.summary() if published is not None else None,
                 "to": final_functions.summary() if final_functions is not None else None,
-                "functions": [n.removesuffix(FILE_SUFFIX) for n in sorted(function_files)],
+                "functions": [n.removesuffix(FILE_SUFFIX) for n in sorted(ws.functions.files)],
                 "published": function_slot is not None and not dry_run,
             },
             "actions": None
-            if not (actions_dir.is_dir() or action_slot is not None)
+            if not (ws.actions.directory.is_dir() or action_slot is not None)
             else {
                 "from": catalog.summary() if catalog is not None else None,
                 "to": final_actions.summary() if final_actions is not None else None,
-                "actions": [n.removesuffix(FILE_SUFFIX) for n in sorted(action_files)],
+                "actions": [n.removesuffix(FILE_SUFFIX) for n in sorted(ws.actions.files)],
                 "published": action_slot is not None and not dry_run,
             },
             "unchanged": not (
@@ -406,7 +423,7 @@ def push(
             data["views"] = {
                 "from": view_catalog.summary() if view_catalog is not None else None,
                 "to": final_views.summary() if final_views is not None else None,
-                "views": [n.removesuffix(FILE_SUFFIX) for n in sorted(view_files)],
+                "views": [n.removesuffix(FILE_SUFFIX) for n in sorted(ws.views.files)],
                 "published": view_slot is not None and not dry_run,
             }
     if not dry_run:
@@ -420,8 +437,59 @@ def push(
     if view_slot is not None:
         warnings += authored_views.deprecated_warnings(view_slot, entries)
     if checked is not None:
-        warnings += checked.warnings(after, name)
+        warnings += checked.warnings(after, ws.skill.name)
     return Pushed(after, data, seq, warnings)
+
+
+def _read_workspace(ctx: AdminContext, entry: GraphEntry, source: Path, base: Base) -> _Workspace:
+    """Read everything a push takes from the workspace, before the lock. The order decides
+    which usage error wins when several parts are broken: the ontology (and its migration
+    file), the skill, the function, action and view folders, then whether the ontology is a
+    new release (``admin.release_exists``)."""
+    compiled, ontology_dir = _ontology(source, base)
+    migration = read_migration(ontology_dir)
+    skill_tree = _read_skill_tree(source, entry, base)
+    function_folder = _read_folder(source, FUNCTIONS, "functions", base.functions)
+    action_folder = _read_folder(source, ACTIONS, "actions", base.actions)
+    view_folder = _read_folder(source, VIEWS, "views", base.views)
+    ontology_changed = _ontology_changed(ctx, entry, base, compiled, source / ONTOLOGY)
+    return _Workspace(
+        source,
+        base,
+        compiled,
+        migration,
+        skill_tree,
+        function_folder,
+        action_folder,
+        view_folder,
+        ontology_changed,
+    )
+
+
+def _read_skill_tree(source: Path, entry: GraphEntry, base: Base) -> _SkillTree:
+    """The skill tree of the workspace, hashed and compared with the base's skill."""
+    name = graph_skill_name(entry.name)
+    directory = _skill_dir(source, name)
+    files: dict[str, bytes] | None = None
+    problems: list[Problem] = []
+    if directory is not None:
+        try:
+            files, problems = read_tree(directory)
+        except OSError as exc:
+            raise usage_error(f"cannot read {directory}: {exc.strerror or exc}") from exc
+    pushed = skill_hash(files) if files is not None else None
+    return _SkillTree(
+        name, directory, files, problems, pushed, pushed is not None and pushed != base.skill
+    )
+
+
+def _read_folder(source: Path, part: str, kind: SlotKind, base_hash: str | None) -> _Folder:
+    """``functions/``, ``actions/`` or ``views/`` of the workspace, hashed and compared with the
+    base's hash (a missing folder and a graph without that catalog are both the empty one)."""
+    directory = source / part
+    files, problems = _kinetic_files(directory, kind)
+    pushed = sources_hash(files)
+    return _Folder(directory, files, problems, pushed, pushed != (base_hash or _EMPTY))
 
 
 def _ontology(source: Path, base: Base) -> tuple[Compiled, Path]:
