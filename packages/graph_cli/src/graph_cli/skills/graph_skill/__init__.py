@@ -26,17 +26,9 @@ Blocks (each one optional):
   commands to read one module (``describe module``), find a term (``describe search``) and
   read a type (``describe type``). For a modular graph it takes the place of ``types`` and
   ``relations`` in the template.
-- ``types``: the entity types (types with an alias prefix; without any, every
-  concrete type) with their supertypes, fields (label roles named), enum values inline
-  (F11), and states. A field the model marks (``markings``, field visibility plan F7) shows
-  ``marked <curie>`` with its markings joined by ``+``, here and in the ``Flags`` column of
-  the model file; the documents of a reader hold only the fields it sees, so a graph without
-  markings, or a reader without a marked field, renders as before.
 - ``relations``: the relations touching those types, each with its ``graph query`` pattern
   (``(:A)-[:rel]->(:B)``, from ``describe schema``) in place of its ends; inverse labels
   only in ``references/model.md``.
-- ``constraints``: transition guards, write-once fields (left out when the template has
-  ``types``, which marks them) and rules.
 - ``names``: the live alias format (F12; with ``types`` in the template one example, the
   table has the rest), what ``graph lookup`` matches per
   type (label roles; with ``types`` in the template, a pointer to the roles named there) and
@@ -103,6 +95,15 @@ from graph_cli.skills.graph_skill.pieces import (
     term_summary,
     value_code,
 )
+from graph_cli.skills.graph_skill.type_blocks import (
+    ROLE_MARKS,
+    ROLE_NAMES,
+    lifecycle_attr,
+    marked_notes,
+    ordered_fields,
+    render_constraints,
+    render_types,
+)
 from graph_cli.skills.template import (
     ACTIONS_FILE,
     FUNCTIONS_FILE,
@@ -116,16 +117,6 @@ from graph_cli.skills.tree import SKILL_FILE, Problem, SkillFiles, validate
 FEATURED_LIMIT: Final = 12  # functions listed in ``SKILL.md``, however many a graph has
 ACTIONS_FEATURED_LIMIT: Final = 8  # actions listed in ``SKILL.md``, however many a graph has
 GENERATOR: Final = "graph_cli.skills"
-ROLE_NAMES: Final[Mapping[str, str]] = {
-    "label": "main name",
-    "alt_label": "other names",
-    "hidden_label": "hidden names, matched but never shown",
-}
-ROLE_MARKS: Final[Mapping[str, str]] = {  # the label roles as the ``types`` block names them
-    "label": "main name",
-    "alt_label": "other names",
-    "hidden_label": "hidden names",
-}
 LANG_BASES: Final = frozenset({"lang_string", "lang_text"})
 FIELD_COLUMNS: Final = (
     "Field",
@@ -169,7 +160,6 @@ L0_BUDGET: Final = L0_BASE + L0_FUNCTIONS + L0_ACTIONS
 # use the graph and the rules no schema says. Workflow detail and more recipes go into
 # curated ``references/*.md``, read when the work needs them.
 CURATED_BUDGET: Final = 6_000
-WHEN: Final[Mapping[str, str]] = {"write": "checked on every write", "batch": "checked in batch"}
 
 
 def render_graph_skill(
@@ -418,101 +408,6 @@ def _language(doc: Model) -> list[str]:
     return ["", text]
 
 
-def _types(doc: Model) -> list[str]:
-    rows = []
-    for curie in doc.listed:
-        body = doc.types[curie]
-        alias = doc.prefixes.get(curie)
-        name = code(curie) + (f" ({code(format_alias(alias, 1))})" if alias else "")
-        fields = [_field(f) for f in _ordered_fields(body) if f.get("kind") != "lifecycle"]
-        ancestors = strings(body.get("ancestors"))  # relations of a supertype apply too
-        what = term_summary(body)
-        what += f" Is a {codes(ancestors, ' and ')}." if ancestors else ""
-        rows.append(
-            [
-                name,
-                what.strip(),
-                "; ".join(fields) or "none",
-                _states(body),
-            ]
-        )
-    lines = md_table(["Type", "What it is", "Fields", "States"], rows)
-    others = [curie for curie in doc.types if curie not in doc.listed]
-    if others:
-        lines += [
-            "",
-            f"Other types of the model, described in `{MODEL_FILE}`: {codes(others)}.",
-        ]
-    return lines
-
-
-def _ordered_fields(body: JsonObject) -> list[JsonObject]:
-    """Names first (main, other, hidden), then required fields, then the rest; by name."""
-    roles = list(ROLE_NAMES)
-
-    def key(field: JsonObject) -> tuple[int, int, str]:
-        role = field.get("role")
-        rank = roles.index(role) if isinstance(role, str) and role in roles else len(roles)
-        return (rank, 0 if field.get("required") is True else 1, req_str(field, "name"))
-
-    return sorted(objects(body, "fields"), key=key)
-
-
-def _field(field: JsonObject) -> str:
-    notes = []
-    base = req_str(field, "base")
-    if field.get("kind") != "enum" and base not in ("string", "text"):
-        notes.append(base)
-    for flag, text in (("required", "required"), ("many", "many"), ("unique", "unique")):
-        if field.get(flag) is True:
-            notes.append(text)
-    if field.get("mutability") == "immutable":
-        notes.append("write-once")
-    if field.get("default") is not None:
-        notes.append(f"default {value_code(field['default'])}")
-    values = strings(field.get("values"))
-    if values:
-        notes.append(f"one of {codes(values)}")
-    role = field.get("role")
-    if isinstance(role, str) and role in ROLE_MARKS:
-        notes.append(ROLE_MARKS[role])
-    notes += _marked(field)
-    name = code(req_str(field, "name"))
-    return f"{name} ({', '.join(notes)})" if notes else name
-
-
-def _marked(field: JsonObject) -> list[str]:
-    """The mark of a marked field, ``marked ex:personal`` (conjunctive markings joined by
-    ``+``); nothing for an unmarked one."""
-    markings = strings(field.get("markings"))
-    return [f"marked {'+'.join(markings)}"] if markings else []
-
-
-def _states(body: JsonObject) -> str:
-    parts = []
-    for lifecycle in objects(body, "lifecycles"):
-        pairs = [(req_str(t, "from"), req_str(t, "to")) for t in objects(lifecycle, "transitions")]
-        shown: list[str] = []
-        one_way: dict[str, list[str]] = {}  # to -> from states, in model order
-        for a, b in pairs:
-            if (b, a) not in pairs:
-                one_way.setdefault(b, []).append(a)
-            elif (a, b) < (b, a):
-                shown.append(f"{code(a)} <-> {code(b)}")
-        shown += [f"{codes(froms, ' or ')} -> {code(to)}" for to, froms in one_way.items()]
-        initial = codes(strings(lifecycle.get("initial")))
-        terminal = codes(strings(lifecycle.get("terminal")))
-        text = f"{code(_attr(lifecycle))}: " + ", ".join(shown)
-        text += f"; initial {initial}" if initial else ""
-        text += f"; terminal {terminal}" if terminal else ""
-        parts.append(text)
-    return "; ".join(parts) or "none"
-
-
-def _attr(lifecycle: JsonObject) -> str:
-    return opt_str(lifecycle, "attr") or "status"
-
-
 def _relations(doc: Model) -> list[str]:
     """One line per relation: CURIE, its ``graph query`` pattern, cardinality and notes, then
     the summary. A list, not a table: a pattern with alternative labels (``(:A|B)``) stays as
@@ -581,47 +476,6 @@ def _relation_notes(relation: JsonObject, *, inverse: bool = True) -> str:
     if label and inverse:
         notes.append(f"inverse {code(label)}")
     return ", ".join(notes)
-
-
-def _constraints(doc: Model) -> list[str]:
-    lines = []
-    for curie in doc.listed:
-        for lifecycle in objects(doc.types[curie], "lifecycles"):
-            guarded: dict[tuple[str, str, str], list[str]] = {}  # (to, id, summary) -> froms
-            for transition in objects(lifecycle, "transitions"):
-                for guard in objects(transition, "guards"):
-                    key = (
-                        req_str(transition, "to"),
-                        req_str(guard, "id"),
-                        plain(opt_str(guard, "summary")),
-                    )
-                    guarded.setdefault(key, []).append(req_str(transition, "from"))
-            for (to, guard_id, summary), froms in guarded.items():
-                lines.append(
-                    f"- {code(curie)} {code(_attr(lifecycle))} {codes(froms, ' or ')} ->"
-                    f" {code(to)}: {summary} (guard {code(guard_id)})"
-                )
-    for curie in doc.listed if "types" not in doc.blocks else ():  # ``types`` marks them
-        once = [
-            req_str(f, "name")
-            for f in objects(doc.types[curie], "fields")
-            if f.get("mutability") == "immutable"
-        ]
-        if once:
-            lines.append(
-                f"- Write-once on {code(curie)} (set at create, never changed): {codes(once)}"
-            )
-    rules: dict[str, tuple[JsonObject, list[str]]] = {}
-    for curie in doc.listed:
-        for rule in objects(doc.types[curie], "rules"):
-            rules.setdefault(req_str(rule, "id"), (rule, []))[1].append(curie)
-    for rule_id, (rule, on) in sorted(rules.items()):
-        when = req_str(rule, "when")
-        lines.append(
-            f"- Rule {code(rule_id)} on {codes(on)} ({req_str(rule, 'severity')},"
-            f" {WHEN.get(when, f'when {when}')}): {term_summary(rule)}"
-        )
-    return lines or ["No transition guards, write-once fields or rules."]
 
 
 def _names(doc: Model) -> list[str]:
@@ -707,7 +561,7 @@ def _names(doc: Model) -> list[str]:
 def _labelled(doc: Model) -> dict[str, list[JsonObject]]:
     """The name fields (label roles) of every concrete type that has any."""
     found = {
-        curie: [f for f in _ordered_fields(body) if f.get("role") in ROLE_NAMES]
+        curie: [f for f in ordered_fields(body) if f.get("role") in ROLE_NAMES]
         for curie, body in doc.types.items()
         if body.get("abstract") is not True
     }
@@ -974,9 +828,9 @@ def _model_pointer(doc: Model) -> list[str]:
 _BLOCKS: Final[Mapping[str, Callable[[Model], list[str]]]] = {
     "start": _start,
     "modules": _modules,
-    "types": _types,
+    "types": render_types,
     "relations": _relations,
-    "constraints": _constraints,
+    "constraints": render_constraints,
     "names": _names,
     "model": _model_pointer,
     "functions": _functions,
@@ -1149,7 +1003,7 @@ def _flags(field: JsonObject) -> str:
     role = field.get("role")
     if isinstance(role, str):
         flags.append(role)
-    flags += _marked(field)
+    flags += marked_notes(field)
     return ", ".join(flags)
 
 
@@ -1168,7 +1022,7 @@ def _limits(field: JsonObject) -> str:
 
 def _lifecycle_section(lifecycle: JsonObject) -> list[str]:
     lines = [
-        f"Lifecycle {code(_attr(lifecycle))} ({code(req_str(lifecycle, 'lifecycle'))}):"
+        f"Lifecycle {code(lifecycle_attr(lifecycle))} ({code(req_str(lifecycle, 'lifecycle'))}):"
         f" {term_summary(lifecycle)}",
         "",
     ]
