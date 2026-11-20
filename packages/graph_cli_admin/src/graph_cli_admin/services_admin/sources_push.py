@@ -2,28 +2,33 @@
 
 The workspace layout, the base file and pull are in ``sources``.
 
-``push`` is one maintenance operation under the graph lock, like a
-fast-forward push: the data root must still hold the base, or already what
-is pushed (a repeated push), else ``admin.source_conflict``. The highest
-version directory is the ontology: when it differs from the base it is
-released and pinned (``release.plan|write``); a skill tree that differs
-from the base is published (``skill.write``), and so are a ``functions``, an ``actions``
-and a ``views`` folder that differ from the base (after the release and the skill, in this
-order; a missing folder is an empty one, so deleting every file unpublishes the
-catalog). Whenever the ontology or the skill changes, the skill the graph
-will have is checked against the ontology it will have; whenever the
-ontology or the functions change, so are the functions: the new files
-against the model the graph will have, or, when the push does not touch
-them, the published catalog (``admin.functions_broken`` in the release); the
-actions likewise (``admin.actions_broken``); so are the views, against the model and the
-functions the graph will have after the push (the pushed ones, else the published ones
-after their own follow): the pushed files (``admin.views_invalid``) or the published
-catalog (``admin.views_broken``). A release with renames or a migration file
-publishes a catalog it does not replace again when its sources still compile against the new
-model (``release.plan``, ``data.ontology.republished``). Functions and actions share one
-namespace: each kind is checked against the names of the other kind the graph
-will have; views have a namespace of their own. Every check runs before the first write; the
-new base is written into the directory afterwards (``dry_run``: answered, not written).
+``push`` is one maintenance operation under the graph lock, like a fast-forward push:
+the data root must still hold the base, or already what is pushed (a repeated push),
+else ``admin.source_conflict``. The highest version directory is the ontology: when it
+differs from the base it is released and pinned (``release.plan|write``); a skill tree
+that differs from the base is published (``skill.write``), and so are a ``functions``,
+an ``actions`` and a ``views`` folder that differ from the base (after the release and
+the skill, in this order; a missing folder is an empty one, so deleting every file
+unpublishes the catalog). Whenever the ontology or the skill changes, the skill the
+graph will have is checked against the ontology it will have; whenever the ontology or
+the functions change, so are the functions: the new files against the model the graph
+will have, or, when the push does not touch them, the published catalog
+(``admin.functions_broken`` in the release); the actions likewise
+(``admin.actions_broken``); so are the views, against the model and the functions the
+graph will have after the push (the pushed ones, else the published ones after their own
+follow): the pushed files (``admin.views_invalid``) or the published catalog
+(``admin.views_broken``). A release with renames or a migration file publishes a catalog
+it does not replace again when its sources still compile against the new model
+(``release.plan``, ``data.ontology.republished``). Functions and actions share one
+namespace: each kind is checked against the names of the other kind the graph will have;
+views have a namespace of their own. Every check runs before the first write; the new
+base is written into the directory afterwards (``dry_run``: answered, not written).
+
+This module runs the phases: authorize, take the lock, read the published slots, plan
+the release, check the catalogs and the skill, write. The neighbours hold the rest:
+``sources_push_read`` reads the workspace before the lock, ``sources_push_state`` has
+the records the phases under the lock share, and ``sources_push_answer`` builds the
+answer, the new base file and the warnings.
 """
 
 from __future__ import annotations

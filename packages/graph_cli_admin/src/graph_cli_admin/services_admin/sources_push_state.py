@@ -7,8 +7,9 @@ leaves it, the workspace, the slots, the plan), and keeps the catalogs it
 checked (``Catalogs``). They are frozen: a phase reads them and builds the
 next one, nothing is changed afterwards.
 
-``sources_push`` creates them in its phases and passes them on; the workspace
-they hold is read by ``sources_push_read``.
+``sources_push`` creates them in its phases and passes them on,
+``sources_push_answer`` reads them for the answer; the workspace they hold is
+read by ``sources_push_read``.
 """
 
 from __future__ import annotations
