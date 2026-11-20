@@ -11,8 +11,8 @@ from support.snapshots import eid, revision
 from graph_cli.kernel.read_view import ReadView
 from graph_cli.kernel.records import Revision
 from graph_cli.ontology_layer.migration import Step
-from graph_cli.services import read as read_module
-from graph_cli.services.read import _attribute_effects
+from graph_cli.services.read import migration_effects
+from graph_cli.services.read.migration_effects import attribute_effects
 
 EMPLOYEE = "stf:Employee"
 VIEW = SimpleNamespace(read_view=ReadView.of(None, {EMPLOYEE: frozenset({"name", "shift"})}))
@@ -35,7 +35,7 @@ def mapping(written: Revision | None) -> Any:
 
 
 def effects(applied: list[Any], written: Revision | None) -> list[Any]:
-    return _attribute_effects(VIEW, mapping(written), eid("e"), 2, applied)  # type: ignore[arg-type]
+    return attribute_effects(VIEW, mapping(written), eid("e"), 2, applied)  # type: ignore[arg-type]
 
 
 WRITTEN = revision("e", EMPLOYEE, {"name": "Ada", "shift": "day", "email": "a@example.org"}, rev=2)
@@ -84,5 +84,5 @@ def test_every_effect_kind_a_migration_writes_has_a_decision() -> None:
     """A new step kind must be placed in one of the lists on purpose (or it stays hidden)."""
     steps = {step.NAME for step in get_args(Step)}
     kinds = steps | {"rename_class", "rename_relation", "rename_attribute"}
-    judged = {"rename_attribute", "retype", "drop"} | read_module._ATTRIBUTE_STEPS
-    assert kinds == read_module._ATTRIBUTE_FREE_EFFECTS | judged
+    judged = {"rename_attribute", "retype", "drop"} | migration_effects.ATTRIBUTE_STEPS
+    assert kinds == migration_effects.ATTRIBUTE_FREE_EFFECTS | judged

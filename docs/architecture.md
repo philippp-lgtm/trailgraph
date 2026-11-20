@@ -104,7 +104,18 @@ the mode selects, so it needs no route of its own.
 Commands of `graph` are declared as data in `graph_cli.app_cli.commands`,
 those of `graph-admin` in `graph_cli_admin.maintenance_cli.commands`
 (`cli_kit.spec.CommandSpec`); for each program the click tree and the
-inventory are built from the same declarations. A declaration also names the
+inventory are built from the same declarations.
+
+Two command groups of `graph` are packages. The `describe` commands except
+`describe commands` (which stays in `app_cli.commands.meta`) live in
+`app_cli.commands.describe` (`model`: the ontology, `kinetic`: functions,
+actions and views, `shared`: what both use). The read commands live in
+`app_cli.commands.read` (`shared`: what several of them use; `entity`: `get`
+and `view`; `history`: `history` and `changes`; `find`: `find`, `lookup`,
+`search` and `neighbors`; `query`: `query` and `run`). The package's `SPECS`
+joins theirs in the order of the help.
+
+A declaration also names the
 JSON Schema of its answer's `data` (`output`); shapes several commands share
 are definitions with one home each, next to what produces them:
 `cli_kit.output_schemas` (the envelope's parts, the inventory and the
@@ -127,10 +138,33 @@ parameters, scopes) and `render` writes a tree back as Cypher text.
 `execute` matches the patterns over the `Snapshot` port and runs the
 clauses (projection, aggregation, sorting, paging, `UNWIND`), `evaluate` and
 `values` hold the expressions and openCypher's comparisons and null logic;
-`services.read` parses before opening the graph, then resolves and runs.
+`services.read.queries` parses before opening the graph, then resolves and runs.
 `temporal_knowledge.history` names what changed between two revisions for
 `history`; `temporal_knowledge.changes` holds the pure core of `changes`
 (positions, the one read of a raw tx body, edge targets, the paging of a page).
+
+`services.read` is a package; the contract of all reads is its docstring. Its modules:
+
+| Module | Holds |
+| --- | --- |
+| `__init__` | the docstring (the contract of all reads) and the public names, re-exported |
+| `service` | `ReadService`: the concerns below composed into one class (no body of its own) |
+| `state` | `ReadState`: the collaborators and caches every concern shares (the only `__init__`), and `query_phase`, the wrapper of reads answered from a snapshot |
+| `access` | `ReadAccess`: the authorization of a read, a caller's read view and visible types, the refusal of what is hidden and the audit of a denial; `denial_error` (also used by `services.write` and `services.file_metadata`) |
+| `catalogs` | `ReadCatalogs`: the published functions, actions and views of a graph as an actor may see them (hidden and stale entries, the needs and problems of actions) |
+| `opening` | `ReadOpen`: `open` (the graph's model and one snapshot, the head or the state `--as-of` names, behind the read limits of the caller) and `rename_hint` (the current name of an old term a refused write names) |
+| `as_of` | the earlier state `--as-of` names: its snapshot, and the warning that says which state is read |
+| `skills` | `ReadSkills`: the published skill of a graph and the inputs a generated skill is rendered with (model documents, names, digest) |
+| `installation` | `ReadInstallation`: the reads that name no graph: `graphs` (the graphs a caller may see) and `whoami` (the caller's grants, read limits and visible types) |
+| `entities` | `ReadEntities`: `get` and `neighbors`, and the actions, functions and views a reader may use next with an entity (`--affordances`); `current_entity`, the revision a ref names |
+| `finding` | `ReadFinding`: `find`, `lookup` and `search`, and how a lookup fits the functions the caller may run (`_use_fit`, `_parameter_fit`) |
+| `history` | `ReadHistory`: `history` (one entity's revisions) and `changes` (the change feed of a graph) |
+| `change_feed` | the page of `changes` and the per-revision parts `history` shares with it (pure, over the reader's snapshot and the raw one below it) |
+| `migration_effects` | `history`'s migration item: the renames and steps a migration tx applied to one entity, judged per attribute for a limited reader |
+| `queries` | `ReadQueries`: parsing a Cypher query before the graph is opened, running it over a snapshot, and running a named function; `QuerySpec`; the Cypher parser, resolver and executor are imported inside its methods |
+| `views` | `ReadViews`: `view` (the generated card of an entity, an authored entity view, or a set view) and what it builds from the reader's own snapshot and model |
+| `graph_read` | `GraphRead` (one graph opened for one actor and command), `Page`, `graph_json`, and `ActionCatalog` (a graph's parsed action catalog, which `state` caches) |
+| `json_shapes` | how reads show entities, edges and query values as JSON |
 
 `cli_kit` (envelope, error rendering, hints; `run` reports the bytes it
 wrote, for the access log) is shared with the maintenance CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
@@ -143,7 +177,7 @@ measure their own phases (monotonic durations only, never wall time).
 
 Every `graph` command is a new process, and its imports are most of a
 read's time, so a command imports only what it runs. The composition root
-builds the write and file services on first use, `services.read` imports
+builds the write and file services on first use, `services.read.queries` imports
 the Cypher engine in `parse_query` and `query` only, and the command
 modules import the write, file and skill modules inside the handlers that
 use them. `tests/cli/test_app_startup.py` checks which modules the reads
@@ -225,7 +259,12 @@ kinds share the parameter grammar and binding (`kinetic.params`).
 | `kinetic.entries` | the entries of a published catalog as the app shows them: signature text, the summary and detail documents of `describe functions` and `describe function` |
 | `kinetic.bind` | the function-kind entry points of the binding in `kinetic.params` |
 | `kinetic.action_format` | `graph_cli.action/1`: the typed definition of one action file (parameters, preconditions as rule-language conditions, a template of change-set ops with `$param` placeholders and the one dynamic form `unlink ... all: true`), strict YAML loading with a `Problem` per defect |
-| `kinetic.action_compile` | `compile_actions` checks the action files of a graph against a compiled ontology (names, parameters, ops, that the template assembles into a change set, preconditions, limits) and writes the catalog document `graph_cli.action_catalog/1` with the compiled ops, preconditions, `touches` and the `write.*` pairs the ops need; `check_actions` runs the same checks over a published catalog against another model |
+| `kinetic.action_compile` | `compile_actions` checks the action files of a graph against a compiled ontology (names, parameters, ops, that the template assembles into a change set, preconditions, limits) and writes the catalog document `graph_cli.action_catalog/1` with the compiled ops, preconditions, `touches` and the `write.*` pairs the ops need; `check_actions` runs the same checks over a published catalog against another model; the declaration, parameter, precondition and entry checks and the driver live here, the op checks, the slot typing, the condition and template checks and the shared state in the five `kinetic.action_*` modules below |
+| `kinetic.action_context` | `CheckContext`: the state the checks of one action share (definition, model, placeholder uses, problems in order) and the reporting primitives `add`, `term`, `unknown`, `declared_param`; below `action_compile` and its helper modules |
+| `kinetic.action_conditions` | `ConditionCheck`: the names and types in the conditions of one precondition resolved against the model (attributes numeric where compared, relations, `where.type`), lowered to CURIEs; problems go to the `CheckContext` |
+| `kinetic.action_ops` | `OpChecks`: the checks of the ops of one action (the types, relations and entities an op names, an `@local` of a create, domain and range of a relation, lifecycle attribute and state of a transition, placeholders in single positions) and the `Footprint` of types, relations and `write.*` needs the ops and preconditions leave for `touches` and `needs`; problems go to the `CheckContext` |
+| `kinetic.action_slots` | `SlotChecks` and `Slot`: the attributes and qualifiers an action op writes (they exist, may be written directly, a placeholder fits their datatype, enum and list-ness); problems go to the `CheckContext` |
+| `kinetic.action_template` | `TemplateCheck`: that the template of one action assembles into a change set `parse_changeset` accepts, with typed sample values and also with every optional parameter absent; problems go to the `CheckContext` |
 | `kinetic.action_entries` | the entries of a published action catalog as the app shows them: the summary and detail documents, `find_action` |
 | `kinetic.action_needs` | `action_needs`: what an action's ops need on concrete types against a model, with the attributes and relations they write (declared classes expanded to their non-abstract subtypes, any of which meets a need); pure, no policy |
 | `kinetic.affordances` | which published actions and functions take a given entity as a parameter, and which other entity views take its class, judged from the entries the actor may see, for `get --affordances` and the card (`actions_for`, `functions_for`, `views_for`; pure) |
@@ -275,10 +314,10 @@ the admin skills ([Skills](skills.md#admin-skills)).
 ## Read views of limited callers
 
 A caller with [read limits](access_control.md#read-limits) reads through views
-that are opened in one place, `ReadService.open` (and `_snapshot_as_of` for
-`--as-of`), and handed to every read command in `GraphRead`. A graph without
-read rules gets the raw snapshot and model, so nothing is filtered and nothing
-is paid.
+that are opened in one place, `services.read.opening` (`ReadService.open`, and
+`services.read.as_of` for `--as-of`), and handed to every read command in
+`GraphRead`. A graph without read rules gets the raw snapshot and model, so
+nothing is filtered and nothing is paid.
 
 | Module | Content |
 | --- | --- |

@@ -263,7 +263,7 @@ DEFS: Final[dict[str, Schema]] = kit.merge_defs(
     kit.DEFS,
     {
         "entity": _entity(),
-        "edge": obj(  # ``services.read.edge_json``: the id with --full only
+        "edge": obj(  # ``services.read.json_shapes.edge_json``: the id with --full only
             {"rel": STRING, "target": STRING},
             {"edge_id": STRING, "qualifiers": obj(extra=ANY), "target_rev": INTEGER},
         ),

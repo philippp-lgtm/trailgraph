@@ -85,7 +85,7 @@ def merge_defs(*parts: Mapping[str, Schema]) -> dict[str, Schema]:
 
 
 def _graph() -> Schema:
-    """The envelope's ``graph`` (B9.2): ``services.read.graph_json`` and its admin twin
+    """The envelope's ``graph`` (B9.2): ``services.read.graph_read.graph_json`` and its admin twin
     ``services_admin.graphs.envelope_graph``."""
     return obj(
         {
