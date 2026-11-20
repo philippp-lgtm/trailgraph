@@ -145,52 +145,20 @@ def load_config(path: Path) -> tuple[Config, tuple[WarningRecord, ...]]:
 
 
 def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecord, ...]]:
-    try:
-        document = tomllib.loads(data.decode())
-    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
-        raise _invalid(path, "", f"is not valid TOML: {exc}") from None
-    version = document.get("format_version")
-    if version is None:
-        raise _invalid(path, "format_version", "is missing")
-    if version != CONFIG_FORMAT:
-        raise GraphCliError(
-            "format.unsupported_version",
-            f"{path}: unsupported format_version {version!r}",
-            details={"file": str(path), "expected": CONFIG_FORMAT, "actual": str(version)},
-        )
-    warnings: list[WarningRecord] = []
-    tables: dict[str, Mapping[str, Any]] = {}
-    for key in sorted(document):
-        if key not in _KEYS[""]:
-            warnings.append(_unknown(path, key))
-        elif key != "format_version":
-            if not isinstance(document[key], dict):
-                raise _invalid(path, key, "must be a table")
-            tables[key] = document[key]
-            if key not in _OPEN_TABLES:
-                warnings += [
-                    _unknown(path, f"{key}.{k}") for k in sorted(set(document[key]) - _KEYS[key])
-                ]
-
-    def get(dotted: str, kind: type | tuple[type, ...], what: str) -> Any:
-        table, key = dotted.split(".")
-        value = tables.get(table, {}).get(key)
-        if value is not None and not _has_type(value, kind):
-            raise _invalid(path, dotted, f"must be {what}")
-        return value
-
-    mode = get("runtime.mode", str, "a string")
+    document = _read_document(data, path)
+    t, warnings = _read_tables(path, document)
+    mode = t.get("runtime.mode", str, "a string")
     if mode not in (None, "local", "remote"):
         raise _invalid(path, "runtime.mode", "must be 'local' or 'remote'")
-    endpoint = get("runtime.endpoint", str, "a string")
-    token_file = get("remote.token_file", str, "a string")
+    endpoint = t.get("runtime.endpoint", str, "a string")
+    token_file = t.get("remote.token_file", str, "a string")
     if token_file is not None and not token_file.startswith(("/", "~/")):
         raise _invalid(path, "remote.token_file", "must be an absolute path or start with ~/")
-    admin_token_file = get("remote.admin_token_file", str, "a string")
+    admin_token_file = t.get("remote.admin_token_file", str, "a string")
     if admin_token_file is not None and not admin_token_file.startswith(("/", "~/")):
         raise _invalid(path, "remote.admin_token_file", "must be an absolute path or start with ~/")
-    allow_plain_http = get("remote.allow_plain_http", bool, "a boolean")
-    remote_timeout = get("remote.timeout_s", (int, float), "a number")
+    allow_plain_http = t.get("remote.allow_plain_http", bool, "a boolean")
+    remote_timeout = t.get("remote.timeout_s", (int, float), "a number")
     if remote_timeout is not None and not 1 <= remote_timeout <= 3600:
         raise _invalid(path, "remote.timeout_s", "must be between 1 and 3600 seconds")
     if mode == "remote":
@@ -206,44 +174,44 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
                 "is plain http:// to a host that is not loopback: the token would travel"
                 " in clear; use https:// (or set [remote] allow_plain_http = true)",
             )
-    data_root = get("paths.data_root", str, "a string")
+    data_root = t.get("paths.data_root", str, "a string")
     if data_root is not None and not (data_root.startswith(("/", "~/"))):
         raise _invalid(path, "paths.data_root", "must be an absolute path or start with ~/")
-    providers = get("identity.providers", list, "an array of strings")
+    providers = t.get("identity.providers", list, "an array of strings")
     if providers is not None and not all(isinstance(p, str) for p in providers):
         raise _invalid(path, "identity.providers", "must be an array of strings")
-    timeout = get("storage.lock_timeout_s", (int, float), "a number")
+    timeout = t.get("storage.lock_timeout_s", (int, float), "a number")
     if timeout is not None and not 0 < timeout <= 3600:
         raise _invalid(path, "storage.lock_timeout_s", "must be between 0 and 3600 seconds")
-    durability = get("storage.durability", str, "a string")
+    durability = t.get("storage.durability", str, "a string")
     if durability not in (None, "full", "fsync"):
         raise _invalid(path, "storage.durability", "must be 'full' or 'fsync'")
-    output = get("output.default", str, "a string")
+    output = t.get("output.default", str, "a string")
     if output not in (None, "text", "json"):
         raise _invalid(path, "output.default", "must be 'text' or 'json'")
-    spill_bytes = get("output.spill_bytes", int, "an integer")
+    spill_bytes = t.get("output.spill_bytes", int, "an integer")
     if spill_bytes is not None and not 0 <= spill_bytes <= MAX_SPILL_BYTES:
         raise _invalid(path, "output.spill_bytes", f"must be between 0 and {MAX_SPILL_BYTES}")
-    spill_dir = get("output.spill_dir", str, "a string")
+    spill_dir = t.get("output.spill_dir", str, "a string")
     if spill_dir is not None and not spill_dir.startswith(("/", "~/")):
         raise _invalid(path, "output.spill_dir", "must be an absolute path or start with ~/")
-    record = get("audit.record_data_root", bool, "a boolean")
-    access_log = get("audit.access_log", bool, "a boolean")
-    max_bytes = get("files.max_bytes", int, "an integer")
+    record = t.get("audit.record_data_root", bool, "a boolean")
+    access_log = t.get("audit.access_log", bool, "a boolean")
+    max_bytes = t.get("files.max_bytes", int, "an integer")
     if max_bytes is not None and not 1 <= max_bytes <= MAX_MAX_FILE_BYTES:
         raise _invalid(path, "files.max_bytes", f"must be between 1 and {MAX_MAX_FILE_BYTES}")
-    files_store = get("files.store", str, "a string")
+    files_store = t.get("files.store", str, "a string")
     if files_store not in (None, "local", "s3"):
         raise _invalid(path, "files.store", "must be 'local' or 's3'")
-    files_s3 = _s3_table(path, tables.get("files", {}).get("s3"))
-    extract_timeout = get("extract.timeout_seconds", (int, float), "a number")
+    files_s3 = _s3_table(path, t.tables.get("files", {}).get("s3"))
+    extract_timeout = t.get("extract.timeout_seconds", (int, float), "a number")
     if extract_timeout is not None and not 0 < extract_timeout <= MAX_EXTRACT_TIMEOUT_S:
         raise _invalid(
             path,
             "extract.timeout_seconds",
             f"must be above 0 and at most {MAX_EXTRACT_TIMEOUT_S} seconds",
         )
-    extract_memory = get("extract.max_memory_mib", int, "an integer")
+    extract_memory = t.get("extract.max_memory_mib", int, "an integer")
     if extract_memory is not None and not (
         MIN_EXTRACT_MEMORY_MIB <= extract_memory <= MAX_EXTRACT_MEMORY_MIB
     ):
@@ -252,31 +220,31 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
             "extract.max_memory_mib",
             f"must be between {MIN_EXTRACT_MEMORY_MIB} and {MAX_EXTRACT_MEMORY_MIB}",
         )
-    signal_reads = get("activity.signal_reads", bool, "a boolean")
-    cors_origins = get("server.cors_origins", list, "an array of origins")
+    signal_reads = t.get("activity.signal_reads", bool, "a boolean")
+    cors_origins = t.get("server.cors_origins", list, "an array of origins")
     if cors_origins is not None and not all(
         isinstance(o, str) and ORIGIN_RE.match(o) for o in cors_origins
     ):
         raise _invalid(path, "server.cors_origins", "must be origins like https://example.org")
-    admin_api = get("server.admin_api", bool, "a boolean")
-    client_builds = get("server.client_builds", str, "a string")
+    admin_api = t.get("server.admin_api", bool, "a boolean")
+    client_builds = t.get("server.client_builds", str, "a string")
     if client_builds is not None and client_builds not in ("compatible", "exact", "warn"):
         raise _invalid(path, "server.client_builds", "must be 'compatible', 'exact' or 'warn'")
-    dist = get("server.dist", bool, "a boolean")
-    public_url = get("server.public_url", str, "a string")
+    dist = t.get("server.dist", bool, "a boolean")
+    public_url = t.get("server.public_url", str, "a string")
     if public_url is not None and not PUBLIC_URL_RE.match(public_url):
         raise _invalid(
             path,
             "server.public_url",
             "must be an http(s) URL without credentials, query or fragment",
         )
-    file_roots = _file_roots(path, tables.get("roots", {}))
+    file_roots = _file_roots(path, t.tables.get("roots", {}))
     defaults = Config(path)
     config = Config(
         path=path,
         exists=True,
-        device_id=get("device.id", str, "a string"),
-        device_name=get("device.name", str, "a string"),
+        device_id=t.get("device.id", str, "a string"),
+        device_name=t.get("device.name", str, "a string"),
         data_root=data_root,
         identity_providers=tuple(providers)
         if providers is not None
@@ -314,6 +282,58 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         else defaults.remote_timeout_s,
     )
     return config, tuple(warnings)
+
+
+@dataclass(frozen=True, slots=True)
+class _Tables:
+    """The tables of the document that are known by name; reads one typed key at a time."""
+
+    path: Path
+    tables: Mapping[str, Mapping[str, Any]]
+
+    def get(self, dotted: str, kind: type | tuple[type, ...], what: str) -> Any:
+        table, key = dotted.split(".")
+        value = self.tables.get(table, {}).get(key)
+        if value is not None and not _has_type(value, kind):
+            raise _invalid(self.path, dotted, f"must be {what}")
+        return value
+
+
+def _read_document(data: bytes, path: Path) -> dict[str, Any]:
+    """The TOML document, checked for its ``format_version``."""
+    try:
+        document = tomllib.loads(data.decode())
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        raise _invalid(path, "", f"is not valid TOML: {exc}") from None
+    version = document.get("format_version")
+    if version is None:
+        raise _invalid(path, "format_version", "is missing")
+    if version != CONFIG_FORMAT:
+        raise GraphCliError(
+            "format.unsupported_version",
+            f"{path}: unsupported format_version {version!r}",
+            details={"file": str(path), "expected": CONFIG_FORMAT, "actual": str(version)},
+        )
+    return document
+
+
+def _read_tables(path: Path, document: Mapping[str, Any]) -> tuple[_Tables, list[WarningRecord]]:
+    """The top-level keys in sorted order: unknown keys become warnings, the others must be
+    tables. The sorted walk decides which defect is reported first."""
+    warnings: list[WarningRecord] = []
+    tables: dict[str, Mapping[str, Any]] = {}
+    for key in sorted(document):
+        if key not in _KEYS[""]:
+            warnings.append(_unknown(path, key))
+        elif key != "format_version":
+            if not isinstance(document[key], dict):
+                raise _invalid(path, key, "must be a table")
+            tables[key] = document[key]
+            if key not in _OPEN_TABLES:
+                warnings += [
+                    _unknown(path, f"{key}.{k}") for k in sorted(set(document[key]) - _KEYS[key])
+                ]
+    return _Tables(path, tables), warnings
 
 
 def _s3_table(path: Path, table: object) -> S3Table:
