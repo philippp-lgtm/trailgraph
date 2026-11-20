@@ -1,4 +1,4 @@
-"""The writes of ``graph push``: their order.
+"""The writes of ``graph push``: their order and what is read before them.
 
 One push publishes a release, a skill and all three catalogs. An interrupted push is
 repeatable from any point only because the writes come in a fixed order (release, skill,
@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from support.admin import write_documents
 from support.admin_context import admin_context
 from support.fixtures import FIXTURES, ONTOLOGIES
 from support.stores import FaultSwitch
@@ -24,6 +25,28 @@ SKILL = FIXTURES / "skills" / "template" / "graph-example-graph"
 FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
 ACTIONS = FIXTURES / "actions" / "inventory" / "valid"
 VIEWS = FIXTURES / "views" / "inventory" / "valid"
+
+MIGRATION = """\
+format: graph_cli.migration/1
+from: 1.1.0
+summary: The condition worn is gone; those items count as good.
+steps:
+  - map_values: {type: inv:Item, attribute: condition, values: {worn: good}}
+"""
+SEED = [
+    {"op": "create", "type": "inv:Location", "local": "room", "attrs": {"name": "R", "code": "R1"}},
+    {"op": "create", "type": "inv:Category", "local": "tools", "attrs": {"name": "Tools"}},
+    {
+        "op": "create",
+        "type": "inv:Item",
+        "local": "hammer",
+        "attrs": {"name": "Hammer", "condition": "worn"},
+        "edges": [
+            {"rel": "inv:located_in", "target": "@room"},
+            {"rel": "inv:in_category", "target": "@tools"},
+        ],
+    },
+]
 
 WRITES = (
     CrashPoint.RELEASE_BEFORE_RENAME,
@@ -50,6 +73,11 @@ class Workspace:
             dry_run=False,
             inventory=app_inventory(),
         )
+
+    def head_seq(self) -> int:
+        entry = self.ctx.catalog.resolve("example_graph")
+        with self.ctx.maintenance.maintenance_session(entry.id, timeout_s=5.0) as session:
+            return session.head().seq
 
 
 def pulled(tmp_path: Path, version: str) -> Workspace:
@@ -80,6 +108,17 @@ def workspace(tmp_path: Path) -> Workspace:
     return found
 
 
+@pytest.fixture
+def migrating(tmp_path: Path) -> Workspace:
+    """A graph at 1.1.0 holding one worn item and a workspace that pushes 2.0.0 and a
+    migration, whose data transaction moves the head of the graph."""
+    found = pulled(tmp_path, "1.1.0")
+    write_documents(tmp_path / "root", "example_graph", [{"ops": SEED}])
+    shutil.copytree(INVENTORY / "2.0.0", found.source / "ontology" / "2.0.0")
+    (found.source / "ontology" / "2.0.0" / "migration.yaml").write_text(MIGRATION)
+    return found
+
+
 def test_a_push_writes_the_release_the_skill_and_the_catalogs_in_that_order(
     workspace: Workspace,
 ) -> None:
@@ -92,3 +131,10 @@ def test_a_push_answers_the_entry_the_release_made(workspace: Workspace) -> None
     assert pushed.entry == workspace.ctx.catalog.resolve("example_graph")
     assert pushed.entry.pin.version == "1.1.0"
     assert any(str(curie).endswith("Supplier") for curie in pushed.entry.alias_prefixes)
+
+
+def test_a_push_answers_the_head_it_found_before_its_own_writes(migrating: Workspace) -> None:
+    before = migrating.head_seq()
+    pushed = migrating.push()
+    assert migrating.head_seq() > before  # the migration moves the head: the test can tell
+    assert pushed.seq == before
