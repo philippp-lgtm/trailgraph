@@ -198,6 +198,78 @@ def test_dist_and_enroll_only_when_served(surface: str) -> None:
     assert own in bare["paths"]
 
 
+PUBLIC_URL = "https://graph.example.org/api"
+# The variants of a document: the routes the server serves and the address it is reached at.
+VARIANTS: dict[str, dict[str, Any]] = {
+    "app": dict(dist=True, enroll=True),
+    "app_without_dist": dict(dist=False, enroll=True),
+    "app_without_enroll": dict(dist=True, enroll=False),
+    "app_bare": dict(dist=False, enroll=False),
+    "app_public": dict(dist=True, enroll=True, public_url=PUBLIC_URL),
+    "admin": dict(dist=True),
+    "admin_bare": dict(dist=False),
+    "admin_public": dict(dist=True, public_url=PUBLIC_URL),
+}
+PUBLIC_ROUTES = ["/v1/health", "/v1/errors", "/v1/errors/{code}"]
+DIST_ROUTES = ["/v1/dist/manifest", "/v1/dist/{file}"]
+APP_ROUTES = [
+    "/v1/inventory",
+    "/v1/openapi.json",
+    "/v1/uploads",
+    "/v1/graphs/{graph}/files/{ref}",
+    "/v1/graphs/{graph}/skill",
+]
+ADMIN_ROUTES = ["/v1/admin/inventory", "/v1/admin/openapi.json", "/v1/uploads"]
+OPERATION_KEYS = [
+    "operationId",
+    "summary",
+    "responses",
+    "requestBody",
+    "parameters",
+    "x-graph-cli-kind",
+    "x-graph-cli-remote",
+]
+
+
+def variant_document(name: str) -> dict[str, Any]:
+    build = app_document if name.startswith("app") else admin_document
+    return build(**VARIANTS[name])
+
+
+@pytest.mark.parametrize("name", sorted(VARIANTS))
+def test_the_routes_and_keys_of_every_variant_keep_their_order(name: str) -> None:
+    """The goldens pin only the full documents, and byte for byte, so the order of the keys of
+    the others is pinned here: the document, its routes (the fixed ones, then the commands in
+    inventory order), its components and the keys of every command operation."""
+    options = VARIANTS[name]
+    document = variant_document(name)
+    assert list(document) == [
+        "openapi",
+        "info",
+        *(["servers"] if "public_url" in options else []),
+        "components",
+        "security",
+        "paths",
+    ]
+    assert list(document["components"]) == ["securitySchemes", "headers", "schemas"]
+    schemas = list(document["components"]["schemas"])
+    assert schemas == sorted(schemas)
+    fixed = [
+        *PUBLIC_ROUTES,
+        *(DIST_ROUTES if options["dist"] else []),
+        *(APP_ROUTES if name.startswith("app") else ADMIN_ROUTES),
+        *(["/v1/enroll"] if options.get("enroll") else []),
+    ]
+    routes = list(document["paths"])
+    assert routes[: len(fixed)] == fixed
+    served = routes[len(fixed) :]
+    assert served and all("/commands/" in route for route in served)
+    full = variant_document("app" if name.startswith("app") else "admin")
+    assert served == [route for route in full["paths"] if "/commands/" in route]
+    for _, operation in commands(document):
+        assert list(operation) == [key for key in OPERATION_KEYS if key in operation]
+
+
 def app_document_with(public_url: str) -> dict[str, Any]:
     from graph_cli.app_cli.commands import all_specs
     from graph_cli.app_cli.commands.meta import inventory
