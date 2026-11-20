@@ -85,3 +85,10 @@ def test_a_push_writes_the_release_the_skill_and_the_catalogs_in_that_order(
 ) -> None:
     workspace.push()
     assert [p for p in workspace.faults.seen if p in WRITES] == list(WRITES)
+
+
+def test_a_push_answers_the_entry_the_release_made(workspace: Workspace) -> None:
+    pushed = workspace.push()
+    assert pushed.entry == workspace.ctx.catalog.resolve("example_graph")
+    assert pushed.entry.pin.version == "1.1.0"
+    assert any(str(curie).endswith("Supplier") for curie in pushed.entry.alias_prefixes)
