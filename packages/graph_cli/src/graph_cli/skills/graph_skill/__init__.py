@@ -12,9 +12,6 @@ A stamp after the frontmatter names the graph, the ontology release and the
 template hash, never the program version or a time, so a new program with
 the same render installs the same files.
 
-The summary of a deprecated term starts with "Deprecated." unless the
-author already wrote it that way.
-
 Blocks (each one optional):
 
 - ``start``: load the ``graph-cli`` skill before the first command, how to tell the graph is
@@ -93,11 +90,18 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from graph_cli.kernel.canonical import JsonObject, JsonValue, canonical_bytes
+from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.ids import ALIAS_DIGITS, format_alias
 from graph_cli.kernel.json_access import as_list, as_object, opt_str, req_list, req_obj, req_str
 from graph_cli.kernel.ports.catalog import GraphEntry, skill_hash
-from graph_cli.skills.markdown import table
+from graph_cli.skills.graph_skill.pieces import (
+    code,
+    codes,
+    md_table,
+    plain,
+    term_summary,
+    value_code,
+)
 from graph_cli.skills.template import (
     ACTIONS_FILE,
     FUNCTIONS_FILE,
@@ -448,42 +452,6 @@ def _strings(value: JsonValue) -> list[str]:
     return [str(item) for item in as_list(value, "list")] if value is not None else []
 
 
-# ---- Markdown pieces ---------------------------------------------------------------
-
-
-def _code(text: str) -> str:
-    return f"`` {text} ``" if "`" in text else f"`{text}`"
-
-
-def _codes(names: Sequence[str], joiner: str = ", ") -> str:
-    return joiner.join(_code(name) for name in names)
-
-
-def _plain(text: str | None) -> str:
-    return " ".join((text or "").split())
-
-
-def _summary(term: JsonObject) -> str:
-    """The summary of a term, marked when the term is deprecated."""
-    text = _plain(opt_str(term, "summary"))
-    if term.get("deprecated") is True and not text.lower().startswith("deprecated"):
-        return f"Deprecated. {text}"
-    return text
-
-
-def _row(cells: Sequence[str]) -> list[str]:
-    """Table cells: one line each, pipes escaped (also inside code spans, GFM)."""
-    return [_plain(cell).replace("|", "\\|") for cell in cells]
-
-
-def _table(header: Sequence[str], rows: Sequence[Sequence[str]]) -> list[str]:
-    return table(header, [_row(row) for row in rows])
-
-
-def _value(value: JsonValue) -> str:
-    return _code(value if isinstance(value, str) else canonical_bytes(value).decode("utf-8"))
-
-
 def _stamp(doc: _Model, template: Template) -> str:
     digest = skill_hash({path: text.encode("utf-8") for path, text in template.files.items()})
     return (
@@ -517,15 +485,15 @@ def _patterns_source(doc: _Model) -> str:
 
 def _start(doc: _Model) -> list[str]:
     name = doc.name
-    title = f" (title: {_plain(doc.title)})" if doc.title else ""
+    title = f" (title: {plain(doc.title)})" if doc.title else ""
     return [
         "Load the `graph-cli` skill as well before your first `graph` command: it has every"
         " command with its options, the change sets of `graph apply` and the error codes. The"
         " rules of working with `graph` below hold from the first call, with or without it.",
         "",
-        f"Run `graph graphs --json`. Use this skill only if an item named {_code(name)} is"
+        f"Run `graph graphs --json`. Use this skill only if an item named {code(name)} is"
         f" listed{title}. Pass `--graph {name}` to every command, as the examples here do,"
-        f" so they work in every directory; a project whose pointer makes {_code(name)}"
+        f" so they work in every directory; a project whose pointer makes {code(name)}"
         " the default may leave it out.",
         *_language(doc),
         "",
@@ -594,7 +562,7 @@ def _language(doc: _Model) -> list[str]:
     """The graph language, and the tagged form when the model has language-tagged fields."""
     if doc.language is None:
         return []
-    text = f"Text values are written in the graph language {_code(doc.language)}."
+    text = f"Text values are written in the graph language {code(doc.language)}."
     tagged = any(
         req_str(f, "base") in LANG_BASES
         for body in doc.types.values()
@@ -603,7 +571,7 @@ def _language(doc: _Model) -> list[str]:
     if tagged:
         text += (
             " A field of base `lang_string` or `lang_text` takes another language as"
-            f" `<text>@<tag>`; without a tag it gets {_code(doc.language)}."
+            f" `<text>@<tag>`; without a tag it gets {code(doc.language)}."
         )
     return ["", text]
 
@@ -613,11 +581,11 @@ def _types(doc: _Model) -> list[str]:
     for curie in doc.listed:
         body = doc.types[curie]
         alias = doc.prefixes.get(curie)
-        name = _code(curie) + (f" ({_code(format_alias(alias, 1))})" if alias else "")
+        name = code(curie) + (f" ({code(format_alias(alias, 1))})" if alias else "")
         fields = [_field(f) for f in _ordered_fields(body) if f.get("kind") != "lifecycle"]
         ancestors = _strings(body.get("ancestors"))  # relations of a supertype apply too
-        what = _summary(body)
-        what += f" Is a {_codes(ancestors, ' and ')}." if ancestors else ""
+        what = term_summary(body)
+        what += f" Is a {codes(ancestors, ' and ')}." if ancestors else ""
         rows.append(
             [
                 name,
@@ -626,12 +594,12 @@ def _types(doc: _Model) -> list[str]:
                 _states(body),
             ]
         )
-    lines = _table(["Type", "What it is", "Fields", "States"], rows)
+    lines = md_table(["Type", "What it is", "Fields", "States"], rows)
     others = [curie for curie in doc.types if curie not in doc.listed]
     if others:
         lines += [
             "",
-            f"Other types of the model, described in `{MODEL_FILE}`: {_codes(others)}.",
+            f"Other types of the model, described in `{MODEL_FILE}`: {codes(others)}.",
         ]
     return lines
 
@@ -659,15 +627,15 @@ def _field(field: JsonObject) -> str:
     if field.get("mutability") == "immutable":
         notes.append("write-once")
     if field.get("default") is not None:
-        notes.append(f"default {_value(field['default'])}")
+        notes.append(f"default {value_code(field['default'])}")
     values = _strings(field.get("values"))
     if values:
-        notes.append(f"one of {_codes(values)}")
+        notes.append(f"one of {codes(values)}")
     role = field.get("role")
     if isinstance(role, str) and role in ROLE_MARKS:
         notes.append(ROLE_MARKS[role])
     notes += _marked(field)
-    name = _code(req_str(field, "name"))
+    name = code(req_str(field, "name"))
     return f"{name} ({', '.join(notes)})" if notes else name
 
 
@@ -688,11 +656,11 @@ def _states(body: JsonObject) -> str:
             if (b, a) not in pairs:
                 one_way.setdefault(b, []).append(a)
             elif (a, b) < (b, a):
-                shown.append(f"{_code(a)} <-> {_code(b)}")
-        shown += [f"{_codes(froms, ' or ')} -> {_code(to)}" for to, froms in one_way.items()]
-        initial = _codes(_strings(lifecycle.get("initial")))
-        terminal = _codes(_strings(lifecycle.get("terminal")))
-        text = f"{_code(_attr(lifecycle))}: " + ", ".join(shown)
+                shown.append(f"{code(a)} <-> {code(b)}")
+        shown += [f"{codes(froms, ' or ')} -> {code(to)}" for to, froms in one_way.items()]
+        initial = codes(_strings(lifecycle.get("initial")))
+        terminal = codes(_strings(lifecycle.get("terminal")))
+        text = f"{code(_attr(lifecycle))}: " + ", ".join(shown)
         text += f"; initial {initial}" if initial else ""
         text += f"; terminal {terminal}" if terminal else ""
         parts.append(text)
@@ -711,7 +679,7 @@ def _relations(doc: _Model) -> list[str]:
     for curie in doc.touching():
         relation = doc.relations[curie]
         ends = (
-            _code(doc.patterns[curie])
+            code(doc.patterns[curie])
             if curie in doc.patterns
             else f"{_ends(relation, 'domain')} -> {_ends(relation, 'range')}"
         )
@@ -723,7 +691,7 @@ def _relations(doc: _Model) -> list[str]:
             )
             if part
         )
-        lines.append(f"- {_code(curie)} {ends} ({facts}): {_summary(relation)}")
+        lines.append(f"- {code(curie)} {ends} ({facts}): {term_summary(relation)}")
     if not lines:
         return ["No relations."]
     return [
@@ -743,7 +711,7 @@ def _patterns(doc: _Model, curies: Sequence[str]) -> list[str]:
 
 def _ends(relation: JsonObject, key: str) -> str:
     ends = _strings(relation.get(key))
-    return _codes(ends, " or ") if ends else "any"
+    return codes(ends, " or ") if ends else "any"
 
 
 def _cardinality(cardinality: JsonObject) -> str:
@@ -766,10 +734,10 @@ def _relation_notes(relation: JsonObject, *, inverse: bool = True) -> str:
         notes.append(_POLICY_NOTES[policy])
     qualifiers = _strings(relation.get("qualifiers"))
     if qualifiers:
-        notes.append(f"qualifiers {_codes(qualifiers)}")
+        notes.append(f"qualifiers {codes(qualifiers)}")
     label = opt_str(relation, "inverse_label")
     if label and inverse:
-        notes.append(f"inverse {_code(label)}")
+        notes.append(f"inverse {code(label)}")
     return ", ".join(notes)
 
 
@@ -783,13 +751,13 @@ def _constraints(doc: _Model) -> list[str]:
                     key = (
                         req_str(transition, "to"),
                         req_str(guard, "id"),
-                        _plain(opt_str(guard, "summary")),
+                        plain(opt_str(guard, "summary")),
                     )
                     guarded.setdefault(key, []).append(req_str(transition, "from"))
             for (to, guard_id, summary), froms in guarded.items():
                 lines.append(
-                    f"- {_code(curie)} {_code(_attr(lifecycle))} {_codes(froms, ' or ')} ->"
-                    f" {_code(to)}: {summary} (guard {_code(guard_id)})"
+                    f"- {code(curie)} {code(_attr(lifecycle))} {codes(froms, ' or ')} ->"
+                    f" {code(to)}: {summary} (guard {code(guard_id)})"
                 )
     for curie in doc.listed if "types" not in doc.blocks else ():  # ``types`` marks them
         once = [
@@ -799,7 +767,7 @@ def _constraints(doc: _Model) -> list[str]:
         ]
         if once:
             lines.append(
-                f"- Write-once on {_code(curie)} (set at create, never changed): {_codes(once)}"
+                f"- Write-once on {code(curie)} (set at create, never changed): {codes(once)}"
             )
     rules: dict[str, tuple[JsonObject, list[str]]] = {}
     for curie in doc.listed:
@@ -808,8 +776,8 @@ def _constraints(doc: _Model) -> list[str]:
     for rule_id, (rule, on) in sorted(rules.items()):
         when = req_str(rule, "when")
         lines.append(
-            f"- Rule {_code(rule_id)} on {_codes(on)} ({req_str(rule, 'severity')},"
-            f" {WHEN.get(when, f'when {when}')}): {_summary(rule)}"
+            f"- Rule {code(rule_id)} on {codes(on)} ({req_str(rule, 'severity')},"
+            f" {WHEN.get(when, f'when {when}')}): {term_summary(rule)}"
         )
     return lines or ["No transition guards, write-once fields or rules."]
 
@@ -820,15 +788,15 @@ def _names(doc: _Model) -> list[str]:
     lines = []
     if doc.prefixes:
         prefix = next(iter(doc.prefixes.values()))
-        first = _code(format_alias(prefix, 1))
+        first = code(format_alias(prefix, 1))
         padding = (
             f"The number is zero-padded to {ALIAS_DIGITS} digits ({first}, never"
-            f" {_code(prefix + '-1')}) and grows past 9999. A full id works everywhere; on"
+            f" {code(prefix + '-1')}) and grows past 9999. A full id works everywhere; on"
             " the command line 8 or more trailing hex digits of it work too."
         )
         if doc.modular:
             lines.append(
-                f"- Aliases such as {first} ({_code(next(iter(doc.prefixes)))}) start with the"
+                f"- Aliases such as {first} ({code(next(iter(doc.prefixes)))}) start with the"
                 " prefix of the entity's type; the module pages list the prefix of every type,"
                 f" `graph describe type <type> --graph {doc.name} --json` names it"
                 f" (`alias_prefix`). {padding}"
@@ -837,7 +805,7 @@ def _names(doc: _Model) -> list[str]:
             lines.append(f"- Aliases such as {first}: the type table names each type's. {padding}")
         else:
             examples = ", ".join(
-                f"{_code(curie)} {_code(format_alias(prefix, 1))}"
+                f"{code(curie)} {code(format_alias(prefix, 1))}"
                 for curie, prefix in doc.prefixes.items()
             )
             lines.append(f"- Aliases: {examples}. {padding}")
@@ -860,7 +828,7 @@ def _names(doc: _Model) -> list[str]:
     )
     listed = not doc.modular and not ("types" in doc.blocks and set(labelled) <= set(doc.listed))
     if doc.modular:
-        roles = "; ".join(f"{_code(role)}: {text}" for role, text in ROLE_NAMES.items())
+        roles = "; ".join(f"{code(role)}: {text}" for role, text in ROLE_NAMES.items())
         lines.append(
             f"{lookup} the name fields of a type, not other text. The module pages list them"
             f" per type; `graph describe type <type> --graph {doc.name} --json` marks them with"
@@ -872,7 +840,7 @@ def _names(doc: _Model) -> list[str]:
     else:
         lines.append(f"{lookup} these fields, not other text:")
         for curie, fields in labelled.items():
-            lines.append(f"  - {_code(curie)}: {_name_fields(fields)}")
+            lines.append(f"  - {code(curie)}: {_name_fields(fields)}")
     lines.append(
         "- Names are not unique, so `lookup` returns candidates; `--for <relation>` or"
         " `--for <function>.<param>` keeps those that can fill that slot. Use the returned"
@@ -906,13 +874,13 @@ def _labelled(doc: _Model) -> dict[str, list[JsonObject]]:
 
 def _name_fields(fields: Sequence[JsonObject]) -> str:
     return ", ".join(
-        f"{_code(req_str(f, 'name'))} ({ROLE_NAMES[req_str(f, 'role')]})" for f in fields
+        f"{code(req_str(f, 'name'))} ({ROLE_NAMES[req_str(f, 'role')]})" for f in fields
     )
 
 
 def _module_links(item: JsonObject) -> str:
     links = [
-        f"{_code(req_str(k, 'module'))} ({k['out']} out, {k['in']} in)"
+        f"{code(req_str(k, 'module'))} ({k['out']} out, {k['in']} in)"
         for k in _objects(item, "links")
     ]
     return ", ".join(links) or "none"
@@ -925,7 +893,7 @@ def _modules(doc: _Model) -> list[str]:
     built = [req_str(m, "id") for m in doc.modules if m.get("builtin") is True]
     counts = _counts(doc.functions)  # the column exists only for a graph with functions
     action_counts = _counts(doc.actions)  # likewise for actions
-    lines = _table(
+    lines = md_table(
         [
             "Module",
             "Prefix",
@@ -937,9 +905,9 @@ def _modules(doc: _Model) -> list[str]:
         ],
         [
             [
-                _code(req_str(m, "id")),
-                _code(req_str(m, "prefix")),
-                _plain(opt_str(m, "summary")),
+                code(req_str(m, "id")),
+                code(req_str(m, "prefix")),
+                plain(opt_str(m, "summary")),
                 str(m["types"]),
                 *([str(counts.get(req_str(m, "id"), 0))] if doc.functions else []),
                 *([str(action_counts.get(req_str(m, "id"), 0))] if doc.actions else []),
@@ -949,7 +917,7 @@ def _modules(doc: _Model) -> list[str]:
         ],
     )
     if built:
-        lines += ["", f"Built-in modules, shared by every graph: {_codes(built)}."]
+        lines += ["", f"Built-in modules, shared by every graph: {codes(built)}."]
     name = doc.name
     lines += [
         "",
@@ -999,7 +967,7 @@ def _signature(function: JsonObject) -> str:
 
 def _function_line(function: JsonObject) -> str:
     call = f"{req_str(function, 'name')}({_signature(function)})"
-    return f"- {_code(call)}: {_plain(opt_str(function, 'summary'))}"
+    return f"- {code(call)}: {plain(opt_str(function, 'summary'))}"
 
 
 def _functions(doc: _Model) -> list[str]:
@@ -1024,10 +992,10 @@ def _functions(doc: _Model) -> list[str]:
 
 
 def _function_table(functions: Sequence[JsonObject]) -> list[str]:
-    return _table(
+    return md_table(
         ["Function", "Parameters", "Summary"],
         [
-            [_code(req_str(f, "name")), _signature(f) or "none", _plain(opt_str(f, "summary"))]
+            [code(req_str(f, "name")), _signature(f) or "none", plain(opt_str(f, "summary"))]
             for f in functions
         ],
     )
@@ -1070,13 +1038,13 @@ def _module_functions(doc: _Model, module_id: str) -> list[str]:
 
 def _action_summary(action: JsonObject) -> str:
     """The summary, and that the action needs ``--reason`` when it does (saves a refusal)."""
-    summary = _plain(opt_str(action, "summary"))
+    summary = plain(opt_str(action, "summary"))
     return f"{summary} Needs `--reason`." if action.get("reason") == "required" else summary
 
 
 def _action_line(action: JsonObject) -> str:
     call = f"{req_str(action, 'name')}({_signature(action)})"
-    return f"- {_code(call)}: {_action_summary(action)}"
+    return f"- {code(call)}: {_action_summary(action)}"
 
 
 def _actions(doc: _Model) -> list[str]:
@@ -1104,9 +1072,9 @@ def _actions(doc: _Model) -> list[str]:
 
 
 def _action_table(actions: Sequence[JsonObject]) -> list[str]:
-    return _table(
+    return md_table(
         ["Action", "Parameters", "Summary"],
-        [[_code(req_str(a, "name")), _signature(a) or "none", _action_summary(a)] for a in actions],
+        [[code(req_str(a, "name")), _signature(a) or "none", _action_summary(a)] for a in actions],
     )
 
 
@@ -1191,15 +1159,15 @@ def _model_file(doc: _Model, stamp: str) -> str:
         "",
         "## Types",
         "",
-        *_table(
+        *md_table(
             ["Type", "Alias", "Abstract", "Extends", "Summary"],
             [
                 [
-                    _code(curie),
-                    _code(format_alias(doc.prefixes[curie], 1)) if curie in doc.prefixes else "",
+                    code(curie),
+                    code(format_alias(doc.prefixes[curie], 1)) if curie in doc.prefixes else "",
                     "yes" if body.get("abstract") is True else "no",
-                    _code(str(body["extends"])) if body.get("extends") else "",
-                    _summary(body),
+                    code(str(body["extends"])) if body.get("extends") else "",
+                    term_summary(body),
                 ]
                 for curie, body in doc.types.items()
             ],
@@ -1209,16 +1177,16 @@ def _model_file(doc: _Model, stamp: str) -> str:
         "",
     ]
     if doc.relations:
-        lines += _table(
+        lines += md_table(
             ["Relation", "From", "To", "Cardinality", "Notes", "Summary"],
             [
                 [
-                    _code(curie),
+                    code(curie),
                     _ends(relation, "domain"),
                     _ends(relation, "range"),
                     _cardinality(req_obj(relation, "cardinality")),
                     _relation_notes(relation),
-                    _summary(relation),
+                    term_summary(relation),
                 ]
                 for curie, relation in sorted(doc.relations.items())
             ],
@@ -1232,7 +1200,7 @@ def _model_file(doc: _Model, stamp: str) -> str:
 
 
 def _type_section(curie: str, body: JsonObject) -> list[str]:
-    lines = [f"## `{curie}`", "", _summary(body) or "No summary."]
+    lines = [f"## `{curie}`", "", term_summary(body) or "No summary."]
     description = opt_str(body, "description")
     if description:
         lines += ["", description.strip()]
@@ -1241,28 +1209,28 @@ def _type_section(curie: str, body: JsonObject) -> list[str]:
         facts.append("Abstract (no entities of its own).")
     ancestors = _strings(body.get("ancestors"))
     if ancestors:
-        facts.append(f"Is a {_codes(ancestors)}.")
+        facts.append(f"Is a {codes(ancestors)}.")
     subtypes = _strings(body.get("subtypes"))
     if subtypes:
-        facts.append(f"Subtypes: {_codes(subtypes)}.")
+        facts.append(f"Subtypes: {codes(subtypes)}.")
     if facts:
         lines += ["", " ".join(facts)]
     fields = _objects(body, "fields")
     lines += ["", "Fields:", ""]
     if fields:
-        lines += _table(
+        lines += md_table(
             FIELD_COLUMNS,
             [
                 [
-                    _code(req_str(f, "name")),
-                    f"{req_str(f, 'kind')} {_code(req_str(f, 'type'))}",
+                    code(req_str(f, "name")),
+                    f"{req_str(f, 'kind')} {code(req_str(f, 'type'))}",
                     req_str(f, "base"),
                     _flags(f),
-                    _value(f["default"]) if f.get("default") is not None else "",
+                    value_code(f["default"]) if f.get("default") is not None else "",
                     req_str(f, "mutability"),
                     _limits(f),
-                    _code(req_str(f, "declared_in")),
-                    _summary(f),
+                    code(req_str(f, "declared_in")),
+                    term_summary(f),
                 ]
                 for f in fields
             ],
@@ -1277,16 +1245,16 @@ def _type_section(curie: str, body: JsonObject) -> list[str]:
             "",
             "Relations out:",
             "",
-            *_table(
+            *md_table(
                 ["Relation", "To", "Cardinality", "Inverse", "Qualifiers", "Summary"],
                 [
                     [
-                        _code(req_str(r, "curie")),
+                        code(req_str(r, "curie")),
                         _ends(r, "range"),
                         req_str(r, "cardinality"),
-                        _code(str(r["inverse_label"])) if r.get("inverse_label") else "",
-                        _codes(_strings(r.get("qualifiers"))),
-                        _summary(r),
+                        code(str(r["inverse_label"])) if r.get("inverse_label") else "",
+                        codes(_strings(r.get("qualifiers"))),
+                        term_summary(r),
                     ]
                     for r in out
                 ],
@@ -1298,15 +1266,15 @@ def _type_section(curie: str, body: JsonObject) -> list[str]:
             "",
             "Relations in:",
             "",
-            *_table(
+            *md_table(
                 ["Relation", "From", "Cardinality in", "Inverse", "Summary"],
                 [
                     [
-                        _code(req_str(r, "curie")),
+                        code(req_str(r, "curie")),
                         _ends(r, "from"),
                         req_str(r, "cardinality"),
-                        _code(str(r["inverse_label"])) if r.get("inverse_label") else "",
-                        _summary(r),
+                        code(str(r["inverse_label"])) if r.get("inverse_label") else "",
+                        term_summary(r),
                     ]
                     for r in into
                 ],
@@ -1318,14 +1286,14 @@ def _type_section(curie: str, body: JsonObject) -> list[str]:
             "",
             "Rules:",
             "",
-            *_table(
+            *md_table(
                 ["Rule", "Severity", "When", "Summary"],
                 [
                     [
-                        _code(req_str(r, "id")),
+                        code(req_str(r, "id")),
                         req_str(r, "severity"),
                         req_str(r, "when"),
-                        _summary(r),
+                        term_summary(r),
                     ]
                     for r in rules
                 ],
@@ -1347,19 +1315,19 @@ def _limits(field: JsonObject) -> str:
     parts = []
     values = _strings(field.get("values"))
     if values:
-        parts.append(f"one of {_codes(values)}")
+        parts.append(f"one of {codes(values)}")
     shape = VALUE_SHAPES.get(req_str(field, "base"))
     if shape is not None:
         parts.append(shape)
     limits = req_obj(field, "limits")
-    parts += [f"{name} {_value(limits[name])}" for name in sorted(limits)]
+    parts += [f"{name} {value_code(limits[name])}" for name in sorted(limits)]
     return ", ".join(parts)
 
 
 def _lifecycle_section(lifecycle: JsonObject) -> list[str]:
     lines = [
-        f"Lifecycle {_code(_attr(lifecycle))} ({_code(req_str(lifecycle, 'lifecycle'))}):"
-        f" {_summary(lifecycle)}",
+        f"Lifecycle {code(_attr(lifecycle))} ({code(req_str(lifecycle, 'lifecycle'))}):"
+        f" {term_summary(lifecycle)}",
         "",
     ]
     initial = set(_strings(lifecycle.get("initial")))
@@ -1368,13 +1336,13 @@ def _lifecycle_section(lifecycle: JsonObject) -> list[str]:
         name = req_str(state, "name")
         marks = [m for m, s in (("initial", initial), ("terminal", terminal)) if name in s]
         mark = f" ({', '.join(marks)})" if marks else ""
-        lines.append(f"- State {_code(name)}{mark}: {_plain(opt_str(state, 'summary'))}")
+        lines.append(f"- State {code(name)}{mark}: {plain(opt_str(state, 'summary'))}")
     for transition in _objects(lifecycle, "transitions"):
         guards = _objects(transition, "guards")
-        text = f"- {_code(req_str(transition, 'from'))} -> {_code(req_str(transition, 'to'))}"
+        text = f"- {code(req_str(transition, 'from'))} -> {code(req_str(transition, 'to'))}"
         if guards:
             text += ": " + "; ".join(
-                f"guard {_code(req_str(g, 'id'))}: {_plain(opt_str(g, 'summary'))}" for g in guards
+                f"guard {code(req_str(g, 'id'))}: {plain(opt_str(g, 'summary'))}" for g in guards
             )
         lines.append(text)
     return lines
@@ -1401,14 +1369,14 @@ def _model_index(doc: _Model, stamp: str) -> str:
         "",
         "## Modules",
         "",
-        *_table(
+        *md_table(
             ["Module", "Prefix", "Page", "Summary"],
             [
                 [
-                    _code(req_str(m, "id")),
-                    _code(req_str(m, "prefix")),
+                    code(req_str(m, "id")),
+                    code(req_str(m, "prefix")),
                     _page_link(doc, req_str(m, "id")),
-                    _plain(opt_str(m, "summary")),
+                    plain(opt_str(m, "summary")),
                 ]
                 for m in doc.modules
             ],
@@ -1416,17 +1384,17 @@ def _model_index(doc: _Model, stamp: str) -> str:
         "",
         "## Types",
         "",
-        *_table(
+        *md_table(
             ["Type", "Module", "Page", "Alias", "Abstract", "Extends", "Summary"],
             [
                 [
-                    _code(curie),
-                    _code(req_str(body, "module")),
+                    code(curie),
+                    code(req_str(body, "module")),
                     _page_link(doc, req_str(body, "module")),
-                    _code(format_alias(doc.prefixes[curie], 1)) if curie in doc.prefixes else "",
+                    code(format_alias(doc.prefixes[curie], 1)) if curie in doc.prefixes else "",
                     "yes" if body.get("abstract") is True else "no",
-                    _code(str(body["extends"])) if body.get("extends") else "",
-                    _summary(body),
+                    code(str(body["extends"])) if body.get("extends") else "",
+                    term_summary(body),
                 ]
                 for curie, body in doc.types.items()
             ],
@@ -1438,10 +1406,10 @@ def _model_index(doc: _Model, stamp: str) -> str:
 def _link_where(link: JsonObject, module_id: str) -> str:
     """The other modules at the ends; the declaring module too when it is neither end."""
     others = [str(m) for m in req_list(link, "other_modules")]
-    where = _codes(others) or "any"
+    where = codes(others) or "any"
     owner = req_str(link, "module")
     if owner != module_id and owner not in others:
-        where += f"; declared in {_code(owner)}"
+        where += f"; declared in {code(owner)}"
     return where
 
 
@@ -1454,7 +1422,7 @@ def _module_page(doc: _Model, module_id: str, stamp: str) -> str:
         f"# Module `{module_id}` of graph `{name}`",
         "",
         f"Prefix `{req_str(item, 'prefix')}`, version {req_str(item, 'version')}. "
-        + _plain(opt_str(item, "summary")),
+        + plain(opt_str(item, "summary")),
         "",
         f"Ontology `{doc.bundle}` {doc.version}. The live source is `graph describe module"
         f" {module_id} --graph {name} --json`; it wins when they differ. Fields, states and"
@@ -1466,18 +1434,18 @@ def _module_page(doc: _Model, module_id: str, stamp: str) -> str:
     types = _objects(item, "types")
     labelled = _labelled(doc)
     lines += (
-        _table(
+        md_table(
             ["Type", "Alias", "Abstract", "Extends", "Names", "Summary"],
             [
                 [
-                    _code(req_str(t, "curie")),
-                    _code(format_alias(doc.prefixes[req_str(t, "curie")], 1))
+                    code(req_str(t, "curie")),
+                    code(format_alias(doc.prefixes[req_str(t, "curie")], 1))
                     if req_str(t, "curie") in doc.prefixes
                     else "",
                     "yes" if t.get("abstract") is True else "no",
-                    _code(str(t["extends"])) if t.get("extends") else "",
+                    code(str(t["extends"])) if t.get("extends") else "",
                     _name_fields(labelled.get(req_str(t, "curie"), [])),
-                    _summary(t),
+                    term_summary(t),
                 ]
                 for t in types
             ],
@@ -1488,15 +1456,15 @@ def _module_page(doc: _Model, module_id: str, stamp: str) -> str:
     lines += ["", "## Relations inside the module", ""]
     relations = _objects(item, "relations")
     lines += (
-        _table(
+        md_table(
             ["Relation", "From", "To", "Cardinality", "Summary"],
             [
                 [
-                    _code(req_str(r, "curie")),
+                    code(req_str(r, "curie")),
                     _ends(r, "domain"),
                     _ends(r, "range"),
                     _cardinality(req_obj(r, "cardinality")),
-                    _summary(r),
+                    term_summary(r),
                 ]
                 for r in relations
             ],
@@ -1511,15 +1479,15 @@ def _module_page(doc: _Model, module_id: str, stamp: str) -> str:
         links = _objects(item, key)
         lines += ["", f"## {title}", ""]
         lines += (
-            _table(
+            md_table(
                 ["Relation", "From", "To", "Other modules", "Summary"],
                 [
                     [
-                        _code(req_str(k, "relation")),
+                        code(req_str(k, "relation")),
                         _ends(k, "from"),
                         _ends(k, "to"),
                         _link_where(k, module_id),
-                        _summary(k),
+                        term_summary(k),
                     ]
                     for k in links
                 ],
@@ -1530,9 +1498,9 @@ def _module_page(doc: _Model, module_id: str, stamp: str) -> str:
     rules = _objects(item, "rules")
     lines += ["", "## Rules", ""]
     lines += (
-        _table(
+        md_table(
             ["Rule", "Severity", "Summary"],
-            [[_code(req_str(r, "id")), req_str(r, "severity"), _summary(r)] for r in rules],
+            [[code(req_str(r, "id")), req_str(r, "severity"), term_summary(r)] for r in rules],
         )
         if rules
         else ["None."]
