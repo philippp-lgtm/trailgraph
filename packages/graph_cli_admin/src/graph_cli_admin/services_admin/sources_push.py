@@ -1,6 +1,6 @@
 """graph-admin graph push: a maintainer workspace pushed back to its graph.
 
-The workspace layout, the base file and pull are sources.
+The workspace layout, the base file and pull are in ``sources``.
 
 ``push`` is one maintenance operation under the graph lock, like a
 fast-forward push: the data root must still hold the base, or already what
@@ -53,6 +53,7 @@ from graph_cli.kinetic.entries import FunctionEntry, load_entries
 from graph_cli.kinetic.format import FILE_SUFFIX
 from graph_cli.kinetic.params import Problem as KineticProblem
 from graph_cli.ontology_layer.diff import derive_renames
+from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.semver import Version, is_version
 from graph_cli.skills.tree import Problem, read_tree
 from graph_cli.storage.files.layout import GraphLayout
@@ -188,6 +189,72 @@ class _Publishing:
     action_names: frozenset[str]
 
 
+@dataclass(frozen=True, slots=True)
+class _Locked:
+    """What the checks of a push under the lock read: the graph as the release leaves it
+    (``after``, before any write), the workspace, the published slots and the release plan."""
+
+    ctx: AdminContext
+    entry: GraphEntry  # re-read under the lock
+    after: GraphEntry  # the entry with the pin the release will set; the writes return the real one
+    ws: _Workspace
+    current: _Current
+    publishes: _Publishing
+    planned: release.Planned | None
+    pending: Hop | None  # the release as the last hop of the name map, for the rename hints
+    releasing: bool  # the release changes the graph: its pin moves
+
+    @classmethod
+    def of(
+        cls,
+        ctx: AdminContext,
+        entry: GraphEntry,
+        ws: _Workspace,
+        current: _Current,
+        publishes: _Publishing,
+        planned: release.Planned | None,
+        target_pin: OntologyPin,
+    ) -> _Locked:
+        releasing = planned is not None and not planned.unchanged
+        after = replace(entry, pin=target_pin) if releasing else entry
+        # The functions the graph will have must resolve against the ontology it will have.
+        pending = _pending_hop(entry, planned) if releasing else None
+        return cls(
+            ctx=ctx,
+            entry=entry,
+            after=after,
+            ws=ws,
+            current=current,
+            publishes=publishes,
+            planned=planned,
+            pending=pending,
+            releasing=releasing,
+        )
+
+    @property
+    def publishing_skill(self) -> bool:
+        return self.ws.skill.changed and self.current.skill_hash != self.ws.skill.hash
+
+    def model(self) -> CompiledModel:
+        """The model the graph will have: the compiled one for a release, else the pinned one
+        (read on each call: once per kind, as the checks run)."""
+        if self.releasing:
+            return self.ws.compiled.model
+        return pinned_model(self.ctx.catalog, self.after)
+
+
+@dataclass(frozen=True, slots=True)
+class _Catalogs:
+    """The catalogs a push publishes (``None``: not published), checked, and what the
+    warnings read of the checks afterwards."""
+
+    functions: KineticSlot | None
+    actions: KineticSlot | None
+    views: KineticSlot | None
+    action_model: CompiledModel | None  # the model the pushed actions were checked against
+    view_functions: tuple[FunctionEntry, ...]  # the functions the pushed views were checked with
+
+
 def push(
     ctx: AdminContext,
     *,
@@ -212,112 +279,22 @@ def push(
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
         entry = session.manifest().entry  # W.6: re-read under the lock
         release.check_state(entry)
-        target_pin = ws.compiled.pin if ws.ontology_changed else base.pin
+        target_pin = ws.compiled.pin if ws.ontology_changed else ws.base.pin
         current = _read_current(session)
         _check_unmoved(ws, entry, current, target_pin)
         publishes = _publishing(ws, current)
         planned = _plan_release(ctx, session, ws, current, publishes, dry_run=dry_run)
-        releasing = planned is not None and not planned.unchanged
-        after = replace(entry, pin=target_pin) if releasing else entry
-        publishing = ws.skill.changed and current.skill_hash != ws.skill.hash
-        # The functions the graph will have must resolve against the ontology it will have.
-        pending = _pending_hop(entry, planned) if releasing else None
-        function_slot = None
-        if publishes.functions:
-            label_f: Path | str = ws.functions.directory
-            model_f = ws.compiled.model if releasing else pinned_model(ctx.catalog, after)
-            checked_f = functions.check_files(
-                after,
-                ws.functions.files,
-                ws.functions.problems,
-                model_f,
-                label=label_f,
-                # one namespace per graph: no function named like a published action
-                taken=publishes.action_names,
-                hints=catalog_follow.rename_hints(ctx, entry, model_f, pending),
-                # the published views must hold with the functions: the ones the release
-                # compiled again, the pushed ones replace them
-                views=None
-                if publishes.views
-                else _after(planned.views if planned is not None else None, current.views),
-            )
-            function_slot = functions.slot_of(checked_f, after)
-        else:
-            functions.refuse(ws.functions.directory, after, ws.functions.problems)
-        action_slot = None
-        if publishes.actions:
-            model_a = ws.compiled.model if releasing else pinned_model(ctx.catalog, after)
-            checked_a = actions.check_files(
-                after,
-                ws.actions.files,
-                ws.actions.problems,
-                model_a,
-                label=ws.actions.directory,
-                function_names=publishes.function_names,
-                hints=catalog_follow.rename_hints(ctx, entry, model_a, pending),
-            )
-            action_slot = actions.slot_of(checked_a, after)
-        else:
-            actions.refuse(ws.actions.directory, after, ws.actions.problems)
-        view_slot = None
-        if publishes.views:
-            model_v = ws.compiled.model if releasing else pinned_model(ctx.catalog, after)
-            # the functions the graph will have: the pushed ones, else the published ones as
-            # the release leaves them
-            entries = function_entries(
-                function_slot
-                if function_slot is not None
-                else _after(planned.functions if planned is not None else None, current.functions)
-            )
-            checked_v = authored_views.check_files(
-                after,
-                ws.views.files,
-                ws.views.problems,
-                model_v,
-                label=ws.views.directory,
-                functions=entries,
-                hints=catalog_follow.rename_hints(ctx, entry, model_v, pending),
-            )
-            view_slot = authored_views.slot_of(checked_v, after)
-        else:
-            authored_views.refuse(ws.views.directory, after, ws.views.problems)
-        checked: skill.Checked | None = None
-        if releasing or publishing:
-            # The skill the graph will have must fit the ontology it will have.
-            model = ws.compiled.model if releasing else None
-            label: Path | str = ws.skill.directory or f"the published skill of graph {entry.name}"
-            check = (
-                ws.skill.files
-                if ws.skill.files is not None
-                else (current.skill.files if current.skill else None)
-            )
-            if check is not None:
-                checked = skill.check_files(
-                    ctx,
-                    after,
-                    dict(check),
-                    ws.skill.problems,
-                    label=label,
-                    directory=ws.skill.name if ws.skill.files is not None else None,
-                    inventory=inventory,
-                    model=model,
-                    # the catalogs the graph will have: `graph run <name>` and `graph do <name>` in
-                    # the text are checked
-                    functions=function_slot.compiled if function_slot is not None else None,
-                    actions=action_slot.compiled if action_slot is not None else None,
-                    views=view_slot.compiled if view_slot is not None else None,
-                )
-                skill.refuse(label, after, ws.skill.name, checked.problems)
-        slot = None
-        if publishing:
-            assert checked is not None and ws.skill.files is not None and ws.skill.hash is not None
-            slot = SkillSlot(checked.kind, ws.skill.hash, after.pin, ws.skill.files)
+        locked = _Locked.of(ctx, entry, ws, current, publishes, planned, target_pin)
+        catalogs = _check_catalogs(locked)
+        checked = _check_skill(locked, catalogs, inventory=inventory)
+        slot = _skill_slot(locked, checked)
         seq = session.head().seq
+        after = locked.after
         if not dry_run:
-            if releasing:
-                assert planned is not None and auth.decisions is not None
+            if locked.releasing:
+                assert locked.planned is not None and auth.decisions is not None
                 after = release.write(
-                    ctx, session, planned, auth.decisions, auth.meta, reason=reason
+                    ctx, session, locked.planned, auth.decisions, auth.meta, reason=reason
                 )
             if slot is not None:
                 skill.write(
@@ -330,7 +307,7 @@ def push(
                     slot,
                     reason=reason,
                 )
-            if function_slot is not None:
+            if catalogs.functions is not None:
                 functions.write(
                     ctx,
                     session,
@@ -338,10 +315,10 @@ def push(
                     auth.configure,
                     auth.meta,
                     current.functions,
-                    function_slot,
+                    catalogs.functions,
                     reason=reason,
                 )
-            if action_slot is not None:
+            if catalogs.actions is not None:
                 actions.write(
                     ctx,
                     session,
@@ -349,10 +326,10 @@ def push(
                     auth.configure,
                     auth.meta,
                     current.actions,
-                    action_slot,
+                    catalogs.actions,
                     reason=reason,
                 )
-            if view_slot is not None:
+            if catalogs.views is not None:
                 authored_views.write(
                     ctx,
                     session,
@@ -360,7 +337,7 @@ def push(
                     auth.configure,
                     auth.meta,
                     current.views,
-                    view_slot,
+                    catalogs.views,
                     reason=reason,
                 )
         ontology: dict[str, JsonValue] = (
@@ -378,11 +355,13 @@ def push(
         again_functions = planned.functions if planned is not None else None
         again_actions = planned.actions if planned is not None else None
         again_views = planned.views if planned is not None else None
-        final_functions = function_slot or (
+        final_functions = catalogs.functions or (
             again_functions.slot if again_functions else current.functions
         )
-        final_actions = action_slot or (again_actions.slot if again_actions else current.actions)
-        final_views = view_slot or (again_views.slot if again_views else current.views)
+        final_actions = catalogs.actions or (
+            again_actions.slot if again_actions else current.actions
+        )
+        final_views = catalogs.views or (again_views.slot if again_views else current.views)
         data: dict[str, JsonValue] = {
             "graph_id": str(entry.id),
             "ontology": {k: v for k, v in ontology.items() if k != "graph_id"},
@@ -396,27 +375,27 @@ def push(
                 "published": slot is not None and not dry_run,
             },
             "functions": None
-            if not (ws.functions.directory.is_dir() or function_slot is not None)
+            if not (ws.functions.directory.is_dir() or catalogs.functions is not None)
             else {
                 "from": current.functions.summary() if current.functions is not None else None,
                 "to": final_functions.summary() if final_functions is not None else None,
                 "functions": [n.removesuffix(FILE_SUFFIX) for n in sorted(ws.functions.files)],
-                "published": function_slot is not None and not dry_run,
+                "published": catalogs.functions is not None and not dry_run,
             },
             "actions": None
-            if not (ws.actions.directory.is_dir() or action_slot is not None)
+            if not (ws.actions.directory.is_dir() or catalogs.actions is not None)
             else {
                 "from": current.actions.summary() if current.actions is not None else None,
                 "to": final_actions.summary() if final_actions is not None else None,
                 "actions": [n.removesuffix(FILE_SUFFIX) for n in sorted(ws.actions.files)],
-                "published": action_slot is not None and not dry_run,
+                "published": catalogs.actions is not None and not dry_run,
             },
             "unchanged": not (
-                releasing
-                or publishing
-                or function_slot is not None
-                or action_slot is not None
-                or view_slot is not None
+                locked.releasing
+                or locked.publishing_skill
+                or catalogs.functions is not None
+                or catalogs.actions is not None
+                or catalogs.views is not None
             ),
             "dry_run": dry_run,
             "source": base_document(
@@ -428,7 +407,7 @@ def push(
                 "from": current.views.summary() if current.views is not None else None,
                 "to": final_views.summary() if final_views is not None else None,
                 "views": [n.removesuffix(FILE_SUFFIX) for n in sorted(ws.views.files)],
-                "published": view_slot is not None and not dry_run,
+                "published": catalogs.views is not None and not dry_run,
             }
     if not dry_run:
         write_base(
@@ -436,10 +415,15 @@ def push(
             base_document(after, after.pin, final, final_functions, final_actions, final_views),
         )
     warnings = planned.warnings if planned is not None else ()
-    if action_slot is not None:  # the published catalog was not looked at: judge the pushed one
-        warnings += marking_warnings.precondition_warnings(model_a, action_slot, entry)
-    if view_slot is not None:
-        warnings += authored_views.deprecated_warnings(view_slot, entries)
+    if (
+        catalogs.actions is not None
+    ):  # the published catalog was not looked at: judge the pushed one
+        assert catalogs.action_model is not None
+        warnings += marking_warnings.precondition_warnings(
+            catalogs.action_model, catalogs.actions, entry
+        )
+    if catalogs.views is not None:
+        warnings += authored_views.deprecated_warnings(catalogs.views, catalogs.view_functions)
     if checked is not None:
         warnings += checked.warnings(after, ws.skill.name)
     return Pushed(after, data, seq, warnings)
@@ -476,7 +460,7 @@ def _authorize(
         if ws.ontology_changed
         else None
     )
-    return _Authorized(meta, configure, decisions)
+    return _Authorized(meta=meta, configure=configure, decisions=decisions)
 
 
 def _publishing(ws: _Workspace, current: _Current) -> _Publishing:
@@ -490,7 +474,11 @@ def _publishing(ws: _Workspace, current: _Current) -> _Publishing:
     )
     action_names = _stems(ws.actions.files) if actions_published else names_of(current.actions)
     return _Publishing(
-        functions_published, actions_published, views_published, function_names, action_names
+        functions=functions_published,
+        actions=actions_published,
+        views=views_published,
+        function_names=function_names,
+        action_names=action_names,
     )
 
 
@@ -542,13 +530,149 @@ def _plan_release(
     )
 
 
+def _functions_slot(locked: _Locked) -> KineticSlot | None:
+    """The functions the push publishes, checked against the model the graph will have;
+    ``None`` when it publishes none (the folder must still be valid)."""
+    ws = locked.ws
+    if not locked.publishes.functions:
+        functions.refuse(ws.functions.directory, locked.after, ws.functions.problems)
+        return None
+    model = locked.model()
+    checked = functions.check_files(
+        locked.after,
+        ws.functions.files,
+        ws.functions.problems,
+        model,
+        label=ws.functions.directory,
+        # one namespace per graph: no function named like a published action
+        taken=locked.publishes.action_names,
+        hints=catalog_follow.rename_hints(locked.ctx, locked.entry, model, locked.pending),
+        # the published views must hold with the functions: the ones the release
+        # compiled again, the pushed ones replace them
+        views=None
+        if locked.publishes.views
+        else _after(
+            locked.planned.views if locked.planned is not None else None, locked.current.views
+        ),
+    )
+    return functions.slot_of(checked, locked.after)
+
+
+def _actions_slot(locked: _Locked) -> tuple[KineticSlot | None, CompiledModel | None]:
+    """The actions the push publishes and the model they were checked against."""
+    ws = locked.ws
+    if not locked.publishes.actions:
+        actions.refuse(ws.actions.directory, locked.after, ws.actions.problems)
+        return None, None
+    model = locked.model()
+    checked = actions.check_files(
+        locked.after,
+        ws.actions.files,
+        ws.actions.problems,
+        model,
+        label=ws.actions.directory,
+        function_names=locked.publishes.function_names,
+        hints=catalog_follow.rename_hints(locked.ctx, locked.entry, model, locked.pending),
+    )
+    return actions.slot_of(checked, locked.after), model
+
+
+def _views_slot(
+    locked: _Locked, function_slot: KineticSlot | None
+) -> tuple[KineticSlot | None, tuple[FunctionEntry, ...]]:
+    """The views the push publishes and the functions they were checked with: the pushed
+    ones, else the published ones as the release leaves them."""
+    ws = locked.ws
+    if not locked.publishes.views:
+        authored_views.refuse(ws.views.directory, locked.after, ws.views.problems)
+        return None, ()
+    model = locked.model()
+    entries = function_entries(
+        function_slot
+        if function_slot is not None
+        else _after(
+            locked.planned.functions if locked.planned is not None else None,
+            locked.current.functions,
+        )
+    )
+    checked = authored_views.check_files(
+        locked.after,
+        ws.views.files,
+        ws.views.problems,
+        model,
+        label=ws.views.directory,
+        functions=entries,
+        hints=catalog_follow.rename_hints(locked.ctx, locked.entry, model, locked.pending),
+    )
+    return authored_views.slot_of(checked, locked.after), entries
+
+
+def _check_catalogs(locked: _Locked) -> _Catalogs:
+    """Check the catalogs the graph will have, in the order functions, actions, views: the
+    first refusal is the one the user sees."""
+    function_slot = _functions_slot(locked)
+    action_slot, action_model = _actions_slot(locked)
+    view_slot, view_functions = _views_slot(locked, function_slot)
+    return _Catalogs(
+        functions=function_slot,
+        actions=action_slot,
+        views=view_slot,
+        action_model=action_model,
+        view_functions=view_functions,
+    )
+
+
+def _check_skill(
+    locked: _Locked, catalogs: _Catalogs, *, inventory: Mapping[str, JsonValue]
+) -> skill.Checked | None:
+    """The skill the graph will have, checked against the ontology and the catalogs it will
+    have; ``None`` when neither the release nor the skill changes it, or there is no skill."""
+    if not (locked.releasing or locked.publishing_skill):
+        return None
+    ws, current = locked.ws, locked.current
+    label: Path | str = ws.skill.directory or f"the published skill of graph {locked.entry.name}"
+    files = (
+        ws.skill.files
+        if ws.skill.files is not None
+        else (current.skill.files if current.skill else None)
+    )
+    if files is None:
+        return None
+    checked = skill.check_files(
+        locked.ctx,
+        locked.after,
+        dict(files),
+        ws.skill.problems,
+        label=label,
+        directory=ws.skill.name if ws.skill.files is not None else None,
+        inventory=inventory,
+        model=ws.compiled.model if locked.releasing else None,
+        # the catalogs the graph will have: `graph run <name>` and `graph do <name>` in
+        # the text are checked
+        functions=catalogs.functions.compiled if catalogs.functions is not None else None,
+        actions=catalogs.actions.compiled if catalogs.actions is not None else None,
+        views=catalogs.views.compiled if catalogs.views is not None else None,
+    )
+    skill.refuse(label, locked.after, ws.skill.name, checked.problems)
+    return checked
+
+
+def _skill_slot(locked: _Locked, checked: skill.Checked | None) -> SkillSlot | None:
+    """The slot of the skill the push publishes, ``None`` when it publishes none."""
+    if not locked.publishing_skill:
+        return None
+    ws = locked.ws
+    assert checked is not None and ws.skill.files is not None and ws.skill.hash is not None
+    return SkillSlot(checked.kind, ws.skill.hash, locked.after.pin, ws.skill.files)
+
+
 def _read_current(session: MaintenanceSession) -> _Current:
     """The published slots, read under the lock in the order skill, functions, actions, views."""
     return _Current(
-        skill.current_slot(session),
-        functions.current_slot(session),
-        actions.current_slot(session),
-        authored_views.current_slot(session),
+        skill=skill.current_slot(session),
+        functions=functions.current_slot(session),
+        actions=actions.current_slot(session),
+        views=authored_views.current_slot(session),
     )
 
 
@@ -585,15 +709,15 @@ def _read_workspace(ctx: AdminContext, entry: GraphEntry, source: Path, base: Ba
     view_folder = _read_folder(source, VIEWS, "views", base.views)
     ontology_changed = _ontology_changed(ctx, entry, base, compiled, source / ONTOLOGY)
     return _Workspace(
-        source,
-        base,
-        compiled,
-        migration,
-        skill_tree,
-        function_folder,
-        action_folder,
-        view_folder,
-        ontology_changed,
+        source=source,
+        base=base,
+        compiled=compiled,
+        migration=migration,
+        skill=skill_tree,
+        functions=function_folder,
+        actions=action_folder,
+        views=view_folder,
+        ontology_changed=ontology_changed,
     )
 
 
