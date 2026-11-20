@@ -15,7 +15,7 @@ from support.stores import FaultSwitch
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli_admin.maintenance_cli.commands.graph import app_inventory
-from graph_cli_admin.services_admin import audit, graphs, sources
+from graph_cli_admin.services_admin import audit, graphs, sources, sources_push
 from graph_cli_admin.services_admin.actions import publish as publish_actions
 from graph_cli_admin.services_admin.authored_views import publish as publish_views
 from graph_cli_admin.services_admin.check import check
@@ -308,8 +308,8 @@ def test_a_push_interrupted_between_the_release_and_the_functions_is_stale_and_r
     path = work / "functions" / "items_in_location.yaml"
     path.write_text(path.read_text().replace("located_in", "stored_in"))
 
-    def run() -> sources.Pushed:
-        return sources.push(
+    def run() -> sources_push.Pushed:
+        return sources_push.push(
             ctx,
             graph_ref="example_graph",
             source=work,
@@ -356,8 +356,8 @@ def test_a_push_interrupted_between_the_release_and_the_actions_is_stale_and_rep
     path = work / "actions" / "move_item.yaml"
     path.write_text(path.read_text().replace("located_in", "stored_in"))
 
-    def run() -> sources.Pushed:
-        return sources.push(
+    def run() -> sources_push.Pushed:
+        return sources_push.push(
             ctx,
             graph_ref="example_graph",
             source=work,
@@ -406,8 +406,8 @@ def test_a_push_interrupted_between_the_release_and_the_views_is_stale_and_repea
         path = work / folder / f"{name}.yaml"
         path.write_text(path.read_text().replace("located_in", "stored_in"))
 
-    def run() -> sources.Pushed:
-        return sources.push(
+    def run() -> sources_push.Pushed:
+        return sources_push.push(
             ctx,
             graph_ref="example_graph",
             source=work,
