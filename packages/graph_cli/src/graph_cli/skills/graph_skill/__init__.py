@@ -26,9 +26,6 @@ Blocks (each one optional):
   commands to read one module (``describe module``), find a term (``describe search``) and
   read a type (``describe type``). For a modular graph it takes the place of ``types`` and
   ``relations`` in the template.
-- ``relations``: the relations touching those types, each with its ``graph query`` pattern
-  (``(:A)-[:rel]->(:B)``, from ``describe schema``) in place of its ends; inverse labels
-  only in ``references/model.md``.
 - ``names``: the live alias format (F12; with ``types`` in the template one example, the
   table has the rest), what ``graph lookup`` matches per
   type (label roles; with ``types`` in the template, a pointer to the roles named there) and
@@ -94,6 +91,13 @@ from graph_cli.skills.graph_skill.pieces import (
     plain,
     term_summary,
     value_code,
+)
+from graph_cli.skills.graph_skill.relations import (
+    cardinality_text,
+    query_patterns,
+    relation_ends,
+    relation_notes,
+    render_relations,
 )
 from graph_cli.skills.graph_skill.type_blocks import (
     ROLE_MARKS,
@@ -406,76 +410,6 @@ def _language(doc: Model) -> list[str]:
             f" `<text>@<tag>`; without a tag it gets {code(doc.language)}."
         )
     return ["", text]
-
-
-def _relations(doc: Model) -> list[str]:
-    """One line per relation: CURIE, its ``graph query`` pattern, cardinality and notes, then
-    the summary. A list, not a table: a pattern with alternative labels (``(:A|B)``) stays as
-    it is typed, where a table cell would have to escape the pipe."""
-    lines = []
-    for curie in doc.touching():
-        relation = doc.relations[curie]
-        ends = (
-            code(doc.patterns[curie])
-            if curie in doc.patterns
-            else f"{_ends(relation, 'domain')} -> {_ends(relation, 'range')}"
-        )
-        facts = ", ".join(
-            part
-            for part in (
-                _cardinality(req_obj(relation, "cardinality")),
-                _relation_notes(relation, inverse=False),
-            )
-            if part
-        )
-        lines.append(f"- {code(curie)} {ends} ({facts}): {term_summary(relation)}")
-    if not lines:
-        return ["No relations."]
-    return [
-        "Each relation with its pattern for `graph query` (a label matches its subtypes too):",
-        "",
-        *lines,
-    ]
-
-
-def _patterns(doc: Model, curies: Sequence[str]) -> list[str]:
-    """The relations as ``graph query`` patterns, one per line."""
-    lines = [doc.patterns[curie] for curie in curies if curie in doc.patterns]
-    if not lines:
-        return []
-    return ["", "As patterns for `graph query`:", "", "```", *lines, "```"]
-
-
-def _ends(relation: JsonObject, key: str) -> str:
-    ends = strings(relation.get(key))
-    return codes(ends, " or ") if ends else "any"
-
-
-def _cardinality(cardinality: JsonObject) -> str:
-    out, into = req_str(cardinality, "out"), req_str(cardinality, "in")
-    return f"out {out}" if into == "0..n" else f"out {out}, in {into}"
-
-
-_POLICY_NOTES: Final = {
-    "refuse": "retracting or superseding a target is refused while active edges point at it",
-    "warn": "retracting or superseding a target warns while active edges point at it",
-}
-
-
-def _relation_notes(relation: JsonObject, *, inverse: bool = True) -> str:
-    """Characteristics, target policy, qualifiers and, unless left to level 2
-    (``references/model.md``), the inverse label, which no command takes."""
-    notes = list(strings(relation.get("characteristics")))
-    policy = opt_str(relation, "on_target_inactive")
-    if policy in _POLICY_NOTES:
-        notes.append(_POLICY_NOTES[policy])
-    qualifiers = strings(relation.get("qualifiers"))
-    if qualifiers:
-        notes.append(f"qualifiers {codes(qualifiers)}")
-    label = opt_str(relation, "inverse_label")
-    if label and inverse:
-        notes.append(f"inverse {code(label)}")
-    return ", ".join(notes)
 
 
 def _names(doc: Model) -> list[str]:
@@ -829,7 +763,7 @@ _BLOCKS: Final[Mapping[str, Callable[[Model], list[str]]]] = {
     "start": _start,
     "modules": _modules,
     "types": render_types,
-    "relations": _relations,
+    "relations": render_relations,
     "constraints": render_constraints,
     "names": _names,
     "model": _model_pointer,
@@ -878,16 +812,16 @@ def _model_file(doc: Model, stamp: str) -> str:
             [
                 [
                     code(curie),
-                    _ends(relation, "domain"),
-                    _ends(relation, "range"),
-                    _cardinality(req_obj(relation, "cardinality")),
-                    _relation_notes(relation),
+                    relation_ends(relation, "domain"),
+                    relation_ends(relation, "range"),
+                    cardinality_text(req_obj(relation, "cardinality")),
+                    relation_notes(relation),
                     term_summary(relation),
                 ]
                 for curie, relation in sorted(doc.relations.items())
             ],
         )
-        lines += _patterns(doc, sorted(doc.relations))
+        lines += query_patterns(doc, sorted(doc.relations))
     else:
         lines.append("No relations.")
     for curie, body in doc.types.items():
@@ -946,7 +880,7 @@ def _type_section(curie: str, body: JsonObject) -> list[str]:
                 [
                     [
                         code(req_str(r, "curie")),
-                        _ends(r, "range"),
+                        relation_ends(r, "range"),
                         req_str(r, "cardinality"),
                         code(str(r["inverse_label"])) if r.get("inverse_label") else "",
                         codes(strings(r.get("qualifiers"))),
@@ -967,7 +901,7 @@ def _type_section(curie: str, body: JsonObject) -> list[str]:
                 [
                     [
                         code(req_str(r, "curie")),
-                        _ends(r, "from"),
+                        relation_ends(r, "from"),
                         req_str(r, "cardinality"),
                         code(str(r["inverse_label"])) if r.get("inverse_label") else "",
                         term_summary(r),
@@ -1157,9 +1091,9 @@ def _module_page(doc: Model, module_id: str, stamp: str) -> str:
             [
                 [
                     code(req_str(r, "curie")),
-                    _ends(r, "domain"),
-                    _ends(r, "range"),
-                    _cardinality(req_obj(r, "cardinality")),
+                    relation_ends(r, "domain"),
+                    relation_ends(r, "range"),
+                    cardinality_text(req_obj(r, "cardinality")),
                     term_summary(r),
                 ]
                 for r in relations
@@ -1180,8 +1114,8 @@ def _module_page(doc: Model, module_id: str, stamp: str) -> str:
                 [
                     [
                         code(req_str(k, "relation")),
-                        _ends(k, "from"),
-                        _ends(k, "to"),
+                        relation_ends(k, "from"),
+                        relation_ends(k, "to"),
                         _link_where(k, module_id),
                         term_summary(k),
                     ]
