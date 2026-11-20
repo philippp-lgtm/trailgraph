@@ -219,31 +219,7 @@ def openapi(
     paths.update(_admin_routes() if admin else _app_routes(schemas))
     if enroll and not admin:
         paths.update(_enroll_routes(schemas))
-    for value in req_list(inventory, "commands"):
-        command = as_object(value, "command")
-        if command.get("remote") not in _SERVED:
-            continue
-        path = [str(part) for part in as_list(command["path"], "path")]
-        operation_id = "_".join(path)
-        params = [
-            as_object(p, "param")
-            for key in ("args", "options")
-            for p in as_list(command.get(key, []), key)
-        ]
-        _add(schemas, f"{operation_id}_data", _components(command["output"]))
-        codes = [str(c) for c in as_list(command["errors"], "errors")]
-        operation = _operation(
-            operation_id,
-            str(command.get("summary", "")),
-            _json(_answer(schemas, f"{operation_id}_data"), exit_code=True),
-            errors=_errors(codes, categories),
-            body=_args_schema(params, admin),
-        )
-        if any(p.get("name") == _KEY_OPTION for p in params):
-            operation["parameters"] = [_key_header()]
-        operation["x-graph-cli-kind"] = command.get("kind")
-        operation["x-graph-cli-remote"] = command.get("remote")
-        paths[commands + "/".join(path)] = {"post": operation}
+    paths.update(_command_routes(inventory, schemas, categories, commands=commands, admin=admin))
     title = "graph_cli server admin API" if admin else "graph_cli server API"
     document: dict[str, JsonValue] = {
         "openapi": "3.1.0",
@@ -385,6 +361,59 @@ def _enroll_routes(schemas: dict[str, JsonValue]) -> dict[str, JsonValue]:
             )
         }
     }
+
+
+def _command_routes(
+    inventory: Mapping[str, JsonValue],
+    schemas: dict[str, JsonValue],
+    categories: Mapping[str, ErrorCategory],
+    *,
+    commands: str,
+    admin: bool,
+) -> dict[str, JsonValue]:
+    """One route per command the server runs, in inventory order; adds the ``data`` of each
+    command to ``schemas``."""
+    routes: dict[str, JsonValue] = {}
+    for value in req_list(inventory, "commands"):
+        command = as_object(value, "command")
+        if command.get("remote") not in _SERVED:
+            continue
+        path = [str(part) for part in as_list(command["path"], "path")]
+        operation = _command_operation(command, path, schemas, categories, admin=admin)
+        routes[commands + "/".join(path)] = {"post": operation}
+    return routes
+
+
+def _command_operation(
+    command: Mapping[str, JsonValue],
+    path: list[str],
+    schemas: dict[str, JsonValue],
+    categories: Mapping[str, ErrorCategory],
+    *,
+    admin: bool,
+) -> dict[str, JsonValue]:
+    """The operation of one command: its ``args`` as the request body, its ``data`` as the
+    answer (added to ``schemas`` as ``<operationId>_data``), one response per error status."""
+    operation_id = "_".join(path)
+    params = [
+        as_object(p, "param")
+        for key in ("args", "options")
+        for p in as_list(command.get(key, []), key)
+    ]
+    _add(schemas, f"{operation_id}_data", _components(command["output"]))
+    codes = [str(c) for c in as_list(command["errors"], "errors")]
+    operation = _operation(
+        operation_id,
+        str(command.get("summary", "")),
+        _json(_answer(schemas, f"{operation_id}_data"), exit_code=True),
+        errors=_errors(codes, categories),
+        body=_args_schema(params, admin),
+    )
+    if any(p.get("name") == _KEY_OPTION for p in params):
+        operation["parameters"] = [_key_header()]
+    operation["x-graph-cli-kind"] = command.get("kind")
+    operation["x-graph-cli-remote"] = command.get("remote")
+    return operation
 
 
 def _operation(
