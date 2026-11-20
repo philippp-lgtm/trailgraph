@@ -34,6 +34,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
 
+from graph_cli.kernel.authz import Decision
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ports.catalog import (
@@ -44,7 +45,8 @@ from graph_cli.kernel.ports.catalog import (
     skill_hash,
     sources_hash,
 )
-from graph_cli.kernel.records import RequestMeta
+from graph_cli.kernel.ports.storage import MaintenanceSession
+from graph_cli.kernel.records import OntologyPin, RequestMeta
 from graph_cli.kernel.skill_marker import graph_skill_name
 from graph_cli.kinetic.compile import compile_catalog
 from graph_cli.kinetic.entries import FunctionEntry, load_entries
@@ -137,6 +139,41 @@ class _Workspace:
     ontology_changed: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _Authorized:
+    """What ``_authorize`` decided: the request and the decisions the writes record."""
+
+    meta: RequestMeta
+    configure: tuple[Decision, ...]
+    decisions: release.Decisions | None  # only when the ontology is a new release
+
+
+@dataclass(frozen=True, slots=True)
+class _Current:
+    """The slots a graph holds under the lock; ``None``: nothing published."""
+
+    skill: SkillSlot | None
+    functions: KineticSlot | None
+    actions: KineticSlot | None
+    views: KineticSlot | None
+
+    @property
+    def skill_hash(self) -> str | None:
+        return self.skill.hash if self.skill is not None else None
+
+    @property
+    def functions_hash(self) -> str:
+        return self.functions.hash if self.functions is not None else _EMPTY
+
+    @property
+    def actions_hash(self) -> str:
+        return self.actions.hash if self.actions is not None else _EMPTY
+
+    @property
+    def views_hash(self) -> str:
+        return self.views.hash if self.views is not None else _EMPTY
+
+
 def push(
     ctx: AdminContext,
     *,
@@ -157,63 +194,22 @@ def push(
     if not dry_run and not os.access(source, os.W_OK):
         raise usage_error(f"{source} is not writable: push records the new base there")
     ws = _read_workspace(ctx, entry, source, base)
-    arguments: dict[str, JsonValue] = {
-        "graph": str(entry.id),
-        "ontology": ws.compiled.pin.to_json(),
-        "skill": ws.skill.hash,
-        "functions": ws.functions.hash,
-        "actions": ws.actions.hash,
-        "dry_run": dry_run,
-    }
-    if ws.views.hash != _EMPTY or base.views is not None:  # a graph without views: as it was
-        arguments["views"] = ws.views.hash
-    meta = RequestMeta.of("graph push", arguments)
-    resource = f"graph:{entry.id}"
-    configure = ctx.authorize(
-        [("maint.graph_configure", resource)], request=meta, graph=entry.id, reason=reason
-    )
-    decisions = (
-        release.authorize(
-            ctx,
-            entry,
-            meta,
-            reason=reason,
-            migrate=release.wants_migration(ctx, entry, ws.compiled, ws.migration),
-        )
-        if ws.ontology_changed
-        else None
-    )
+    auth = _authorize(ctx, entry, ws, reason=reason, dry_run=dry_run)
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
         entry = session.manifest().entry  # W.6: re-read under the lock
         release.check_state(entry)
-        current = skill.current_slot(session)
         target_pin = ws.compiled.pin if ws.ontology_changed else base.pin
-        target_skill = ws.skill.hash if ws.skill.changed else base.skill
-        current_skill = current.hash if current is not None else None
-        published = functions.current_slot(session)
-        current_functions = published.hash if published is not None else _EMPTY
-        target_functions = ws.functions.hash if ws.functions.changed else base.functions
-        catalog = actions.current_slot(session)
-        current_actions = catalog.hash if catalog is not None else _EMPTY
-        target_actions = ws.actions.hash if ws.actions.changed else base.actions
-        view_catalog = authored_views.current_slot(session)
-        current_views = view_catalog.hash if view_catalog is not None else _EMPTY
-        target_views = ws.views.hash if ws.views.changed else base.views
-        if (
-            entry.pin not in (base.pin, target_pin)
-            or current_skill not in (base.skill, target_skill)
-            or current_functions not in (base.functions or _EMPTY, target_functions)
-            or current_actions not in (base.actions or _EMPTY, target_actions)
-            or current_views not in (base.views or _EMPTY, target_views)
-        ):
-            raise _conflict(source, entry, base, current, published, catalog, view_catalog)
-        publishing_functions = ws.functions.changed and current_functions != ws.functions.hash
-        publishing_actions = ws.actions.changed and current_actions != ws.actions.hash
-        publishing_views = ws.views.changed and current_views != ws.views.hash
+        current = _read_current(session)
+        _check_unmoved(ws, entry, current, target_pin)
+        publishing_functions = ws.functions.changed and current.functions_hash != ws.functions.hash
+        publishing_actions = ws.actions.changed and current.actions_hash != ws.actions.hash
+        publishing_views = ws.views.changed and current.views_hash != ws.views.hash
         # One namespace per graph: each kind is checked against the names of the other kind
         # the graph will have (the pushed files if the push publishes them, else the published).
-        function_names = _stems(ws.functions.files) if publishing_functions else names_of(published)
-        action_names = _stems(ws.actions.files) if publishing_actions else names_of(catalog)
+        function_names = (
+            _stems(ws.functions.files) if publishing_functions else names_of(current.functions)
+        )
+        action_names = _stems(ws.actions.files) if publishing_actions else names_of(current.actions)
         # The published views are checked in the release with the functions the graph will have;
         # pushed functions that do not compile, or take the name of an action, are refused below
         # (``functions.check_files``), before any write, so the release leaves the views to that
@@ -224,7 +220,7 @@ def push(
             ws.ontology_changed
             and publishing_functions
             and not publishing_views
-            and view_catalog is not None
+            and current.views is not None
         ):
             built, found = compile_catalog(ws.functions.files, ws.compiled.model)
             if found or ws.functions.problems or _stems(ws.functions.files) & action_names:
@@ -249,7 +245,7 @@ def push(
         )
         releasing = planned is not None and not planned.unchanged
         after = replace(entry, pin=target_pin) if releasing else entry
-        publishing = ws.skill.changed and current_skill != ws.skill.hash
+        publishing = ws.skill.changed and current.skill_hash != ws.skill.hash
         # The functions the graph will have must resolve against the ontology it will have.
         pending = _pending_hop(entry, planned) if releasing else None
         function_slot = None
@@ -269,7 +265,7 @@ def push(
                 # compiled again, the pushed ones replace them
                 views=None
                 if publishing_views
-                else _after(planned.views if planned is not None else None, view_catalog),
+                else _after(planned.views if planned is not None else None, current.views),
             )
             function_slot = functions.slot_of(checked_f, after)
         else:
@@ -297,7 +293,7 @@ def push(
             entries = function_entries(
                 function_slot
                 if function_slot is not None
-                else _after(planned.functions if planned is not None else None, published)
+                else _after(planned.functions if planned is not None else None, current.functions)
             )
             checked_v = authored_views.check_files(
                 after,
@@ -319,7 +315,7 @@ def push(
             check = (
                 ws.skill.files
                 if ws.skill.files is not None
-                else (current.files if current else None)
+                else (current.skill.files if current.skill else None)
             )
             if check is not None:
                 checked = skill.check_files(
@@ -345,21 +341,53 @@ def push(
         seq = session.head().seq
         if not dry_run:
             if releasing:
-                assert planned is not None and decisions is not None
-                after = release.write(ctx, session, planned, decisions, meta, reason=reason)
+                assert planned is not None and auth.decisions is not None
+                after = release.write(
+                    ctx, session, planned, auth.decisions, auth.meta, reason=reason
+                )
             if slot is not None:
-                skill.write(ctx, session, after, configure, meta, current, slot, reason=reason)
+                skill.write(
+                    ctx,
+                    session,
+                    after,
+                    auth.configure,
+                    auth.meta,
+                    current.skill,
+                    slot,
+                    reason=reason,
+                )
             if function_slot is not None:
                 functions.write(
-                    ctx, session, after, configure, meta, published, function_slot, reason=reason
+                    ctx,
+                    session,
+                    after,
+                    auth.configure,
+                    auth.meta,
+                    current.functions,
+                    function_slot,
+                    reason=reason,
                 )
             if action_slot is not None:
                 actions.write(
-                    ctx, session, after, configure, meta, catalog, action_slot, reason=reason
+                    ctx,
+                    session,
+                    after,
+                    auth.configure,
+                    auth.meta,
+                    current.actions,
+                    action_slot,
+                    reason=reason,
                 )
             if view_slot is not None:
                 authored_views.write(
-                    ctx, session, after, configure, meta, view_catalog, view_slot, reason=reason
+                    ctx,
+                    session,
+                    after,
+                    auth.configure,
+                    auth.meta,
+                    current.views,
+                    view_slot,
+                    reason=reason,
                 )
         ontology: dict[str, JsonValue] = (
             planned.data
@@ -371,14 +399,16 @@ def push(
                 "pinned": False,
             }
         )
-        final = slot if slot is not None else current
+        final = slot if slot is not None else current.skill
         # a catalog the release compiles again (plan M8) is the same sources, compiled anew
         again_functions = planned.functions if planned is not None else None
         again_actions = planned.actions if planned is not None else None
         again_views = planned.views if planned is not None else None
-        final_functions = function_slot or (again_functions.slot if again_functions else published)
-        final_actions = action_slot or (again_actions.slot if again_actions else catalog)
-        final_views = view_slot or (again_views.slot if again_views else view_catalog)
+        final_functions = function_slot or (
+            again_functions.slot if again_functions else current.functions
+        )
+        final_actions = action_slot or (again_actions.slot if again_actions else current.actions)
+        final_views = view_slot or (again_views.slot if again_views else current.views)
         data: dict[str, JsonValue] = {
             "graph_id": str(entry.id),
             "ontology": {k: v for k, v in ontology.items() if k != "graph_id"},
@@ -386,7 +416,7 @@ def push(
             if ws.skill.files is None
             else {
                 "skill": ws.skill.name,
-                "from": current.summary() if current is not None else None,
+                "from": current.skill.summary() if current.skill is not None else None,
                 "to": final.summary() if final is not None else None,
                 "files": sorted(ws.skill.files),
                 "published": slot is not None and not dry_run,
@@ -394,7 +424,7 @@ def push(
             "functions": None
             if not (ws.functions.directory.is_dir() or function_slot is not None)
             else {
-                "from": published.summary() if published is not None else None,
+                "from": current.functions.summary() if current.functions is not None else None,
                 "to": final_functions.summary() if final_functions is not None else None,
                 "functions": [n.removesuffix(FILE_SUFFIX) for n in sorted(ws.functions.files)],
                 "published": function_slot is not None and not dry_run,
@@ -402,7 +432,7 @@ def push(
             "actions": None
             if not (ws.actions.directory.is_dir() or action_slot is not None)
             else {
-                "from": catalog.summary() if catalog is not None else None,
+                "from": current.actions.summary() if current.actions is not None else None,
                 "to": final_actions.summary() if final_actions is not None else None,
                 "actions": [n.removesuffix(FILE_SUFFIX) for n in sorted(ws.actions.files)],
                 "published": action_slot is not None and not dry_run,
@@ -421,7 +451,7 @@ def push(
         }
         if final_views is not None:  # as for a graph without views: follows the slot
             data["views"] = {
-                "from": view_catalog.summary() if view_catalog is not None else None,
+                "from": current.views.summary() if current.views is not None else None,
                 "to": final_views.summary() if final_views is not None else None,
                 "views": [n.removesuffix(FILE_SUFFIX) for n in sorted(ws.views.files)],
                 "published": view_slot is not None and not dry_run,
@@ -439,6 +469,70 @@ def push(
     if checked is not None:
         warnings += checked.warnings(after, ws.skill.name)
     return Pushed(after, data, seq, warnings)
+
+
+def _authorize(
+    ctx: AdminContext, entry: GraphEntry, ws: _Workspace, *, reason: str | None, dry_run: bool
+) -> _Authorized:
+    """The decisions a push needs, before the lock: ``maint.graph_configure`` for the
+    publishes, and the release's own decisions when the ontology is a new release."""
+    arguments: dict[str, JsonValue] = {
+        "graph": str(entry.id),
+        "ontology": ws.compiled.pin.to_json(),
+        "skill": ws.skill.hash,
+        "functions": ws.functions.hash,
+        "actions": ws.actions.hash,
+        "dry_run": dry_run,
+    }
+    if ws.views.hash != _EMPTY or ws.base.views is not None:  # a graph without views: as it was
+        arguments["views"] = ws.views.hash
+    meta = RequestMeta.of("graph push", arguments)
+    resource = f"graph:{entry.id}"
+    configure = ctx.authorize(
+        [("maint.graph_configure", resource)], request=meta, graph=entry.id, reason=reason
+    )
+    decisions = (
+        release.authorize(
+            ctx,
+            entry,
+            meta,
+            reason=reason,
+            migrate=release.wants_migration(ctx, entry, ws.compiled, ws.migration),
+        )
+        if ws.ontology_changed
+        else None
+    )
+    return _Authorized(meta, configure, decisions)
+
+
+def _read_current(session: MaintenanceSession) -> _Current:
+    """The published slots, read under the lock in the order skill, functions, actions, views."""
+    return _Current(
+        skill.current_slot(session),
+        functions.current_slot(session),
+        actions.current_slot(session),
+        authored_views.current_slot(session),
+    )
+
+
+def _check_unmoved(
+    ws: _Workspace, entry: GraphEntry, current: _Current, target_pin: OntologyPin
+) -> None:
+    """``admin.source_conflict`` unless every part of the graph is still what the base says
+    or already what the push makes of it (a repeated push)."""
+    base = ws.base
+    target_skill = ws.skill.hash if ws.skill.changed else base.skill
+    target_functions = ws.functions.hash if ws.functions.changed else base.functions
+    target_actions = ws.actions.hash if ws.actions.changed else base.actions
+    target_views = ws.views.hash if ws.views.changed else base.views
+    if (
+        entry.pin not in (base.pin, target_pin)
+        or current.skill_hash not in (base.skill, target_skill)
+        or current.functions_hash not in (base.functions or _EMPTY, target_functions)
+        or current.actions_hash not in (base.actions or _EMPTY, target_actions)
+        or current.views_hash not in (base.views or _EMPTY, target_views)
+    ):
+        raise _conflict(ws.source, entry, base, current)
 
 
 def _read_workspace(ctx: AdminContext, entry: GraphEntry, source: Path, base: Base) -> _Workspace:
@@ -582,15 +676,7 @@ def _ontology_changed(
     )
 
 
-def _conflict(
-    source: Path,
-    entry: GraphEntry,
-    base: Base,
-    current: SkillSlot | None,
-    published: KineticSlot | None,
-    catalog: KineticSlot | None,
-    views: KineticSlot | None,
-) -> GraphCliError:
+def _conflict(source: Path, entry: GraphEntry, base: Base, current: _Current) -> GraphCliError:
     base_details: dict[str, JsonValue] = {
         "ontology": base.pin.to_json(),
         "skill": base.skill,
@@ -599,13 +685,13 @@ def _conflict(
     }
     current_details: dict[str, JsonValue] = {
         "ontology": entry.pin.to_json(),
-        "skill": current.hash if current is not None else None,
-        "functions": published.hash if published is not None else None,
-        "actions": catalog.hash if catalog is not None else None,
+        "skill": current.skill.hash if current.skill is not None else None,
+        "functions": current.functions.hash if current.functions is not None else None,
+        "actions": current.actions.hash if current.actions is not None else None,
     }
-    if base.views is not None or views is not None:  # a graph without views: as it was
+    if base.views is not None or current.views is not None:  # a graph without views: as it was
         base_details["views"] = base.views
-        current_details["views"] = views.hash if views is not None else None
+        current_details["views"] = current.views.hash if current.views is not None else None
     return GraphCliError(
         "admin.source_conflict",
         f"graph {entry.name} changed since {source} was pulled or last pushed; pull it into"
