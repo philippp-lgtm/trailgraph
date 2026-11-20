@@ -92,8 +92,9 @@ from typing import Final
 
 from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.ids import ALIAS_DIGITS, format_alias
-from graph_cli.kernel.json_access import as_list, as_object, opt_str, req_list, req_obj, req_str
+from graph_cli.kernel.json_access import as_object, opt_str, req_list, req_obj, req_str
 from graph_cli.kernel.ports.catalog import GraphEntry, skill_hash
+from graph_cli.skills.graph_skill.model import Model, objects, strings
 from graph_cli.skills.graph_skill.pieces import (
     code,
     codes,
@@ -112,12 +113,8 @@ from graph_cli.skills.template import (
 )
 from graph_cli.skills.tree import SKILL_FILE, Problem, SkillFiles, validate
 
-MODEL_SCHEMA: Final = "graph_cli.model/1"
-FUNCTIONS_SCHEMA: Final = "graph_cli.functions/1"  # the compiled catalog, ``graph_cli.kinetic``
 FEATURED_LIMIT: Final = 12  # functions listed in ``SKILL.md``, however many a graph has
-ACTIONS_SCHEMA: Final = "graph_cli.action_catalog/1"  # the compiled action catalog
 ACTIONS_FEATURED_LIMIT: Final = 8  # actions listed in ``SKILL.md``, however many a graph has
-VIEWS_SCHEMA: Final = "graph_cli.view_catalog/1"  # the compiled view catalog
 GENERATOR: Final = "graph_cli.skills"
 ROLE_NAMES: Final[Mapping[str, str]] = {
     "label": "main name",
@@ -179,7 +176,7 @@ def render_graph_skill(
     template: Template, model: Mapping[str, JsonValue], graph: Mapping[str, JsonValue]
 ) -> dict[str, str]:
     """``{relative path: content}`` of the skill; ``ValueError`` on documents it cannot read."""
-    doc = _Model.of(model, graph, _used(template))
+    doc = Model.of(model, graph, _used(template))
     stamp = _stamp(doc, template)
     blocks = {name: render(doc) for name, render in _BLOCKS.items()}
     lines = template.lines
@@ -235,7 +232,7 @@ def measure(
     template: Template, model: Mapping[str, JsonValue], graph: Mapping[str, JsonValue]
 ) -> Size:
     """``Size`` of the skill ``render_graph_skill`` makes of ``template``."""
-    doc = _Model.of(model, graph, _used(template))
+    doc = Model.of(model, graph, _used(template))
     rendered = render_graph_skill(template, model, graph)[SKILL_FILE]
     lines = template.lines
     marked = {index for index, _ in template.blocks}
@@ -297,162 +294,7 @@ def graph_block(entry: GraphEntry) -> dict[str, JsonValue]:
     }
 
 
-# ---- reading the documents ---------------------------------------------------------
-
-
-@dataclass(frozen=True, slots=True)
-class _Model:
-    name: str
-    title: str | None
-    language: str | None  # the graph language of the manifest (BCP 47)
-    blocks: frozenset[str]  # the blocks the template uses: one block may leave to another
-    bundle: str
-    version: str
-    prefixes: Mapping[str, str]  # type CURIE -> alias prefix, types of the model only
-    types: Mapping[str, JsonObject]  # CURIE -> the ``type`` body of ``describe type``
-    relations: Mapping[str, JsonObject]  # CURIE -> one item of ``describe relations``
-    patterns: Mapping[str, str]  # relation CURIE -> its ``describe schema`` pattern
-    modules: Sequence[JsonObject]  # the items of ``describe modules``, built-ins included
-    pages: Mapping[str, JsonObject]  # module id -> ``module`` body of ``describe module``
-    functions: Sequence[JsonObject]  # active catalog entries, by module then name
-    actions: Sequence[JsonObject]  # active action catalog entries, by module then name
-    views: Sequence[JsonObject]  # active view catalog entries, by module then name
-
-    @staticmethod
-    def of(
-        model: Mapping[str, JsonValue],
-        graph: Mapping[str, JsonValue],
-        blocks: frozenset[str] = frozenset(),
-    ) -> _Model:
-        bundle = as_object(dict(model), "model")
-        listing = _document(bundle, "types")
-        relations = _document(bundle, "relations")
-        schema = _document(bundle, "schema")
-        modules = _objects(bundle, "modules")
-        pages: dict[str, JsonObject] = {}
-        for module_id, value in sorted(req_obj(bundle, "module").items()):
-            body = req_obj(_document({"module": value}, "module"), "module")
-            if req_str(body, "id") != module_id or "/" in module_id:
-                raise ValueError(f"module document {module_id!r} describes {body.get('id')!r}")
-            pages[module_id] = body
-        types: dict[str, JsonObject] = {}
-        for curie, value in sorted(req_obj(bundle, "type").items()):
-            body = req_obj(_document({"type": value}, "type"), "type")
-            if req_str(body, "curie") != curie:
-                raise ValueError(f"type document {curie!r} describes {body.get('curie')!r}")
-            types[curie] = body
-        listed = sorted(
-            req_str(as_object(t, "types[]"), "curie") for t in req_list(listing, "types")
-        )
-        if listed != sorted(types):
-            raise ValueError("the type documents do not match the types listing")
-        ontology = req_obj(listing, "ontology")
-        block = as_object(dict(graph), "graph")
-        prefixes = {
-            curie: str(prefix)
-            for curie, prefix in sorted(req_obj(block, "alias_prefixes").items())
-            if curie in types
-        }
-        return _Model(
-            name=req_str(block, "name"),
-            title=opt_str(block, "title"),
-            language=opt_str(block, "language"),
-            blocks=blocks,
-            bundle=req_str(ontology, "bundle"),
-            version=req_str(ontology, "version"),
-            prefixes=prefixes,
-            types=types,
-            relations={
-                req_str(item, "curie"): item
-                for item in (as_object(r, "relations[]") for r in req_list(relations, "relations"))
-            },
-            patterns={
-                req_str(item, "relation"): req_str(item, "pattern")
-                for item in (
-                    as_object(r, "relationships[]") for r in req_list(schema, "relationships")
-                )
-            },
-            modules=modules,
-            pages=pages,
-            functions=_active_functions(bundle),
-            actions=_active_actions(bundle),
-            views=_active_views(bundle),
-        )
-
-    @property
-    def modular(self) -> bool:
-        """Two or more modules besides the built-in ones: the model is read module by module."""
-        return len(self.pages) >= 2
-
-    @property
-    def listed(self) -> list[str]:
-        """The entity types of the graph: those with an alias prefix, else every concrete one."""
-        if self.prefixes:
-            return sorted(self.prefixes)
-        return [curie for curie, body in self.types.items() if body.get("abstract") is not True]
-
-    def touching(self) -> list[str]:
-        """Relations from or to a listed type."""
-        found = set()
-        for curie in self.listed:
-            body = self.types[curie]
-            for key in ("relations_out", "relations_in"):
-                found |= {req_str(as_object(r, key), "curie") for r in req_list(body, key)}
-        return sorted(found)
-
-
-def _active_functions(bundle: JsonObject) -> list[JsonObject]:
-    """The active entries of the compiled catalog document, if the bundle has one."""
-    catalog = bundle.get("functions")
-    if catalog is None:
-        return []
-    document = as_object(catalog, "functions")
-    if document.get("schema") != FUNCTIONS_SCHEMA:
-        raise ValueError(f"functions: expected {FUNCTIONS_SCHEMA}, got {document.get('schema')!r}")
-    entries = [e for e in _objects(document, "functions") if e.get("status") != "deprecated"]
-    return sorted(entries, key=lambda e: (opt_str(e, "module") or "", req_str(e, "name")))
-
-
-def _active_actions(bundle: JsonObject) -> list[JsonObject]:
-    """The active entries of the compiled action catalog document, if the bundle has one."""
-    catalog = bundle.get("actions")
-    if catalog is None:
-        return []
-    document = as_object(catalog, "actions")
-    if document.get("schema") != ACTIONS_SCHEMA:
-        raise ValueError(f"actions: expected {ACTIONS_SCHEMA}, got {document.get('schema')!r}")
-    entries = [e for e in _objects(document, "actions") if e.get("status") != "deprecated"]
-    return sorted(entries, key=lambda e: (opt_str(e, "module") or "", req_str(e, "name")))
-
-
-def _active_views(bundle: JsonObject) -> list[JsonObject]:
-    """The active entries of the compiled view catalog document, if the bundle has one."""
-    catalog = bundle.get("views")
-    if catalog is None:
-        return []
-    document = as_object(catalog, "views")
-    if document.get("schema") != VIEWS_SCHEMA:
-        raise ValueError(f"views: expected {VIEWS_SCHEMA}, got {document.get('schema')!r}")
-    entries = [e for e in _objects(document, "views") if e.get("status") != "deprecated"]
-    return sorted(entries, key=lambda e: (opt_str(e, "module") or "", req_str(e, "name")))
-
-
-def _document(bundle: JsonObject, key: str) -> JsonObject:
-    doc = req_obj(bundle, key)
-    if doc.get("schema") != MODEL_SCHEMA:
-        raise ValueError(f"{key}: expected {MODEL_SCHEMA}, got {doc.get('schema')!r}")
-    return doc
-
-
-def _objects(doc: JsonObject, key: str) -> list[JsonObject]:
-    return [as_object(item, f"{key}[]") for item in req_list(doc, key)]
-
-
-def _strings(value: JsonValue) -> list[str]:
-    return [str(item) for item in as_list(value, "list")] if value is not None else []
-
-
-def _stamp(doc: _Model, template: Template) -> str:
+def _stamp(doc: Model, template: Template) -> str:
     digest = skill_hash({path: text.encode("utf-8") for path, text in template.files.items()})
     return (
         f"<!-- Generated by {GENERATOR} for graph {doc.name} from its published template"
@@ -472,7 +314,7 @@ def _frontmatter_end(lines: list[str]) -> int:
 # ---- blocks ------------------------------------------------------------------------
 
 
-def _patterns_source(doc: _Model) -> str:
+def _patterns_source(doc: Model) -> str:
     """Where the query patterns are read: the whole schema, or one module at a time."""
     if doc.modular:
         return (
@@ -483,7 +325,7 @@ def _patterns_source(doc: _Model) -> str:
     return "`graph describe schema --compact --json` lists the patterns"
 
 
-def _start(doc: _Model) -> list[str]:
+def _start(doc: Model) -> list[str]:
     name = doc.name
     title = f" (title: {plain(doc.title)})" if doc.title else ""
     return [
@@ -558,7 +400,7 @@ def _start(doc: _Model) -> list[str]:
     ]
 
 
-def _language(doc: _Model) -> list[str]:
+def _language(doc: Model) -> list[str]:
     """The graph language, and the tagged form when the model has language-tagged fields."""
     if doc.language is None:
         return []
@@ -566,7 +408,7 @@ def _language(doc: _Model) -> list[str]:
     tagged = any(
         req_str(f, "base") in LANG_BASES
         for body in doc.types.values()
-        for f in _objects(body, "fields")
+        for f in objects(body, "fields")
     )
     if tagged:
         text += (
@@ -576,14 +418,14 @@ def _language(doc: _Model) -> list[str]:
     return ["", text]
 
 
-def _types(doc: _Model) -> list[str]:
+def _types(doc: Model) -> list[str]:
     rows = []
     for curie in doc.listed:
         body = doc.types[curie]
         alias = doc.prefixes.get(curie)
         name = code(curie) + (f" ({code(format_alias(alias, 1))})" if alias else "")
         fields = [_field(f) for f in _ordered_fields(body) if f.get("kind") != "lifecycle"]
-        ancestors = _strings(body.get("ancestors"))  # relations of a supertype apply too
+        ancestors = strings(body.get("ancestors"))  # relations of a supertype apply too
         what = term_summary(body)
         what += f" Is a {codes(ancestors, ' and ')}." if ancestors else ""
         rows.append(
@@ -613,7 +455,7 @@ def _ordered_fields(body: JsonObject) -> list[JsonObject]:
         rank = roles.index(role) if isinstance(role, str) and role in roles else len(roles)
         return (rank, 0 if field.get("required") is True else 1, req_str(field, "name"))
 
-    return sorted(_objects(body, "fields"), key=key)
+    return sorted(objects(body, "fields"), key=key)
 
 
 def _field(field: JsonObject) -> str:
@@ -628,7 +470,7 @@ def _field(field: JsonObject) -> str:
         notes.append("write-once")
     if field.get("default") is not None:
         notes.append(f"default {value_code(field['default'])}")
-    values = _strings(field.get("values"))
+    values = strings(field.get("values"))
     if values:
         notes.append(f"one of {codes(values)}")
     role = field.get("role")
@@ -642,14 +484,14 @@ def _field(field: JsonObject) -> str:
 def _marked(field: JsonObject) -> list[str]:
     """The mark of a marked field, ``marked ex:personal`` (conjunctive markings joined by
     ``+``); nothing for an unmarked one."""
-    markings = _strings(field.get("markings"))
+    markings = strings(field.get("markings"))
     return [f"marked {'+'.join(markings)}"] if markings else []
 
 
 def _states(body: JsonObject) -> str:
     parts = []
-    for lifecycle in _objects(body, "lifecycles"):
-        pairs = [(req_str(t, "from"), req_str(t, "to")) for t in _objects(lifecycle, "transitions")]
+    for lifecycle in objects(body, "lifecycles"):
+        pairs = [(req_str(t, "from"), req_str(t, "to")) for t in objects(lifecycle, "transitions")]
         shown: list[str] = []
         one_way: dict[str, list[str]] = {}  # to -> from states, in model order
         for a, b in pairs:
@@ -658,8 +500,8 @@ def _states(body: JsonObject) -> str:
             elif (a, b) < (b, a):
                 shown.append(f"{code(a)} <-> {code(b)}")
         shown += [f"{codes(froms, ' or ')} -> {code(to)}" for to, froms in one_way.items()]
-        initial = codes(_strings(lifecycle.get("initial")))
-        terminal = codes(_strings(lifecycle.get("terminal")))
+        initial = codes(strings(lifecycle.get("initial")))
+        terminal = codes(strings(lifecycle.get("terminal")))
         text = f"{code(_attr(lifecycle))}: " + ", ".join(shown)
         text += f"; initial {initial}" if initial else ""
         text += f"; terminal {terminal}" if terminal else ""
@@ -671,7 +513,7 @@ def _attr(lifecycle: JsonObject) -> str:
     return opt_str(lifecycle, "attr") or "status"
 
 
-def _relations(doc: _Model) -> list[str]:
+def _relations(doc: Model) -> list[str]:
     """One line per relation: CURIE, its ``graph query`` pattern, cardinality and notes, then
     the summary. A list, not a table: a pattern with alternative labels (``(:A|B)``) stays as
     it is typed, where a table cell would have to escape the pipe."""
@@ -701,7 +543,7 @@ def _relations(doc: _Model) -> list[str]:
     ]
 
 
-def _patterns(doc: _Model, curies: Sequence[str]) -> list[str]:
+def _patterns(doc: Model, curies: Sequence[str]) -> list[str]:
     """The relations as ``graph query`` patterns, one per line."""
     lines = [doc.patterns[curie] for curie in curies if curie in doc.patterns]
     if not lines:
@@ -710,7 +552,7 @@ def _patterns(doc: _Model, curies: Sequence[str]) -> list[str]:
 
 
 def _ends(relation: JsonObject, key: str) -> str:
-    ends = _strings(relation.get(key))
+    ends = strings(relation.get(key))
     return codes(ends, " or ") if ends else "any"
 
 
@@ -728,11 +570,11 @@ _POLICY_NOTES: Final = {
 def _relation_notes(relation: JsonObject, *, inverse: bool = True) -> str:
     """Characteristics, target policy, qualifiers and, unless left to level 2
     (``references/model.md``), the inverse label, which no command takes."""
-    notes = list(_strings(relation.get("characteristics")))
+    notes = list(strings(relation.get("characteristics")))
     policy = opt_str(relation, "on_target_inactive")
     if policy in _POLICY_NOTES:
         notes.append(_POLICY_NOTES[policy])
-    qualifiers = _strings(relation.get("qualifiers"))
+    qualifiers = strings(relation.get("qualifiers"))
     if qualifiers:
         notes.append(f"qualifiers {codes(qualifiers)}")
     label = opt_str(relation, "inverse_label")
@@ -741,13 +583,13 @@ def _relation_notes(relation: JsonObject, *, inverse: bool = True) -> str:
     return ", ".join(notes)
 
 
-def _constraints(doc: _Model) -> list[str]:
+def _constraints(doc: Model) -> list[str]:
     lines = []
     for curie in doc.listed:
-        for lifecycle in _objects(doc.types[curie], "lifecycles"):
+        for lifecycle in objects(doc.types[curie], "lifecycles"):
             guarded: dict[tuple[str, str, str], list[str]] = {}  # (to, id, summary) -> froms
-            for transition in _objects(lifecycle, "transitions"):
-                for guard in _objects(transition, "guards"):
+            for transition in objects(lifecycle, "transitions"):
+                for guard in objects(transition, "guards"):
                     key = (
                         req_str(transition, "to"),
                         req_str(guard, "id"),
@@ -762,7 +604,7 @@ def _constraints(doc: _Model) -> list[str]:
     for curie in doc.listed if "types" not in doc.blocks else ():  # ``types`` marks them
         once = [
             req_str(f, "name")
-            for f in _objects(doc.types[curie], "fields")
+            for f in objects(doc.types[curie], "fields")
             if f.get("mutability") == "immutable"
         ]
         if once:
@@ -771,7 +613,7 @@ def _constraints(doc: _Model) -> list[str]:
             )
     rules: dict[str, tuple[JsonObject, list[str]]] = {}
     for curie in doc.listed:
-        for rule in _objects(doc.types[curie], "rules"):
+        for rule in objects(doc.types[curie], "rules"):
             rules.setdefault(req_str(rule, "id"), (rule, []))[1].append(curie)
     for rule_id, (rule, on) in sorted(rules.items()):
         when = req_str(rule, "when")
@@ -782,7 +624,7 @@ def _constraints(doc: _Model) -> list[str]:
     return lines or ["No transition guards, write-once fields or rules."]
 
 
-def _names(doc: _Model) -> list[str]:
+def _names(doc: Model) -> list[str]:
     """Aliases and what ``lookup`` matches. A modular graph gets one example alias and the
     places that list the rest, so the block does not grow with the types (L0 budget)."""
     lines = []
@@ -862,7 +704,7 @@ def _names(doc: _Model) -> list[str]:
     return lines
 
 
-def _labelled(doc: _Model) -> dict[str, list[JsonObject]]:
+def _labelled(doc: Model) -> dict[str, list[JsonObject]]:
     """The name fields (label roles) of every concrete type that has any."""
     found = {
         curie: [f for f in _ordered_fields(body) if f.get("role") in ROLE_NAMES]
@@ -881,12 +723,12 @@ def _name_fields(fields: Sequence[JsonObject]) -> str:
 def _module_links(item: JsonObject) -> str:
     links = [
         f"{code(req_str(k, 'module'))} ({k['out']} out, {k['in']} in)"
-        for k in _objects(item, "links")
+        for k in objects(item, "links")
     ]
     return ", ".join(links) or "none"
 
 
-def _modules(doc: _Model) -> list[str]:
+def _modules(doc: Model) -> list[str]:
     """Level 0: the subject areas, then how to read one. Built-in modules (shared by every
     graph) get one line, not a row."""
     shown = [m for m in doc.modules if m.get("builtin") is not True]
@@ -970,7 +812,7 @@ def _function_line(function: JsonObject) -> str:
     return f"- {code(call)}: {plain(opt_str(function, 'summary'))}"
 
 
-def _functions(doc: _Model) -> list[str]:
+def _functions(doc: Model) -> list[str]:
     """Level 0: a few featured functions and how to find the rest (K12)."""
     if not doc.functions:
         return ["This graph has no published functions."]
@@ -1001,7 +843,7 @@ def _function_table(functions: Sequence[JsonObject]) -> list[str]:
     )
 
 
-def _function_hint(doc: _Model) -> list[str]:
+def _function_hint(doc: Model) -> list[str]:
     return [
         "",
         f"Run one with `graph run <function> --param <name>=<value> --graph {doc.name} --json`;"
@@ -1010,7 +852,7 @@ def _function_hint(doc: _Model) -> list[str]:
     ]
 
 
-def _functions_file(doc: _Model, stamp: str) -> str:
+def _functions_file(doc: Model, stamp: str) -> str:
     """``references/functions.md`` of a single-module graph."""
     lines = [
         stamp,
@@ -1026,7 +868,7 @@ def _functions_file(doc: _Model, stamp: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _module_functions(doc: _Model, module_id: str) -> list[str]:
+def _module_functions(doc: Model, module_id: str) -> list[str]:
     """The ``Functions`` section of a module page (none for a graph without functions)."""
     if not doc.functions:
         return []
@@ -1047,7 +889,7 @@ def _action_line(action: JsonObject) -> str:
     return f"- {code(call)}: {_action_summary(action)}"
 
 
-def _actions(doc: _Model) -> list[str]:
+def _actions(doc: Model) -> list[str]:
     """Level 0: a few featured actions, how to find the rest and the dry-run rule (A11)."""
     if not doc.actions:
         return ["This graph has no published actions."]
@@ -1078,7 +920,7 @@ def _action_table(actions: Sequence[JsonObject]) -> list[str]:
     )
 
 
-def _action_hint(doc: _Model) -> list[str]:
+def _action_hint(doc: Model) -> list[str]:
     return [
         "",
         f"Dry run first: `graph do <action> --param <name>=<value> --graph {doc.name}"
@@ -1088,7 +930,7 @@ def _action_hint(doc: _Model) -> list[str]:
     ]
 
 
-def _actions_file(doc: _Model, stamp: str) -> str:
+def _actions_file(doc: Model, stamp: str) -> str:
     """``references/actions.md`` of a single-module graph."""
     lines = [
         stamp,
@@ -1104,7 +946,7 @@ def _actions_file(doc: _Model, stamp: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _module_actions(doc: _Model, module_id: str) -> list[str]:
+def _module_actions(doc: Model, module_id: str) -> list[str]:
     """The ``Actions`` section of a module page (none for a graph without actions)."""
     if not doc.actions:
         return []
@@ -1114,7 +956,7 @@ def _module_actions(doc: _Model, module_id: str) -> list[str]:
     return ["", "## Actions", "", *_action_table(own), *_action_hint(doc)]
 
 
-def _model_pointer(doc: _Model) -> list[str]:
+def _model_pointer(doc: Model) -> list[str]:
     if doc.modular:
         return [
             f"The modules and every type with its module and page: [{MODEL_FILE}]({MODEL_FILE});"
@@ -1129,7 +971,7 @@ def _model_pointer(doc: _Model) -> list[str]:
     ]
 
 
-_BLOCKS: Final[Mapping[str, Callable[[_Model], list[str]]]] = {
+_BLOCKS: Final[Mapping[str, Callable[[Model], list[str]]]] = {
     "start": _start,
     "modules": _modules,
     "types": _types,
@@ -1145,7 +987,7 @@ _BLOCKS: Final[Mapping[str, Callable[[_Model], list[str]]]] = {
 # ---- references/model.md -----------------------------------------------------------
 
 
-def _model_file(doc: _Model, stamp: str) -> str:
+def _model_file(doc: Model, stamp: str) -> str:
     if doc.modular:
         return _model_index(doc, stamp)
     lines = [
@@ -1207,15 +1049,15 @@ def _type_section(curie: str, body: JsonObject) -> list[str]:
     facts = []
     if body.get("abstract") is True:
         facts.append("Abstract (no entities of its own).")
-    ancestors = _strings(body.get("ancestors"))
+    ancestors = strings(body.get("ancestors"))
     if ancestors:
         facts.append(f"Is a {codes(ancestors)}.")
-    subtypes = _strings(body.get("subtypes"))
+    subtypes = strings(body.get("subtypes"))
     if subtypes:
         facts.append(f"Subtypes: {codes(subtypes)}.")
     if facts:
         lines += ["", " ".join(facts)]
-    fields = _objects(body, "fields")
+    fields = objects(body, "fields")
     lines += ["", "Fields:", ""]
     if fields:
         lines += md_table(
@@ -1237,9 +1079,9 @@ def _type_section(curie: str, body: JsonObject) -> list[str]:
         )
     else:
         lines.append("None.")
-    for lifecycle in _objects(body, "lifecycles"):
+    for lifecycle in objects(body, "lifecycles"):
         lines += ["", *_lifecycle_section(lifecycle)]
-    out = _objects(body, "relations_out")
+    out = objects(body, "relations_out")
     if out:
         lines += [
             "",
@@ -1253,14 +1095,14 @@ def _type_section(curie: str, body: JsonObject) -> list[str]:
                         _ends(r, "range"),
                         req_str(r, "cardinality"),
                         code(str(r["inverse_label"])) if r.get("inverse_label") else "",
-                        codes(_strings(r.get("qualifiers"))),
+                        codes(strings(r.get("qualifiers"))),
                         term_summary(r),
                     ]
                     for r in out
                 ],
             ),
         ]
-    into = _objects(body, "relations_in")
+    into = objects(body, "relations_in")
     if into:
         lines += [
             "",
@@ -1280,7 +1122,7 @@ def _type_section(curie: str, body: JsonObject) -> list[str]:
                 ],
             ),
         ]
-    rules = _objects(body, "rules")
+    rules = objects(body, "rules")
     if rules:
         lines += [
             "",
@@ -1313,7 +1155,7 @@ def _flags(field: JsonObject) -> str:
 
 def _limits(field: JsonObject) -> str:
     parts = []
-    values = _strings(field.get("values"))
+    values = strings(field.get("values"))
     if values:
         parts.append(f"one of {codes(values)}")
     shape = VALUE_SHAPES.get(req_str(field, "base"))
@@ -1330,15 +1172,15 @@ def _lifecycle_section(lifecycle: JsonObject) -> list[str]:
         f" {term_summary(lifecycle)}",
         "",
     ]
-    initial = set(_strings(lifecycle.get("initial")))
-    terminal = set(_strings(lifecycle.get("terminal")))
-    for state in _objects(lifecycle, "states"):
+    initial = set(strings(lifecycle.get("initial")))
+    terminal = set(strings(lifecycle.get("terminal")))
+    for state in objects(lifecycle, "states"):
         name = req_str(state, "name")
         marks = [m for m, s in (("initial", initial), ("terminal", terminal)) if name in s]
         mark = f" ({', '.join(marks)})" if marks else ""
         lines.append(f"- State {code(name)}{mark}: {plain(opt_str(state, 'summary'))}")
-    for transition in _objects(lifecycle, "transitions"):
-        guards = _objects(transition, "guards")
+    for transition in objects(lifecycle, "transitions"):
+        guards = objects(transition, "guards")
         text = f"- {code(req_str(transition, 'from'))} -> {code(req_str(transition, 'to'))}"
         if guards:
             text += ": " + "; ".join(
@@ -1351,11 +1193,11 @@ def _lifecycle_section(lifecycle: JsonObject) -> list[str]:
 # ---- modular graphs: references/model.md as an index, references/modules/<module>.md -----
 
 
-def _page_link(doc: _Model, module_id: str) -> str:
+def _page_link(doc: Model, module_id: str) -> str:
     return f"[{module_id}.md](modules/{module_id}.md)" if module_id in doc.pages else ""
 
 
-def _model_index(doc: _Model, stamp: str) -> str:
+def _model_index(doc: Model, stamp: str) -> str:
     lines = [
         stamp,
         "",
@@ -1413,7 +1255,7 @@ def _link_where(link: JsonObject, module_id: str) -> str:
     return where
 
 
-def _module_page(doc: _Model, module_id: str, stamp: str) -> str:
+def _module_page(doc: Model, module_id: str, stamp: str) -> str:
     item = doc.pages[module_id]
     name = doc.name
     lines = [
@@ -1431,7 +1273,7 @@ def _module_page(doc: _Model, module_id: str, stamp: str) -> str:
         "## Types",
         "",
     ]
-    types = _objects(item, "types")
+    types = objects(item, "types")
     labelled = _labelled(doc)
     lines += (
         md_table(
@@ -1454,7 +1296,7 @@ def _module_page(doc: _Model, module_id: str, stamp: str) -> str:
         else ["None."]
     )
     lines += ["", "## Relations inside the module", ""]
-    relations = _objects(item, "relations")
+    relations = objects(item, "relations")
     lines += (
         md_table(
             ["Relation", "From", "To", "Cardinality", "Summary"],
@@ -1476,7 +1318,7 @@ def _module_page(doc: _Model, module_id: str, stamp: str) -> str:
         ("links_out", "Links to other modules"),
         ("links_in", "Links from other modules"),
     ):
-        links = _objects(item, key)
+        links = objects(item, key)
         lines += ["", f"## {title}", ""]
         lines += (
             md_table(
@@ -1495,7 +1337,7 @@ def _module_page(doc: _Model, module_id: str, stamp: str) -> str:
             if links
             else ["None."]
         )
-    rules = _objects(item, "rules")
+    rules = objects(item, "rules")
     lines += ["", "## Rules", ""]
     lines += (
         md_table(
