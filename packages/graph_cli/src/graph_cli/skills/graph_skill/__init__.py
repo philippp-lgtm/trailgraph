@@ -10,14 +10,15 @@ model and the manifest go in, never graph data (no counts, no records).
 
 One module per part:
 
-- ``render``: the renderer (``render_graph_skill``, ``render_checked``, ``graph_block``) and
-  ``BLOCKS``, the blocks in the order they render.
+- ``render``: the renderer (``render_graph_skill``, ``render_checked``,
+  ``graph_block``) and ``BLOCKS``, the blocks in the order they render.
 - ``budget``: the level 0 budgets and ``measure``.
-- ``model``: reads the model documents; ``pieces``: the Markdown pieces the blocks share.
-- The blocks (each one optional), one module per section of the generated skill: ``start``,
-  ``modules`` (also the pages of a modular graph), ``type_blocks`` (``types``,
-  ``constraints``), ``relations``, ``naming`` (``names``), ``reference`` (``model``,
-  ``references/model.md``) and ``catalogs`` (``functions``, ``actions``).
+- ``model``: reads the model documents.
+- ``pieces``: the Markdown pieces the blocks share.
+- The blocks (each one optional), one module per section of the generated skill:
+  ``start``, ``modules`` (also the pages of a modular graph), ``type_blocks``
+  (``types``, ``constraints``), ``relations``, ``naming`` (``names``), ``reference``
+  (``model``, ``references/model.md``) and ``catalogs`` (``functions``, ``actions``).
 """
 
 from __future__ import annotations

@@ -12,15 +12,15 @@
 The compiled function catalog (``graph_cli.functions/1``, the key ``functions`` of the model
 documents) is one more input document; the renderer reads only its public shape and never
 imports ``graph_cli.kinetic``. A graph without active functions renders exactly as before.
-With some, the ``modules`` block gets a ``Functions`` column, every module page a
-``Functions`` section and a single-module graph the page ``references/functions.md``
+With some, the ``modules`` block and the module pages (module ``modules``) get a ``Functions``
+column and section, and a single-module graph the page ``references/functions.md``
 (deprecated functions are left out everywhere).
 
 The compiled action catalog (``graph_cli.action_catalog/1``, the key ``actions``) is one more
 input document, present only when the graph has actions the reader may see; it is rendered
-the same way: an ``Actions`` column, an ``Actions`` section on every module page and
-``references/actions.md`` for a single-module graph. A graph without active actions renders
-exactly as before.
+the same way: an ``Actions`` column and section in the ``modules`` block and the module
+pages, and ``references/actions.md`` for a single-module graph. A graph without active
+actions renders exactly as before.
 """
 
 from __future__ import annotations

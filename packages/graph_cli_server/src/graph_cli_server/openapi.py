@@ -226,6 +226,7 @@ def _component_schemas(inventory: Mapping[str, JsonValue]) -> dict[str, JsonValu
 
 
 def _error_categories(inventory: Mapping[str, JsonValue]) -> dict[str, ErrorCategory]:
+    """The category of each error code of the inventory."""
     return {
         req_str(entry, "code"): ErrorCategory(req_str(entry, "category"))
         for entry in (as_object(e, "error_code") for e in req_list(inventory, "error_codes"))
@@ -265,6 +266,8 @@ def _document(
 
 
 def _components_section(schemas: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    """The ``components`` of the document: the bearer scheme, the two response headers and
+    the collected schemas in name order."""
     return {
         "securitySchemes": {"bearer": {"type": "http", "scheme": "bearer"}},
         "headers": {
@@ -329,6 +332,7 @@ def _dist_routes() -> dict[str, JsonValue]:
 
 
 def _upload_route() -> dict[str, JsonValue]:
+    """The path item of ``/v1/uploads``: one ``put`` that stages bytes."""
     return {"put": _operation("upload", "Stage bytes for a file parameter.", _json(UPLOADED))}
 
 

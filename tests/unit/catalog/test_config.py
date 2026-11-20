@@ -297,6 +297,10 @@ _REMOTE_BAD_ENDPOINT = 'format_version = 1\n[runtime]\nmode = "remote"\nendpoint
             "paths.data_root",
         ),
         (
+            'format_version = 1\n[identity]\nproviders = "os"\n[paths]\ndata_root = "relative"\n',
+            "paths.data_root",
+        ),
+        (
             'format_version = 1\n[identity]\nproviders = "os"\n[storage]\nlock_timeout_s = 0\n',
             "identity.providers",
         ),

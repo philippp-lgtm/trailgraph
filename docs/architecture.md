@@ -125,11 +125,13 @@ actor, model parts) and `graph_cli_admin.maintenance_cli.output_schemas`
 enrollment). The admin skills are package data of `graph_cli_admin`
 (`bundled_skills/`), read by `maintenance_cli.admin_skills` and installed
 with `graph_cli.skills.install`, whose scan sees only one owner's skills
-(`Owner`: marker kinds and names). `graph_cli.skills.graph_skill` renders a graph skill
-and is a package: `render` (template to files), `budget` (size checks), `model` (reads the
-model documents) and one module per section of the generated skill (`start`, `type_blocks`,
-`relations`, `naming`, `catalogs`, `reference`, `modules`). Query planning (`graph_cli.query.plan`) turns `find`
-and `neighbors` flags into the query AST, `graph_cli.query.lookup` plans,
+(`Owner`: marker kinds and names). `graph_cli.skills.graph_skill` renders a
+graph skill and is a package: `render` (template to files), `budget` (size
+checks), `model` (reads the model documents), `pieces` (the Markdown pieces
+the blocks share) and one module per section of the generated skill (`start`,
+`type_blocks`, `relations`, `naming`, `catalogs`, `reference`, `modules`).
+Query planning (`graph_cli.query.plan`) turns `find` and `neighbors` flags
+into the query AST, `graph_cli.query.lookup` plans,
 matches and ranks `lookup`, `graph_cli.query.search` the same for `search`
 (match keys and trigrams in `kernel.text`); `services.read` and `services.describe` answer
 them; `services.schema_search` ranks the terms of the model and the functions, actions and views

@@ -259,6 +259,7 @@ def _check_endpoint(t: _Tables, config: Config) -> Config:
 
 
 def _read_paths(t: _Tables, config: Config) -> Config:
+    """``[paths]``: the data root, an absolute path or ``~/...``."""
     data_root = t.get("paths.data_root", str, "a string")
     if data_root is not None and not (data_root.startswith(("/", "~/"))):
         raise _invalid(t.path, "paths.data_root", "must be an absolute path or start with ~/")
@@ -392,6 +393,7 @@ def _read_server(t: _Tables, config: Config) -> Config:
 
 
 def _read_roots(t: _Tables, config: Config) -> Config:
+    """``[roots]``: the named file roots (see ``_file_roots``)."""
     return replace(config, file_roots=_file_roots(t.path, t.tables.get("roots", {})))
 
 
