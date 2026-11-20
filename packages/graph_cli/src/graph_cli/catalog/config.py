@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Final, Literal
@@ -148,107 +148,8 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
     document = _read_document(data, path)
     t, warnings = _read_tables(path, document)
     config = Config(path, exists=True)
-    config = _read_runtime(t, config)
-    config = _read_remote(t, config)
-    config = _check_endpoint(t, config)
-    data_root = t.get("paths.data_root", str, "a string")
-    if data_root is not None and not (data_root.startswith(("/", "~/"))):
-        raise _invalid(path, "paths.data_root", "must be an absolute path or start with ~/")
-    providers = t.get("identity.providers", list, "an array of strings")
-    if providers is not None and not all(isinstance(p, str) for p in providers):
-        raise _invalid(path, "identity.providers", "must be an array of strings")
-    timeout = t.get("storage.lock_timeout_s", (int, float), "a number")
-    if timeout is not None and not 0 < timeout <= 3600:
-        raise _invalid(path, "storage.lock_timeout_s", "must be between 0 and 3600 seconds")
-    durability = t.get("storage.durability", str, "a string")
-    if durability not in (None, "full", "fsync"):
-        raise _invalid(path, "storage.durability", "must be 'full' or 'fsync'")
-    output = t.get("output.default", str, "a string")
-    if output not in (None, "text", "json"):
-        raise _invalid(path, "output.default", "must be 'text' or 'json'")
-    spill_bytes = t.get("output.spill_bytes", int, "an integer")
-    if spill_bytes is not None and not 0 <= spill_bytes <= MAX_SPILL_BYTES:
-        raise _invalid(path, "output.spill_bytes", f"must be between 0 and {MAX_SPILL_BYTES}")
-    spill_dir = t.get("output.spill_dir", str, "a string")
-    if spill_dir is not None and not spill_dir.startswith(("/", "~/")):
-        raise _invalid(path, "output.spill_dir", "must be an absolute path or start with ~/")
-    record = t.get("audit.record_data_root", bool, "a boolean")
-    access_log = t.get("audit.access_log", bool, "a boolean")
-    max_bytes = t.get("files.max_bytes", int, "an integer")
-    if max_bytes is not None and not 1 <= max_bytes <= MAX_MAX_FILE_BYTES:
-        raise _invalid(path, "files.max_bytes", f"must be between 1 and {MAX_MAX_FILE_BYTES}")
-    files_store = t.get("files.store", str, "a string")
-    if files_store not in (None, "local", "s3"):
-        raise _invalid(path, "files.store", "must be 'local' or 's3'")
-    files_s3 = _s3_table(path, t.tables.get("files", {}).get("s3"))
-    extract_timeout = t.get("extract.timeout_seconds", (int, float), "a number")
-    if extract_timeout is not None and not 0 < extract_timeout <= MAX_EXTRACT_TIMEOUT_S:
-        raise _invalid(
-            path,
-            "extract.timeout_seconds",
-            f"must be above 0 and at most {MAX_EXTRACT_TIMEOUT_S} seconds",
-        )
-    extract_memory = t.get("extract.max_memory_mib", int, "an integer")
-    if extract_memory is not None and not (
-        MIN_EXTRACT_MEMORY_MIB <= extract_memory <= MAX_EXTRACT_MEMORY_MIB
-    ):
-        raise _invalid(
-            path,
-            "extract.max_memory_mib",
-            f"must be between {MIN_EXTRACT_MEMORY_MIB} and {MAX_EXTRACT_MEMORY_MIB}",
-        )
-    signal_reads = t.get("activity.signal_reads", bool, "a boolean")
-    cors_origins = t.get("server.cors_origins", list, "an array of origins")
-    if cors_origins is not None and not all(
-        isinstance(o, str) and ORIGIN_RE.match(o) for o in cors_origins
-    ):
-        raise _invalid(path, "server.cors_origins", "must be origins like https://example.org")
-    admin_api = t.get("server.admin_api", bool, "a boolean")
-    client_builds = t.get("server.client_builds", str, "a string")
-    if client_builds is not None and client_builds not in ("compatible", "exact", "warn"):
-        raise _invalid(path, "server.client_builds", "must be 'compatible', 'exact' or 'warn'")
-    dist = t.get("server.dist", bool, "a boolean")
-    public_url = t.get("server.public_url", str, "a string")
-    if public_url is not None and not PUBLIC_URL_RE.match(public_url):
-        raise _invalid(
-            path,
-            "server.public_url",
-            "must be an http(s) URL without credentials, query or fragment",
-        )
-    file_roots = _file_roots(path, t.tables.get("roots", {}))
-    defaults = config
-    config = replace(
-        config,
-        device_id=t.get("device.id", str, "a string"),
-        device_name=t.get("device.name", str, "a string"),
-        data_root=data_root,
-        identity_providers=tuple(providers)
-        if providers is not None
-        else defaults.identity_providers,
-        lock_timeout_s=float(timeout) if timeout is not None else defaults.lock_timeout_s,
-        durability=durability or defaults.durability,
-        record_data_root=record if record is not None else defaults.record_data_root,
-        access_log=access_log if access_log is not None else defaults.access_log,
-        output=output or defaults.output,
-        spill_bytes=spill_bytes if spill_bytes is not None else defaults.spill_bytes,
-        spill_dir=spill_dir,
-        file_roots=file_roots,
-        max_file_bytes=max_bytes if max_bytes is not None else defaults.max_file_bytes,
-        files_store=files_store or defaults.files_store,
-        files_s3=files_s3,
-        extract_timeout_s=float(extract_timeout)
-        if extract_timeout is not None
-        else defaults.extract_timeout_s,
-        extract_max_memory_mib=extract_memory
-        if extract_memory is not None
-        else defaults.extract_max_memory_mib,
-        signal_reads=signal_reads if signal_reads is not None else defaults.signal_reads,
-        cors_origins=tuple(cors_origins or ()),
-        admin_api=bool(admin_api),
-        client_builds=client_builds or defaults.client_builds,
-        dist=dist if dist is not None else defaults.dist,
-        public_url=public_url.rstrip("/") if public_url is not None else None,
-    )
+    for section in _SECTIONS:
+        config = section(t, config)
     return config, tuple(warnings)
 
 
@@ -355,6 +256,171 @@ def _check_endpoint(t: _Tables, config: Config) -> Config:
                 " in clear; use https:// (or set [remote] allow_plain_http = true)",
             )
     return config
+
+
+def _read_paths(t: _Tables, config: Config) -> Config:
+    data_root = t.get("paths.data_root", str, "a string")
+    if data_root is not None and not (data_root.startswith(("/", "~/"))):
+        raise _invalid(t.path, "paths.data_root", "must be an absolute path or start with ~/")
+    return replace(config, data_root=data_root)
+
+
+def _read_identity(t: _Tables, config: Config) -> Config:
+    providers = t.get("identity.providers", list, "an array of strings")
+    if providers is not None and not all(isinstance(p, str) for p in providers):
+        raise _invalid(t.path, "identity.providers", "must be an array of strings")
+    return replace(
+        config,
+        identity_providers=tuple(providers) if providers is not None else config.identity_providers,
+    )
+
+
+def _read_storage(t: _Tables, config: Config) -> Config:
+    timeout = t.get("storage.lock_timeout_s", (int, float), "a number")
+    if timeout is not None and not 0 < timeout <= 3600:
+        raise _invalid(t.path, "storage.lock_timeout_s", "must be between 0 and 3600 seconds")
+    durability = t.get("storage.durability", str, "a string")
+    if durability not in (None, "full", "fsync"):
+        raise _invalid(t.path, "storage.durability", "must be 'full' or 'fsync'")
+    return replace(
+        config,
+        lock_timeout_s=float(timeout) if timeout is not None else config.lock_timeout_s,
+        durability=durability or config.durability,
+    )
+
+
+def _read_output(t: _Tables, config: Config) -> Config:
+    output = t.get("output.default", str, "a string")
+    if output not in (None, "text", "json"):
+        raise _invalid(t.path, "output.default", "must be 'text' or 'json'")
+    spill_bytes = t.get("output.spill_bytes", int, "an integer")
+    if spill_bytes is not None and not 0 <= spill_bytes <= MAX_SPILL_BYTES:
+        raise _invalid(t.path, "output.spill_bytes", f"must be between 0 and {MAX_SPILL_BYTES}")
+    spill_dir = t.get("output.spill_dir", str, "a string")
+    if spill_dir is not None and not spill_dir.startswith(("/", "~/")):
+        raise _invalid(t.path, "output.spill_dir", "must be an absolute path or start with ~/")
+    return replace(
+        config,
+        output=output or config.output,
+        spill_bytes=spill_bytes if spill_bytes is not None else config.spill_bytes,
+        spill_dir=spill_dir,
+    )
+
+
+def _read_audit(t: _Tables, config: Config) -> Config:
+    record = t.get("audit.record_data_root", bool, "a boolean")
+    access_log = t.get("audit.access_log", bool, "a boolean")
+    return replace(
+        config,
+        record_data_root=record if record is not None else config.record_data_root,
+        access_log=access_log if access_log is not None else config.access_log,
+    )
+
+
+def _read_files(t: _Tables, config: Config) -> Config:
+    max_bytes = t.get("files.max_bytes", int, "an integer")
+    if max_bytes is not None and not 1 <= max_bytes <= MAX_MAX_FILE_BYTES:
+        raise _invalid(t.path, "files.max_bytes", f"must be between 1 and {MAX_MAX_FILE_BYTES}")
+    files_store = t.get("files.store", str, "a string")
+    if files_store not in (None, "local", "s3"):
+        raise _invalid(t.path, "files.store", "must be 'local' or 's3'")
+    files_s3 = _s3_table(t.path, t.tables.get("files", {}).get("s3"))
+    return replace(
+        config,
+        max_file_bytes=max_bytes if max_bytes is not None else config.max_file_bytes,
+        files_store=files_store or config.files_store,
+        files_s3=files_s3,
+    )
+
+
+def _read_extract(t: _Tables, config: Config) -> Config:
+    timeout = t.get("extract.timeout_seconds", (int, float), "a number")
+    if timeout is not None and not 0 < timeout <= MAX_EXTRACT_TIMEOUT_S:
+        raise _invalid(
+            t.path,
+            "extract.timeout_seconds",
+            f"must be above 0 and at most {MAX_EXTRACT_TIMEOUT_S} seconds",
+        )
+    memory = t.get("extract.max_memory_mib", int, "an integer")
+    if memory is not None and not (MIN_EXTRACT_MEMORY_MIB <= memory <= MAX_EXTRACT_MEMORY_MIB):
+        raise _invalid(
+            t.path,
+            "extract.max_memory_mib",
+            f"must be between {MIN_EXTRACT_MEMORY_MIB} and {MAX_EXTRACT_MEMORY_MIB}",
+        )
+    return replace(
+        config,
+        extract_timeout_s=float(timeout) if timeout is not None else config.extract_timeout_s,
+        extract_max_memory_mib=memory if memory is not None else config.extract_max_memory_mib,
+    )
+
+
+def _read_activity(t: _Tables, config: Config) -> Config:
+    signal_reads = t.get("activity.signal_reads", bool, "a boolean")
+    return replace(
+        config,
+        signal_reads=signal_reads if signal_reads is not None else config.signal_reads,
+    )
+
+
+def _read_server(t: _Tables, config: Config) -> Config:
+    cors_origins = t.get("server.cors_origins", list, "an array of origins")
+    if cors_origins is not None and not all(
+        isinstance(o, str) and ORIGIN_RE.match(o) for o in cors_origins
+    ):
+        raise _invalid(t.path, "server.cors_origins", "must be origins like https://example.org")
+    admin_api = t.get("server.admin_api", bool, "a boolean")
+    client_builds = t.get("server.client_builds", str, "a string")
+    if client_builds is not None and client_builds not in ("compatible", "exact", "warn"):
+        raise _invalid(t.path, "server.client_builds", "must be 'compatible', 'exact' or 'warn'")
+    dist = t.get("server.dist", bool, "a boolean")
+    public_url = t.get("server.public_url", str, "a string")
+    if public_url is not None and not PUBLIC_URL_RE.match(public_url):
+        raise _invalid(
+            t.path,
+            "server.public_url",
+            "must be an http(s) URL without credentials, query or fragment",
+        )
+    return replace(
+        config,
+        cors_origins=tuple(cors_origins or ()),
+        admin_api=bool(admin_api),
+        client_builds=client_builds or config.client_builds,
+        dist=dist if dist is not None else config.dist,
+        public_url=public_url.rstrip("/") if public_url is not None else None,
+    )
+
+
+def _read_roots(t: _Tables, config: Config) -> Config:
+    return replace(config, file_roots=_file_roots(t.path, t.tables.get("roots", {})))
+
+
+def _read_device(t: _Tables, config: Config) -> Config:
+    """Last on purpose: a defect in ``[device]`` is reported after every other one."""
+    return replace(
+        config,
+        device_id=t.get("device.id", str, "a string"),
+        device_name=t.get("device.name", str, "a string"),
+    )
+
+
+# The order is the order in which defects are reported when a file has several.
+_SECTIONS: Final[tuple[Callable[[_Tables, Config], Config], ...]] = (
+    _read_runtime,
+    _read_remote,
+    _check_endpoint,
+    _read_paths,
+    _read_identity,
+    _read_storage,
+    _read_output,
+    _read_audit,
+    _read_files,
+    _read_extract,
+    _read_activity,
+    _read_server,
+    _read_roots,
+    _read_device,
+)
 
 
 def _s3_table(path: Path, table: object) -> S3Table:
