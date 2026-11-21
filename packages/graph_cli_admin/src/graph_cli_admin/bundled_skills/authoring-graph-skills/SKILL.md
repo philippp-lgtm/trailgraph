@@ -134,13 +134,15 @@ The blocks already say what the model says. Write what it cannot:
    block scalar); publish refuses a description that cannot take the
    sentence (rule `description`, below).
 2. **Rules for you**: how to decide between two types, which values a
-   field takes in practice, when to create versus update, what to look up
-   before writing (an existing entity with a similar name), what needs the
-   user's consent (state changes, retractions), language and wording of
-   values. Name where the line between subject matter and the work on the
-   data runs in this graph, with an example of each (the `graph-cli`
-   skill says the work goes into `--reason`, not into entities). One rule
-   per bullet, imperative, with the reason when it is not obvious.
+   field takes in practice, when to create versus update, language and
+   wording of values, and the cases of this graph where the general rules
+   bite: which lookup finds the entity before a write, which changes need
+   consent beyond a retraction or a move into a terminal state. The `start`
+   block already says to look a name up before a create, to say why in
+   `--reason` and to ask before `retract` and a terminal `transition`; do
+   not repeat that. Name where the line between subject matter and the work
+   on the data runs in this graph, with an example of each. One rule per
+   bullet, imperative, with the reason when it is not obvious.
 3. **Recipes**: the three to six questions agents ask most that no
    function answers, each as one `graph` command (`graph find`, `graph
    lookup`, `graph neighbors`, `graph query`), and one write as `graph

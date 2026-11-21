@@ -5,9 +5,12 @@
   rules of working with ``graph`` that apply from the first call (plain calls, the envelope,
   asking for less, never guessing, functions and actions first, dry runs, ``--reason`` and
   ``--expect``, findings), so that a graph skill loaded without skill 1 still leads to safe
-  calls (F42, F74); for a model with ``files:File``, one line on the file workflow; for a
-  graph with published views a clause on the ``graph view`` rule that names
-  ``graph describe views``.
+  calls (F42, F74); for a graph whose types have names (label roles) the rule to look a name
+  up before a create (the ``names`` block keeps only what is specific to the types); the
+  consent rule: ask the user before ``retract``, and before a ``transition`` into a terminal
+  state when some lifecycle has terminal states; for a model with ``files:File``, one line on
+  the file workflow; for a graph with published views a clause on the ``graph view`` rule that
+  names ``graph describe views``.
 
 The compiled view catalog (``graph_cli.view_catalog/1``, the key ``views``) is one more input
 document, present only when the graph has views the reader may see. Only its presence shows: one
@@ -21,7 +24,8 @@ from __future__ import annotations
 from typing import Final
 
 from graph_cli.kernel.json_access import req_str
-from graph_cli.skills.graph_skill.model import Model, objects
+from graph_cli.skills.graph_skill.model import Model, objects, strings
+from graph_cli.skills.graph_skill.naming import labelled_fields
 from graph_cli.skills.graph_skill.pieces import code, plain
 
 LANG_BASES: Final = frozenset({"lang_string", "lang_text"})
@@ -100,9 +104,26 @@ def render_start(doc: Model) -> list[str]:
         )
         + " `create`, `apply`, `transition`, `supersede` and `retract` with `--dry-run`, then"
         " run them without; one `update`, `link` or `unlink` may run directly. Say why in"
-        " `--reason` (in English, whatever language the values are in), and pass `--expect"
-        " <rev>` when the write depends on what you read. A"
-        " change set for `graph apply` goes into a file in the working directory.",
+        " `--reason`, with how you learned it (in English, whatever language the values are in),"
+        " never in a field value, and pass `--expect <rev>` when the write depends on what you"
+        " read. A change set for `graph apply` goes into a file in the working directory.",
+        *(
+            [
+                "- Before you create an entity, look its name up (`graph lookup '<name>' --json`)"
+                " and use the one that exists, never a second one under a similar name: the write"
+                " finding `data.semantic.possible_duplicate` names near spellings, also on a dry"
+                " run."
+            ]
+            if labelled_fields(doc)
+            else []
+        ),
+        "- Ask the user before `retract`"
+        + (
+            " and before a `transition` into a terminal state (`graph describe type` marks them"
+            " `terminal`)."
+            if _terminal_states(doc)
+            else "."
+        ),
         "- Read `data.findings` of every write and tell the user about each warning.",
         *(
             [
@@ -115,6 +136,15 @@ def render_start(doc: Model) -> list[str]:
             else []
         ),
     ]
+
+
+def _terminal_states(doc: Model) -> bool:
+    """Whether some lifecycle of some type has terminal states."""
+    return any(
+        strings(lifecycle.get("terminal"))
+        for body in doc.types.values()
+        for lifecycle in objects(body, "lifecycles")
+    )
 
 
 def _language(doc: Model) -> list[str]:

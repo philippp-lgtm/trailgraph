@@ -142,12 +142,12 @@ against it and audited. The CLI is on `PATH`.
    thing exists, add the new name to it with `graph update --add` instead. Put
    abbreviations and synonyms into `alt_label` fields, misspellings into
    `hidden_label` fields.
-6. For a change, look for an action first (`graph describe search <value>
-   --kind action`, the graph skill's featured ones, `graph get <id> --affordances`):
-   `graph do <action> --dry-run`, read what it will change, then run it
-   without. None fits: preview `create`, `apply`, `supersede`, `retract`,
-   `transition` with `--dry-run --json`; one `update`, `link` or `unlink`
-   may run directly (undo: `update`, `unlink`).
+6. For a change, look for an action first (`graph describe search <value> --kind
+   action`, the graph skill's featured ones, `graph get <id> --affordances`):
+   `graph do <action> --dry-run`, read what it will change, then run it without.
+   None fits: preview `create`, `apply`, `supersede`, `retract`, `transition` with
+   `--dry-run --json`; one `update`, `link` or `unlink` may run directly (undo:
+   `update`, `unlink`). Ask the user before `retract` or a terminal `transition`.
 7. Read `data.findings` of every write: on `data.semantic.possible_duplicate`
    reuse a candidate from `actual` or tell the names apart, on
    `data.structural.deprecated_term` use the replacement its message names.

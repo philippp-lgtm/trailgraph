@@ -90,12 +90,10 @@ def render_names(doc: Model) -> list[str]:
     lines.append(search)
     these = "one of these types" if listed else "a type with names"
     lines.append(
-        f"- Before you create an entity of {these}, search for its name and its"
-        " short forms. If one is the same thing, use it and add the new name to its"
-        f" {ROLE_NAMES['alt_label']} field instead of creating another. When you create one,"
-        f" fill its {ROLE_NAMES['alt_label']} fields with the abbreviations and synonyms people"
-        " use. A write finding `data.semantic.possible_duplicate` names entities that"
-        " already carry the name or a near spelling of it."
+        f"- When you create an entity of {these}: if a candidate is the same thing, add the new"
+        f" name to its {ROLE_NAMES['alt_label']} field instead of creating another; fill the"
+        f" {ROLE_NAMES['alt_label']} fields of a new one with the abbreviations and synonyms"
+        " people use."
     )
     return lines
 
