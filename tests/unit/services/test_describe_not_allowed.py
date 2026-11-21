@@ -250,25 +250,46 @@ def test_a_not_allowed_entry_is_shown_for_what_it_is_for_and_how_it_is_called_on
     assert not set(SENSITIVE_KEYS) & set(item)
 
 
+def withheld_word(complete: dict[str, Any], kind: str) -> str:
+    """A word that occurs only in the withheld text of an entry (an example question or request,
+    a section title), not in what is shown of it."""
+    texts = [str(complete[k]) for k in ("name", "summary", "use_when")]
+    texts += [p["name"] + " " + p["summary"] for p in complete["params"]]
+    shown = " ".join(texts).lower()
+    withheld = [
+        v for e in complete.get("examples", []) for v in e.values() if isinstance(v, str)
+    ] + [s["title"] for s in complete.get("sections", []) if s.get("title")]
+    for text in withheld:
+        for word in sorted(text.replace(",", " ").replace(".", " ").split(), key=len, reverse=True):
+            if len(word) > 4 and word.isalpha() and word.lower() not in shown:
+                return word
+    raise AssertionError(f"no withheld word in {kind} {complete['name']}")
+
+
+@pytest.mark.parametrize(
+    ("kind", "name", "policy"),
+    [
+        ("function", "members_of_unit", NO_FUNCTIONS),
+        ("action", "create_task", READ_ONLY),
+        ("view", "unit_overview", NO_FUNCTIONS),
+    ],
+)
 def test_a_search_does_not_match_the_texts_only_who_may_use_an_entry_reads(
-    env: ServiceEnv,
+    env: ServiceEnv, kind: str, name: str, policy: Policy
 ) -> None:
-    """The example texts and the touched terms of a not-allowed entry are not searchable: a
-    search would tell a caller whether a literal of the definition is in them."""
-    full, refused = Seen(env, Policy()), Seen(env, NO_FUNCTIONS)
-    example = full.call("describe_function", full.functions, "members_of_unit")["function"][
-        "examples"
-    ][0]["question"]
-    word = max(example.split(), key=len)
-    found = {h["curie"] for h in full.search(word, kinds=("function",))}
-    assert "members_of_unit" in found  # an allowed caller finds it by the example
-    assert "members_of_unit" not in {h["curie"] for h in refused.search(word, kinds=("function",))}
-    # what it is for is still searchable, marked
-    use_when = full.call("describe_function", full.functions, "members_of_unit")["function"][
-        "use_when"
-    ]
-    hit = [h for h in refused.search(max(use_when.split(), key=len), kinds=("function",))]
-    assert all(h.get("allowed") is False for h in hit if h["curie"] == "members_of_unit")
+    """The example texts and section titles of a not-allowed entry are not searchable (nor are
+    its touched terms): a search would tell a caller whether a literal of the definition is in
+    them. The same word finds the entry for a caller who may use it."""
+    plural = f"{kind}s"
+    full, refused = Seen(env, Policy()), Seen(env, policy)
+    complete = full.call(f"describe_{kind}", getattr(full, plural), name)[kind]
+    word = withheld_word(complete, kind)
+    assert name in {h["curie"] for h in full.search(word, kinds=(kind,))}
+    assert name not in {h["curie"] for h in refused.search(word, kinds=(kind,))}
+    # what it is for is still searchable, and marked
+    use_when = complete["use_when"].split()
+    found = refused.search(max(use_when, key=len), kinds=(kind,))
+    assert any(h["curie"] == name and h.get("allowed") is False for h in found)
 
 
 def test_describe_by_name_suggests_what_the_caller_sees_not_allowed_ones_included(
