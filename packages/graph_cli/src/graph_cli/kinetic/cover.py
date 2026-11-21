@@ -73,17 +73,21 @@ above is untouched. A function covers a recipe when it is not deprecated and:
    function, every required triple of the function matches one of the recipe); when neither
    side has a required triple, every class of a node of the recipe fits a class of a node of
    the function, and a function with required triples never covers a recipe without;
-3. it returns what the recipe returns (a function's ``*`` counts as every key) and both
-   aggregate or neither does;
+3. it returns what the recipe returns (a function's ``*`` counts as every key), aggregates
+   when the recipe does (in a ``WITH`` or the ``RETURN``) and is no bare total (a ``RETURN`` of
+   aggregates only) unless the recipe is one: a grouped ``collect`` or ``count`` keeps a row
+   per entity;
 4. every filter key of the recipe (property keys in the ``WHERE`` of a non-optional ``MATCH``
    or ``WITH``, inline map keys of a non-optional ``MATCH`` node) that rule 1 did not consume
    is projected by the function or used in its own ``WHERE`` or maps;
 5. the function filters no more than the recipe: every filter key of the function that no
    parameter of rule 1 consumed is a filter key of the recipe too, and every pattern the
    function negates (``NOT (a)-[:r]->(b)``) is negated by the recipe too (else the function
-   would drop rows the recipe keeps); and every pattern the recipe negates is negated by the
-   function too, or at least walked by it, so that its rows show whether the relationship is
-   there.
+   would drop rows the recipe keeps). A filter key that only a boolean switch of the function
+   applies (``WHERE $include_ended = true OR c.status <> 'ended'``) does not count: the call
+   sets the switch, which is named in the finding when its value is not the default. And every
+   pattern the recipe negates is negated by the function too, or at least walked by it, so that
+   its rows show whether the relationship is there.
 """
 
 from __future__ import annotations
@@ -566,11 +570,13 @@ class RecipeSignature:
     anchors: tuple[RecipeAnchor, ...]
     required: frozenset[Triple]
     triples: frozenset[Triple]
-    output: Output
+    keys: frozenset[str]  # what the ``RETURN`` projects, see ``_lint_keys``
     compared: Mapping[tuple[str, str], RecipeData]  # (key, operator) -> data of the first one
     filters: frozenset[str]
     classes: frozenset[frozenset[str]]
     negated: frozenset[frozenset[str]]  # the relations of each pattern under ``NOT``
+    aggregates: bool  # an aggregate in any ``WITH`` or in the ``RETURN``
+    totals: bool  # the ``RETURN`` holds aggregates only: no row per entity
 
 
 @dataclass(frozen=True, slots=True)
@@ -580,10 +586,14 @@ class FunctionLintSignature:
     patterns it negates."""
 
     base: FunctionSignature
+    keys: frozenset[str]
     compared: Mapping[str, frozenset[tuple[str, str]]]  # parameter -> (key, operator)
     filters: frozenset[str]
     classes: frozenset[frozenset[str]]
     negated: frozenset[frozenset[str]]
+    aggregates: bool
+    totals: bool
+    switches: Mapping[str, tuple[str, bool]]  # filter key -> (boolean parameter, value lifting it)
 
 
 @dataclass(frozen=True, slots=True)
@@ -675,11 +685,12 @@ def recipe_signature(resolved: ResolvedQuery) -> RecipeSignature:
         tuple(RecipeAnchor(a.classes, a.key, a.value) for a in found if _names_entity(a.value)),
         required,
         every,
-        _output(resolved.query, given),
+        _lint_keys(resolved, given),
         compared,
         _filter_keys(resolved.query),
         _match_classes(resolved.query, known),
         _negations(resolved.query),
+        *_aggregation(resolved.query),
     )
 
 
@@ -694,18 +705,140 @@ def function_lint_signature(entry: FunctionEntry, model: CompiledModel) -> Funct
             keys.setdefault(c.value.name, set()).add((c.field, _operator(c)))
     return FunctionLintSignature(
         _signature_of(entry, resolved),
+        _lint_keys(resolved, frozenset()),
         {name: frozenset(found) for name, found in keys.items()},
         _filter_keys(resolved.query),
         _match_classes(resolved.query, known),
         _negations(resolved.query),
+        *_aggregation(resolved.query),
+        _switches(
+            resolved.query,
+            frozenset(p.name for p in entry.defn.params if p.type == "boolean"),
+        ),
     )
 
 
-def _lint_output(recipe: Output, function: Output) -> bool:
-    """The function returns every key of the recipe (``*`` is every key) and aggregates when the
-    recipe does, and only then: a count answers no listing."""
-    keys = "*" in function.keys or recipe.keys <= function.keys
-    return keys and function.aggregates == recipe.aggregates
+def _tokens(e: Expr, defs: Mapping[str, frozenset[str]], anchored: frozenset[str]) -> set[str]:
+    """The keys an expression projects: a property key, ``min:held_on`` for a property inside an
+    aggregate (a ``max`` of a key is not the key), and what the alias of an earlier ``WITH`` item
+    stands for. ``id`` and ``alias`` of an ``anchored`` variable are left out (the caller gave
+    them)."""
+    found: set[str] = set()
+    inside: set[int] = set()
+    for x in subexpressions(e):
+        if isinstance(x, FunctionCall) and x.name in AGGREGATES:
+            for arg in x.args:
+                for y in subexpressions(arg):
+                    if isinstance(y, Property):
+                        found.add(f"{x.name}:{y.key}")
+                        inside.add(id(y))
+    for x in subexpressions(e):
+        if isinstance(x, Property) and id(x) not in inside:
+            given = isinstance(x.subject, Variable) and x.subject.name in anchored
+            if not (given and x.key in REF_FIELDS):
+                found.add(x.key)
+        elif isinstance(x, Variable):
+            found |= defs.get(x.name, frozenset())
+    return found
+
+
+def _lint_keys(resolved: ResolvedQuery, anchored: frozenset[str]) -> frozenset[str]:
+    """What the final ``RETURN`` projects, key by key (see ``_tokens``); ``*`` for a whole node or
+    relationship (a variable that holds a list or a number projects no entity)."""
+    query = resolved.query
+    kinds = {name: info.kind for scope in resolved.introduced for name, info in scope.items()}
+    defs: dict[str, frozenset[str]] = {}
+    for clause in query.clauses[:-1]:
+        if isinstance(clause, With):
+            for item in clause.projection.items:
+                if not (isinstance(item.expr, Variable) and item.expr.name == item.name):
+                    defs[item.name] = frozenset(_tokens(item.expr, defs, anchored))
+    last = query.clauses[-1]
+    if not isinstance(last, Return):
+        return frozenset()
+    keys: set[str] = {"*"} if last.projection.star else set()
+    for item in last.projection.items:
+        if isinstance(item.expr, Variable) and kinds.get(item.expr.name) in ("node", "rel"):
+            keys.add("*")
+        else:
+            keys |= _tokens(item.expr, defs, anchored)
+    return frozenset(keys)
+
+
+def _has_aggregate(e: Expr) -> bool:
+    return any(
+        isinstance(x, CountStar) or (isinstance(x, FunctionCall) and x.name in AGGREGATES)
+        for x in subexpressions(e)
+    )
+
+
+def _aggregation(query: Query) -> tuple[bool, bool]:
+    """``(aggregates, totals)``: an aggregate in any ``WITH`` or the ``RETURN``; the ``RETURN``
+    holds aggregates only. A grouped ``collect`` or ``count`` keeps a row per entity."""
+    anywhere = False
+    for clause in query.clauses:
+        if isinstance(clause, With | Return):
+            anywhere = anywhere or any(_has_aggregate(i.expr) for i in clause.projection.items)
+    last = query.clauses[-1]
+    items = last.projection.items if isinstance(last, Return) else ()
+    return anywhere, bool(items) and all(_has_aggregate(i.expr) for i in items)
+
+
+def _lifting(disjunct: Expr, booleans: frozenset[str]) -> tuple[str, bool] | None:
+    """``($p, value)`` when the disjunct is ``$p = true``, ``$p = false``, ``$p`` or ``NOT $p``:
+    the value of the boolean parameter that makes it true."""
+    if isinstance(disjunct, Parameter) and disjunct.name in booleans:
+        return disjunct.name, True
+    if (
+        isinstance(disjunct, Unary)
+        and disjunct.op == "not"
+        and isinstance(disjunct.operand, Parameter)
+        and disjunct.operand.name in booleans
+    ):
+        return disjunct.operand.name, False
+    if isinstance(disjunct, Binary) and disjunct.op == "=":
+        for side, other in ((disjunct.left, disjunct.right), (disjunct.right, disjunct.left)):
+            if (
+                isinstance(side, Parameter)
+                and side.name in booleans
+                and isinstance(other, Const)
+                and isinstance(other.value, bool)
+            ):
+                return side.name, other.value
+    return None
+
+
+def _switches(query: Query, booleans: frozenset[str]) -> Mapping[str, tuple[str, bool]]:
+    """The filter keys that a boolean parameter lifts: keys that occur only in conjuncts of a
+    ``WHERE`` of the shape ``$p = true OR ...`` (a switch such as ``include_ended``), each with
+    the parameter and the value that makes the conjunct true, whatever the keys say."""
+    switched: dict[str, tuple[str, bool]] = {}
+    fixed: set[str] = set()
+    for clause in _in_scope(query):
+        if isinstance(clause, Match):
+            for part in clause.patterns:
+                for node in part.nodes:
+                    if node.properties is not None:
+                        fixed.update(key for key, _ in node.properties.entries)
+        if clause.where is None:
+            continue
+        for conjunct in _conjuncts(clause.where):
+            keys = {e.key for e in subexpressions(conjunct) if isinstance(e, Property)}
+            lifts = [_lifting(d, booleans) for d in _disjuncts(conjunct)]
+            lift = next((x for x in lifts if x is not None), None)
+            if lift is None:
+                fixed |= keys
+            else:
+                switched.update({key: lift for key in keys if key not in switched})
+    return {key: lift for key, lift in switched.items() if key not in fixed}
+
+
+def _lint_output(recipe: RecipeSignature, function: FunctionLintSignature) -> bool:
+    """The function returns every key of the recipe (``*`` is every key), aggregates when the
+    recipe does, and is no bare total (a count answers no listing) unless the recipe is one."""
+    if not ("*" in function.keys or recipe.keys <= function.keys):
+        return False
+    return (function.aggregates or not recipe.aggregates) and (recipe.totals or not function.totals)
 
 
 @dataclass(frozen=True, slots=True)
@@ -734,6 +867,7 @@ def _supply(
             continue
         filtered.update(key for key, _ in function.compared.get(param.name, ()))
         if param.type == "boolean":
+            values.append((param.name, None))
             continue
         if param.type == "ref":
             slots = [a for a in function.base.anchors if a.parameter == param.name and a.is_ref]
@@ -769,6 +903,19 @@ def _text_of(data: RecipeData) -> str | None:
     return None
 
 
+def _switch_values(
+    entry: FunctionEntry, lifted: set[tuple[str, bool]]
+) -> tuple[tuple[str, str | None], ...]:
+    """The ``--param`` pairs of the switches a call must set to lift a filter the recipe lacks:
+    the parameters whose lifting value is not their default."""
+    defaults = {p.name: p.default for p in entry.defn.params}
+    return tuple(
+        (name, "true" if value else "false")
+        for name, value in sorted(lifted)
+        if defaults.get(name) is not value
+    )
+
+
 def recipe_covers(
     recipe: RecipeSignature,
     functions: Sequence[tuple[FunctionEntry, FunctionLintSignature]],
@@ -782,7 +929,7 @@ def recipe_covers(
         if entry.deprecated:
             continue
         supplied = _supply(recipe, entry, function, model)
-        if supplied is None or not _lint_output(recipe.output, function.base.output):
+        if supplied is None or not _lint_output(recipe, function):
             continue
         base = function.base
         if recipe.required:
@@ -800,10 +947,12 @@ def recipe_covers(
             if not all(any(_fits(c, f, model) for f in function.classes) for c in recipe.classes):
                 continue
             share = 1.0
-        met = base.output.keys | function.filters
+        met = function.keys | function.filters
         if not all("*" in met or key in met for key in recipe.filters - supplied.consumed):
             continue
-        if not function.filters - supplied.taken <= recipe.filters:
+        open_keys = function.filters - supplied.taken - recipe.filters
+        lifted = {function.switches[k] for k in open_keys if k in function.switches}
+        if any(k not in function.switches for k in open_keys):
             continue
         if not function.negated <= recipe.negated:
             continue
@@ -811,7 +960,13 @@ def recipe_covers(
         if not all(rels <= walked for rels in recipe.negated - function.negated):
             continue
         found.append(
-            RecipeCover(entry.name, entry.defn.featured, share, supplied.refs, supplied.values)
+            RecipeCover(
+                entry.name,
+                entry.defn.featured,
+                share,
+                supplied.refs,
+                (*supplied.values, *_switch_values(entry, lifted)),
+            )
         )
     found.sort(key=lambda c: (-c.share, not c.featured, c.function))
     return tuple(found)

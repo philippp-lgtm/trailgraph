@@ -23,12 +23,16 @@ A function answers a recipe when all of these hold:
 - The relationship pattern is the recipe's: every relationship the recipe requires is one of the
   function's, and every relationship the function requires is one of the recipe's. Without
   relationships on either side, the classes of the recipe's nodes must fit the function's.
-- The function returns every column the recipe returns, and aggregates when the recipe aggregates
-  and only then (a count answers no listing).
+- The function returns every column the recipe returns (a whole node counts for all its fields; a
+  `max` of a field is not the field, nor a `collect` of it), aggregates when the recipe aggregates
+  (also in a `WITH`), and is no bare total (a `RETURN` of aggregates only) unless the recipe is one.
+  A `collect` or `count` next to a grouping column keeps a row per entity and answers a listing.
 - Every filter the recipe applies is shown by the function (a column) or applied by it, so the caller
   can narrow the rows itself; and the function filters no more than the recipe does (a function that
   keeps only open items does not answer a recipe over all items), nor negates a pattern the recipe
-  does not. A relationship the recipe negates (`WHERE NOT (a)-[:r]->()`) must be negated or walked
+  does not. A filter that only a boolean switch of the function applies (`WHERE $include_ended = true
+  OR ...`) does not count: the call sets the switch, and the finding names it when the value is not the
+  default. A relationship the recipe negates (`WHERE NOT (a)-[:r]->()`) must be negated or walked
   by the function, so that its rows show whether it is there.
 
 What to do with a finding: point the text at the function (one line in the rules or the module map)

@@ -279,3 +279,109 @@ def test_a_relationship_the_recipe_negates_must_be_negated_or_walked_by_the_func
         f"{MEMBERS} WHERE u.alias = 'x' AND NOT (q)-[:carries]->(:Role) RETURN p.name, q.title"
     )
     assert covering(unwalked) == []
+
+
+# Aggregates, columns and boolean switches
+
+
+def with_functions(*functions: dict[str, str]) -> Any:
+    """``judged`` against the company example's functions plus the given ones."""
+    sources = {**EXAMPLE}
+    for one in functions:
+        sources.update(one)
+    pairs = function_pairs(entries(sources), MODEL)
+
+    def run(text: str) -> list[str]:
+        verdict = judge_recipe(text, {}, MODEL, pairs)
+        assert verdict.error is None, verdict.error
+        return [c.function for c in verdict.cover]
+
+    return run
+
+
+UNIT_SIZES = function(
+    "unit_sizes",
+    "MATCH (u:OrgUnit) OPTIONAL MATCH (q:Position)-[:in_unit]->(u)"
+    " RETURN u.name AS unit, count(q) AS positions",
+    ("unit", "positions"),
+)
+UNIT_SIZES_WITH = function(
+    "unit_sizes_with",
+    "MATCH (u:OrgUnit) OPTIONAL MATCH (q:Position)-[:in_unit]->(u)"
+    " WITH u, count(q) AS n RETURN u.name AS unit, n",
+    ("unit", "n"),
+)
+TITLE_RANGE = function(
+    "title_range",
+    "MATCH (u:OrgUnit)<-[:in_unit]-(q:Position) WITH u, min(q.title) AS first, max(q.title) AS last"
+    " RETURN u.name AS unit, first, last",
+    ("unit", "first", "last"),
+)
+
+
+def test_a_grouped_aggregate_keeps_a_row_per_entity_and_answers_a_listing() -> None:
+    run = with_functions(UNIT_SIZES)
+    assert run("MATCH (u:OrgUnit) RETURN u.name") == ["unit_sizes"]
+
+
+def test_an_aggregate_of_a_with_counts_as_the_function_aggregating() -> None:
+    run = with_functions(UNIT_SIZES_WITH)
+    text = "MATCH (u:OrgUnit) OPTIONAL MATCH (q:Position)-[:in_unit]->(u) RETURN u.name, count(q)"
+    assert run(text) == ["unit_sizes_with"]
+
+
+def test_an_aggregate_of_a_key_is_not_the_key_or_another_aggregate_of_it() -> None:
+    run = with_functions(TITLE_RANGE)
+    last = "MATCH (u:OrgUnit)<-[:in_unit]-(q:Position) RETURN u.name, max(q.title)"
+    assert run(last) == ["title_range"]
+    every = "MATCH (u:OrgUnit)<-[:in_unit]-(q:Position) RETURN u.name, collect(q.title)"
+    assert run(every) == []
+    plain = "MATCH (u:OrgUnit)<-[:in_unit]-(q:Position) RETURN u.name, q.title"
+    assert run(plain) == []
+
+
+def test_a_variable_that_holds_a_list_or_a_number_is_no_entity() -> None:
+    # unit_sizes_with returns n, a count: a recipe asking for other properties is not covered
+    run = with_functions(UNIT_SIZES_WITH)
+    assert run("MATCH (u:OrgUnit) RETURN u.name, u.alias") == []
+
+
+def test_a_boolean_switch_that_lifts_a_filter_is_set_by_the_call() -> None:
+    external = function(
+        "legal_entities",
+        "MATCH (l:LegalEntity) WHERE $include_external = true OR l.in_group = true"
+        " RETURN l.name AS entity, l.in_group AS in_group",
+        ("entity", "in_group"),
+        params=(
+            "params:\n  include_external:\n    type: boolean\n    default: false\n"
+            "    summary: Also entities outside the group."
+        ),
+    )
+    pairs = function_pairs(entries({**EXAMPLE, **external}), MODEL)
+    text = "MATCH (l:LegalEntity) RETURN l.name, l.in_group"
+    (cover, *_) = judge_recipe(text, {}, MODEL, pairs).cover
+    assert (cover.function, cover.value_params) == (
+        "legal_entities",
+        (("include_external", "true"),),
+    )
+    # a switch whose lifting value is the default needs no parameter in the call
+    default = function(
+        "group_entities",
+        "MATCH (l:LegalEntity) WHERE $only_group = false OR l.in_group = true"
+        " RETURN l.name AS entity, l.in_group AS in_group",
+        ("entity", "in_group"),
+        params=(
+            "params:\n  only_group:\n    type: boolean\n    default: false\n"
+            "    summary: Only entities of the group."
+        ),
+    )
+    pairs = function_pairs(entries({**EXAMPLE, **default}), MODEL)
+    (cover, *_) = judge_recipe(text, {}, MODEL, pairs).cover
+    assert (cover.function, cover.value_params) == ("group_entities", ())
+    # the same filter without a switch narrows the question
+    fixed = function(
+        "group_only",
+        "MATCH (l:LegalEntity) WHERE l.in_group = true RETURN l.name AS entity, l.in_group AS g",
+        ("entity", "g"),
+    )
+    assert with_functions(fixed)(text) == []
