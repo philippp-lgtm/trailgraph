@@ -12,6 +12,7 @@ import re
 from support.skills import ADMIN_SKILLS_DIR
 
 from graph_cli.skills import graph_skill, template, tree
+from graph_cli.skills.graph_skill.description import START_SENTENCE
 
 SKILL = (ADMIN_SKILLS_DIR / "authoring-graph-skills" / "SKILL.md").read_text()
 FLAT = " ".join(SKILL.split())  # the prose wraps
@@ -40,5 +41,7 @@ def test_the_skill_states_the_budgets_and_limits() -> None:
     assert f"at most {tree.MAX_SKILL_LINES} lines" in FLAT
     assert f"at most {tree.MAX_TOTAL_BYTES // 1024} KB" in FLAT
     assert f"At most {tree.MAX_DESCRIPTION} characters" in FLAT
+    assert START_SENTENCE in FLAT
+    assert f"at most {tree.MAX_DESCRIPTION - len(START_SENTENCE) - 1} characters" in FLAT
     assert f"at most {graph_skill.FEATURED_LIMIT} of them" in FLAT
     assert f"at most {graph_skill.ACTIONS_FEATURED_LIMIT} of them" in FLAT

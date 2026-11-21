@@ -245,6 +245,20 @@ def test_a_skill_over_budget_is_pushed_with_a_warning(
     assert outcome.warning_codes == ["admin.skill_over_budget"]
 
 
+def test_a_skill_whose_description_cannot_take_the_start_sentence_is_refused(
+    run_cli: CliRunner, graph_id: str, tmp_path: Path
+) -> None:
+    target = pulled(run_cli, tmp_path)
+    skill_md = target / SKILL / "SKILL.md"
+    text = skill_md.read_text()
+    old = next(line for line in text.splitlines() if line.startswith("description:"))
+    skill_md.write_text(text.replace(old, f'description: "{"y" * 1_000}"'))
+    outcome = push(run_cli, target, "--reason", "long description")
+    assert (outcome.code, outcome.error["code"]) == (1, "admin.skill_invalid")
+    assert [p["rule"] for p in outcome.error["details"]["problems"]] == ["description"]
+    assert push(run_cli, target, "--dry-run").code == 1  # nothing was published
+
+
 def test_a_graph_that_moved_on_is_a_conflict(
     run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
 ) -> None:

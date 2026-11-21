@@ -117,7 +117,7 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
         "admin.skill_over_budget",
         _C.WARNING,
         False,
-        "A graph skill is over its budget, or its description leaves no room for graph start.",
+        "A graph skill is over its size budget.",
     ),
     ErrorSpec(
         "admin.module_bump_insufficient",

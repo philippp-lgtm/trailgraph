@@ -21,11 +21,14 @@ archived graph (``graph.archived``) and an invalid directory
 Publishing the same files against the same pin again changes nothing.
 ``--dry-run`` stops after the checks.
 
-A template whose rendered ``SKILL.md`` exceeds the level 0 budget of its graph, or whose
-curated text exceeds its own budget (``graph_cli.skills.graph_skill.measure``), or whose
-description leaves no room for the ``graph start`` sentence the renderer adds, gets the
-warning ``admin.skill_over_budget`` from ``render``, ``publish`` and ``graph push``, with the
-sizes and the largest blocks (and the length of the description); nothing is refused.
+A template whose description cannot take the ``graph start`` sentence the renderer adds (too
+long, or wrapped over lines as a plain or quoted scalar) is refused with the rule
+``description`` (``graph_cli.skills.graph_skill.description``), so every published template
+sends agents to ``graph start``. A template whose rendered ``SKILL.md`` exceeds the level 0
+budget of its graph, or whose curated text exceeds its own budget
+(``graph_cli.skills.graph_skill.measure``), gets the warning ``admin.skill_over_budget`` from
+``render``, ``publish`` and ``graph push``, with the sizes and the largest blocks; it is not
+refused.
 
 ``render`` writes what ``graph skills install`` would install (without the
 marker) into a preview directory; read-only for the data root, like
@@ -51,7 +54,7 @@ from graph_cli.kernel.skill_marker import GENERATED, graph_skill_name
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.describe import describe_model
 from graph_cli.skills.graph_skill import Size, graph_block, measure, render_checked
-from graph_cli.skills.graph_skill.description import START_SENTENCE, WRAPPED
+from graph_cli.skills.graph_skill.description import start_sentence_problem
 from graph_cli.skills.names import check_names
 from graph_cli.skills.template import kind_of, parse_template
 from graph_cli.skills.tree import Problem, read_tree, validate, write_tree
@@ -74,8 +77,8 @@ class Published:
 class Checked:
     """A source directory judged against a graph: its kind, the files the slot keeps, what
     ``graph skills install`` would write from them, and the problems of the curated text
-    (``term``, ``command``, ``alias``; a template only) and the size of its ``SKILL.md``
-    (a template only)."""
+    (``description``, ``term``, ``command``, ``alias``; a template only) and the size of its
+    ``SKILL.md`` (a template only)."""
 
     kind: str
     files: dict[str, bytes]
@@ -84,8 +87,7 @@ class Checked:
     size: Size | None = None
 
     def warnings(self, entry: GraphEntry, name: str) -> tuple[WarningRecord, ...]:
-        """``admin.skill_over_budget`` when the rendered skill is over a budget or its description
-        cannot take the ``graph start`` sentence."""
+        """``admin.skill_over_budget`` when the rendered skill is over a budget."""
         size = self.size
         if size is None or not size.over:
             return ()
@@ -94,30 +96,11 @@ class Checked:
             parts.append(f"SKILL.md has {size.skill} bytes of {size.budget}")
         if size.curated > size.curated_budget:
             parts.append(f"its curated text {size.curated} bytes of {size.curated_budget}")
-        if size.description_gap == WRAPPED:
-            parts.append(
-                f"its description lacks the graph start sentence: it is wrapped over several"
-                f" lines, so the renderer does not add '{START_SENTENCE}'; write the description"
-                " on one line (or as a block scalar) or write the sentence into it"
-            )
-        elif size.description_gap:
-            parts.append(
-                f"its description has {size.description} characters, so the sentence"
-                f" '{START_SENTENCE}' that the renderer adds does not fit the 1,024 characters"
-                " of a description and is left out; shorten the description or write the"
-                " sentence into it"
-            )
-        sized = size.skill > size.budget or size.curated > size.curated_budget
-        advice = (
-            "; move workflow detail and recipes into references/, and split a growing model"
-            " into modules"
-            if sized
-            else ""
-        )
         return (
             WarningRecord(
                 "admin.skill_over_budget",
-                f"{name} is over budget: {'; '.join(parts)}{advice}",
+                f"{name} is over budget: {'; '.join(parts)}; move workflow detail and recipes"
+                " into references/, and split a growing model into modules",
                 {"graph": entry.name, "skill": name, **size.to_json()},
             ),
         )
@@ -189,11 +172,16 @@ def check_files(
     refuse(label, entry, name, [*problems, *render_problems])
     template, _ = parse_template(files)
     assert rendered is not None and template is not None  # render_checked found no problem
+    # Refused at publish, never at install: the renderer leaves out the sentence it cannot add.
+    start = start_sentence_problem(template.lines)
     return Checked(
         kind,
         files,
         rendered,
-        check_names(template, described, graph, inventory),
+        [
+            *([start] if start is not None else []),
+            *check_names(template, described, graph, inventory),
+        ],
         measure(template, described, graph),
     )
 

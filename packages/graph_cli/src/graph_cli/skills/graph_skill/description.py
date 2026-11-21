@@ -3,11 +3,11 @@
 An agent chooses a skill by its description, so the one place every graph skill is sure to be read
 before it is loaded is the description. The renderer appends ``START_SENTENCE`` to a curated
 description that does not mention ``graph start`` yet, unless the result would be longer than the
-1,024 characters the Agent Skills format allows: then the description stays as the maintainer wrote
-it (a render is never refused for this) and ``graph-admin`` warns at render, publish and push
-(``Size.description_gap``) so the maintainer shortens it or writes the sentence in. The same
-warning names a description wrapped over several lines as a plain or quoted scalar, which the
-renderer leaves as written too (``start_sentence_gap``).
+1,024 characters the Agent Skills format allows, or the description is wrapped over several lines as
+a plain or quoted scalar: then the description stays as the maintainer wrote it. Installing a skill
+is never refused for this, but ``graph-admin`` refuses to publish or push such a template and its
+render reports why (``start_sentence_problem``), so every published template gets the sentence. The
+sentence has its one home here: a template does not write it.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from typing import Final
 
-from graph_cli.skills.tree import MAX_DESCRIPTION, frontmatter_keys
+from graph_cli.skills.tree import MAX_DESCRIPTION, SKILL_FILE, Problem, frontmatter_keys
 
 START_SENTENCE: Final = "Run `graph start` first and load graph-cli with it."
 MENTION: Final = "graph start"
@@ -62,6 +62,28 @@ def start_sentence_gap(lines: list[str]) -> str | None:
     if not fits(description):
         return TOO_LONG
     return WRAPPED if with_start_sentence(lines) == lines else None
+
+
+def start_sentence_problem(lines: list[str]) -> Problem | None:
+    """The broken rule ``description`` of a template whose description cannot take
+    ``START_SENTENCE`` (``start_sentence_gap``), else ``None``."""
+    gap = start_sentence_gap(lines)
+    if gap is None:
+        return None
+    if gap == WRAPPED:
+        message = (
+            "description is wrapped over several lines as a plain or quoted scalar, so the"
+            f" renderer cannot add '{START_SENTENCE}': write it on one line or as a block scalar"
+        )
+    else:
+        length = len(description_of(lines) or "")
+        message = (
+            f"description has {length} characters; with the sentence '{START_SENTENCE}' that"
+            f" the renderer adds it would pass the {MAX_DESCRIPTION} characters of a"
+            f" description: shorten it to {MAX_DESCRIPTION - len(START_SENTENCE) - 1}"
+            " characters at most"
+        )
+    return Problem("description", SKILL_FILE, message)
 
 
 def with_start_sentence(lines: list[str]) -> list[str]:

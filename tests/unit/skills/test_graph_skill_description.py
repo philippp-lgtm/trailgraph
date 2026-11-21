@@ -11,6 +11,8 @@ from graph_cli.skills.graph_skill.description import (
     TOO_LONG,
     WRAPPED,
     description_of,
+    start_sentence_gap,
+    start_sentence_problem,
     with_start_sentence,
 )
 from graph_cli.skills.template import parse_template
@@ -138,7 +140,8 @@ def test_a_render_carries_the_sentence_and_stays_within_the_limit() -> None:
     )
 
 
-def test_a_description_that_cannot_take_the_sentence_renders_and_is_reported() -> None:
+def test_a_description_that_cannot_take_the_sentence_still_renders() -> None:
+    """Installing is never refused for the sentence; publishing is (``start_sentence_problem``)."""
     documents, graph = render_inputs(compiled_model("inventory"))
     long = "y" * (MAX_DESCRIPTION - 10)
     files = template_with(f'"{long}"')
@@ -147,12 +150,10 @@ def test_a_description_that_cannot_take_the_sentence_renders_and_is_reported() -
     assert description_of(rendered[SKILL_FILE].decode().split("\n")) == long
     template, _ = parse_template(files)
     assert template is not None
-    size = measure(template, documents, graph)
-    assert size.description_over and size.over and size.description == len(long)
-    assert size.to_json()["start_sentence"] == START_SENTENCE
+    problem = start_sentence_problem(template.lines)
+    assert problem is not None and problem.rule == "description"
     fine = parse_template(template_with('"Short."'))[0]
-    assert fine is not None
-    assert not measure(fine, documents, graph).description_over
+    assert fine is not None and start_sentence_problem(fine.lines) is None
 
 
 def test_a_description_wrapped_over_lines_is_measured_whole_and_rendered_unchanged() -> None:
@@ -171,22 +172,36 @@ def test_a_description_wrapped_over_lines_is_measured_whole_and_rendered_unchang
     assert yaml.safe_load(text.split("---\n")[1])["description"] == "Items and places."  # unchanged
 
 
-def test_a_wrapped_description_is_reported_not_silently_left_without_the_sentence() -> None:
+def split(description: str) -> list[str]:
+    return "\n".join(lines(description)).split("\n")
+
+
+def test_a_description_without_the_sentence_is_a_problem_of_the_template() -> None:
+    """``graph-admin`` refuses a template whose description cannot take the sentence."""
+    wrapped = start_sentence_problem(split('description: "Items and\n  places."'))
+    assert wrapped is not None and wrapped.rule == "description" and wrapped.path == SKILL_FILE
+    assert start_sentence_gap(split('description: "Items and\n  places."')) == WRAPPED
+    assert "one line or as a block scalar" in wrapped.message
+    # one line, a block scalar or a description that names graph start: no problem
+    for fine in (
+        'description: "Items and places."',
+        "description: >-\n  Items and\n  places.",
+        'description: "Items. Run `graph start`."',
+    ):
+        assert start_sentence_problem(split(fine)) is None, fine
+    most = MAX_DESCRIPTION - len(START_SENTENCE) - 1
+    assert start_sentence_problem(split(f'description: "{"y" * most}"')) is None
+    long = split(f'description: "{"y" * (most + 1)}"')
+    assert start_sentence_gap(long) == TOO_LONG
+    problem = start_sentence_problem(long)
+    assert problem is not None and f"{most + 1} characters" in problem.message
+    assert f"{most} characters at most" in problem.message
+
+
+def test_the_size_says_nothing_of_the_description() -> None:
+    """The sentence is a refusal (above), not a budget: ``measure`` sizes bytes only."""
     documents, graph = render_inputs(compiled_model("inventory"))
-    wrapped = template_with('"Items and\n  places."')
-    template, _ = parse_template(wrapped)
+    template, _ = parse_template(template_with('"Items and\n  places."'))
     assert template is not None
     size = measure(template, documents, graph)
-    assert size.description_gap == WRAPPED and size.description_over and size.over
-    assert size.to_json()["description_gap"] == WRAPPED
-    # one line, a block scalar or a description that names graph start: no gap
-    for fine in (
-        '"Items and places."',
-        ">-\n  Items and\n  places.",
-        '"Items. Run `graph start`."',
-    ):
-        parsed, _ = parse_template(template_with(fine))
-        assert parsed is not None
-        assert measure(parsed, documents, graph).description_gap is None, fine
-    long = parse_template(template_with(f'"{"y" * (MAX_DESCRIPTION - 10)}"'))[0]
-    assert long is not None and measure(long, documents, graph).description_gap == TOO_LONG
+    assert not size.over and "description_gap" not in size.to_json()
