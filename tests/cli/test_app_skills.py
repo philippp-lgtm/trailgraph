@@ -296,7 +296,7 @@ def test_a_user_skill_of_another_program_refuses_writes(
     note = ("create", "inv:Location", "--set", "name=Shelf", "--set", "code=S1")
     refused = app(run_cli, *note, "--graph", "example_graph")
     assert (refused.code, refused.error["code"]) == (1, "skills.outdated")
-    assert refused.error["hint"] == "graph self update"
+    assert refused.error["hint"] == "graph start"
     assert refused.error["details"]["skills"][0]["skill"] == "graph-cli"
     listed = app(run_cli, "graphs")
     assert listed.code == 0 and listed.warning_codes == ["skills.stale"]
@@ -672,7 +672,7 @@ def test_a_release_makes_the_copy_stale_and_install_refreshes_it(
     location = ("create", "inv:Location", "--set", "name=Shelf", "--graph", "example_graph")
     refused = app(run_cli, *location, "--set", "code=S1", cwd=project)
     assert (refused.code, refused.error["code"]) == (1, "skills.outdated")
-    assert refused.error["hint"] == f"graph self update --dir {project}"
+    assert refused.error["hint"] == f"graph start --dir {project}"
     elsewhere = app(run_cli, *location, "--set", "code=S2", cwd=tmp_path)
     assert elsewhere.code == 0  # no pointer here: the project's skills are not this agent's
     refreshed = install(run_cli, *args)

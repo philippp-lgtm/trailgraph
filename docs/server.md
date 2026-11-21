@@ -375,8 +375,8 @@ skills are then only reported: the update renders them again).
 
 `--check` changes nothing: it compares the builds and dry-runs the skill
 refresh, and exits 0 only when nothing is outdated (else
-`update.available`). `remote.client_outdated` and `skills.outdated` name
-`graph self update` as their hint. `graph-admin self update` does step 1
+`update.available`). `remote.client_outdated` names `graph self update` as its hint;
+`skills.outdated` names `graph start`, which refreshes the skills without replacing the program. `graph-admin self update` does step 1
 for `graph-admin` with the admin token; it installs no skills (its admin
 skills are refreshed by `graph-admin workspace sync` or `skills install`).
 

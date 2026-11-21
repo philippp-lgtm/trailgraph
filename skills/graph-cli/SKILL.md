@@ -1,6 +1,6 @@
 ---
 name: graph-cli
-description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
+description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly. Run `graph start` once per session before loading this or any graph skill."
 metadata:
   generator: "graph_cli.skills/1"
   inventory_hash: "sha256:325573c951005e9a4ff1cfa273432f3023b62a71ee1e08bae66dc381c1005e8d"
@@ -31,13 +31,15 @@ against it and audited. The CLI is on `PATH`.
   If a call is refused, run it again in that form before you give up.
 - Reads never change anything. `graph skills`, `self update` and `connect`
   install agent skills such as this one, and the program: run them only
-  when the user asks. `graph skills check` and `--check` only read.
+  when the user asks (`graph start` refreshes skills only); `skills check` and `--check` only read.
 
 ## Workflow
 
-1. Pick a graph: `graph graphs --json` lists the graphs you may use. Select
-   one with `--graph <graph>` on every command. A project may preset a
-   default; use it unless the user names another graph.
+1. Start: `graph start --json` once per session, before any other call: it
+   refreshes stale skills (load them again) and lists the graphs you may use,
+   what your token may use of each (`not_allowed`: seen, not yours) and how to
+   search. Select a graph with `--graph <graph>` on every command; a project
+   may preset one, use it unless the user names another.
 2. Learn the model: `graph describe types --json`, then
    `graph describe type <type> --json`: fields with datatype, enum `values`,
    `limits` and `role`; relations with their `qualifiers` (values on the edge);
@@ -130,8 +132,9 @@ lists `require_reason`. Details: [references/history.md](references/history.md).
   `max_batch`), all you may write (`writes`: verbs, attributes, relations per
   type) and, if limited to some types, those you see (`reads`). Check it first.
   A field you cannot see is unknown to you; `markings` lists the ones you hold.
-- A graph you may not use does not exist for you: `graph graphs` does not
-  list it, and selecting it gives `graph.not_found`.
+- A graph you may not use does not exist for you (`graph.not_found`). A function,
+  action or view you may see but not use is marked `allowed: false` with
+  `missing`; running it gives `access.denied`: tell the user, never work around it.
 - On `access.denied`, stop and tell the user what was refused
   (`error.details`). Access is set by the maintainer of the installation.
   Never edit the project's pointer file, a policy or the data directory to

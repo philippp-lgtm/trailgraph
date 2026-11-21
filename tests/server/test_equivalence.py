@@ -566,4 +566,4 @@ def test_installed_skills_are_judged_the_same(isolated_env: dict[str, str], tmp_
     stale = [w for _, (_, _, _, warnings) in expected for w in warnings]
     assert {w["code"] for w in stale} == {"skills.stale"}
     refused = [hint for _, (_, code, hint, _) in expected if code == "skills.outdated"]
-    assert refused == ["graph self update --dir <project>"] * 3
+    assert refused == ["graph start --dir <project>"] * 3

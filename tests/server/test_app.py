@@ -586,11 +586,11 @@ def test_installed_graph_skills_are_judged_from_the_header(
     stale = f"graph={graph};hash=sha256:{'0' * 64};scope=project"
     refused = create(stale, {**pointer, "file": "/client/project/.graph_cli.toml"})
     assert (refused.status, refused.error["code"]) == (422, "skills.outdated")
-    assert refused.error["hint"] == "graph self update --dir /client/project"
+    assert refused.error["hint"] == "graph start --dir /client/project"
     assert refused.headers["Graph-Cli-Exit-Code"] == "1"
     assert refused.error["details"]["skills"][0]["current"] == {"hash": current, "model": None}
     unnamed = create(stale)  # no pointer file named: the hint cannot name the directory
-    assert unnamed.error["hint"] == "graph self update"
+    assert unnamed.error["hint"] == "graph start"
     for ignored in ("garbage", f"graph={graph};hash=nope;scope=project", stale.replace(graph, "x")):
         assert create(ignored).status == 200
     read = call(

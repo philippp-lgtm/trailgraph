@@ -13,6 +13,7 @@ from typing import Final
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.ports.catalog import GraphEntry, skill_hash
 from graph_cli.skills.graph_skill.catalogs import render_actions, render_functions
+from graph_cli.skills.graph_skill.description import with_start_sentence
 from graph_cli.skills.graph_skill.model import Model
 from graph_cli.skills.graph_skill.modules import module_page, render_modules
 from graph_cli.skills.graph_skill.naming import render_names
@@ -47,6 +48,7 @@ def render_graph_skill(
     lines = template.lines
     for index, name in reversed(template.blocks):
         lines[index : index + 1] = blocks[name]
+    lines = with_start_sentence(lines)
     end = frontmatter_end(lines)
     lines[end:end] = ["", stamp]
     return {

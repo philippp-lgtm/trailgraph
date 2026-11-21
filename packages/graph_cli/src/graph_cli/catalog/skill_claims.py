@@ -300,7 +300,7 @@ def report(
         return
     scope = str(stale[0]["scope"])
     details: dict[str, JsonValue] = {"skills": [dict(s) for s in stale], "scope": scope}
-    words = ["graph", "self", "update"]
+    words = ["graph", "start"]  # refreshes the skills; a different program build: self update
     if scope == "project" and project_dir is not None:
         details["dir"] = str(project_dir)
         words += ["--dir", shlex.quote(str(project_dir))]

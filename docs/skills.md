@@ -29,7 +29,10 @@ linking and reading files; fixed text) and `references/history.md`
 that document. Its write step sends an agent
 to a named action first (`graph describe search <value> --kind action` or the graph skill's
 list, then `graph do <action> --dry-run`, then without) and to the primitives only when none
-fits. The frontmatter `metadata` carries the
+fits. Its description ends with the sentence "Run `graph start` once per session before
+loading this or any graph skill", the first step of its workflow is `graph start`
+([Starting a session](cli_graph.md#starting-a-session)), and its error guidance names
+`graph start` for `skills.outdated` and `skills.stale`. The frontmatter `metadata` carries the
 inventory hash and program version. How to regenerate it and what the
 tests check: [`CONTRIBUTING.md`](../CONTRIBUTING.md#generated-files).
 
@@ -57,6 +60,15 @@ function and action catalogs. Which blocks there are, what each renders and
 how to use them in a template is the catalog of the [`authoring-graph-skills`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-skills/SKILL.md#the-template)
 admin skill, the one home of the authoring rules. Here is what holds for
 all of them. Each block may be used once; an unknown block name is refused.
+The renderer appends the sentence "Run `graph start` first and load graph-cli with it." to the
+description of a generated skill that does not mention `graph start` yet, so an agent that
+chooses the skill by its description is sent to the first call of a session. The description
+may have 1,024 characters; when the sentence would pass that, it is left out (the render is
+never refused for it) and `graph-admin` warns at render, publish and push
+(`admin.skill_over_budget`, naming the length of the description): shorten the description
+or write the sentence into it. A `static` skill is installed as it is, so it gets nothing.
+The `start` block opens with "If you have not yet in this session: `graph start --json`".
+
 Every generated skill also gets `references/model.md` (every type of the
 model, imported ones included, with all fields, lifecycles, relations and
 rules), so a template may not contain a file of that name. A stamp after
@@ -298,8 +310,8 @@ control: nothing checks the stored value against the catalog it came from, and a
 may carry any digest or none.
 
 - A write (`--dry-run` included) is refused with `skills.outdated` (exit 1);
-  the hint is `graph self update` (with `--dir` for a project's copy),
-  which refreshes the copies.
+  the hint is `graph start` (with `--dir` for a project's copy), which refreshes
+  the copies; `graph self update` is for a program that is not the server's build.
 - A read runs and warns `skills.stale`, naming the same command.
 - Meta commands (`whoami`, `describe commands`, `start`, `skills ...`) are never
   checked: they are how a stale copy is found and refreshed. `graph start` refreshes the

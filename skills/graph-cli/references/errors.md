@@ -27,8 +27,8 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 
 ## When an installed skill is outdated
 
-- `skills.outdated`: this skill, or the skill of the graph, was installed for an older program or an older state of the graph, so the write was refused. Stop and tell the user the command in `hint`, which refreshes the installed skills; never change skill files yourself. After the refresh, read the skills again before repeating the write.
-- `skills.stale` (a warning on a read): the same, but the answer is right. Finish the read and tell the user.
+- `skills.outdated`: this skill, or the skill of the graph, was installed for an older program or an older state of the graph, so the write was refused. Run `graph start` (the `hint`): it refreshes the installed skills and never the program. Read the refreshed skills again before you repeat the write; never change skill files yourself. If `graph start` reports a different program build, tell the user the command it names (`graph self update`).
+- `skills.stale` (a warning on a read): the same, but the answer is right. Finish the read, then run `graph start`.
 
 ## When a retract or supersede is refused
 

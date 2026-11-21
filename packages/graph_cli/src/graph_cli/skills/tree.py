@@ -137,7 +137,7 @@ def _frontmatter(text: str, name: str) -> list[Problem]:
     end = text.find("\n---\n", 3)
     if end < 0:
         return [Problem("frontmatter", SKILL_FILE, "the frontmatter block is not closed")]
-    keys = _top_level(text[4 : end + 1])
+    keys = frontmatter_keys(text[4 : end + 1])
     problems = []
     if keys.get("name") != name:
         problems.append(
@@ -153,7 +153,7 @@ def _frontmatter(text: str, name: str) -> list[Problem]:
     return problems
 
 
-def _top_level(block: str) -> dict[str, str]:
+def frontmatter_keys(block: str) -> dict[str, str]:
     """Top-level ``key: value`` pairs of a YAML frontmatter, enough to read name and
     description: plain, single- or double-quoted scalars and block scalars."""
     found: dict[str, str] = {}

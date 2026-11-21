@@ -23,6 +23,7 @@ from support.skills import GRAPH_SKILL_NAME, graph_entry, render_inputs
 from graph_cli.kernel.ids import format_alias
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.skills.graph_skill import render_checked, render_graph_skill
+from graph_cli.skills.graph_skill.description import START_SENTENCE
 from graph_cli.skills.template import MODEL_FILE, parse_template
 from graph_cli.skills.tree import MAX_SKILL_LINES, SKILL_FILE, read_tree
 
@@ -64,7 +65,8 @@ def test_curated_text_and_extra_files_are_kept() -> None:
     assert problems == [] and rendered is not None
     assert rendered["references/recipes.md"] == b"# Recipes\n"
     text = rendered[SKILL_FILE].decode()
-    assert text.startswith(files[SKILL_FILE].decode().split("\n\n")[0])  # frontmatter as is
+    frontmatter = files[SKILL_FILE].decode().split("\n\n")[0]  # as is, but for the description:
+    assert text.startswith(frontmatter.replace('skill."', "skill. " + START_SENTENCE + '"'))
     assert "## Is it available here?" in text and "graph_cli:block" not in text
 
 

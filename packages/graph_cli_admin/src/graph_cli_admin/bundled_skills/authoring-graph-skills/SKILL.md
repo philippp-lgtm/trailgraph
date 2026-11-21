@@ -127,7 +127,11 @@ The blocks already say what the model says. Write what it cannot:
 1. **The description decides when the skill is loaded.** Name what the
    graph holds in the words users use (synonyms, abbreviations), the
    situations to use it in, and what not to use it for. At most 1024
-   characters; end with "Needs the graph-cli skill."
+   characters; end with "Needs the graph-cli skill." The renderer appends
+   "Run `graph start` first and load graph-cli with it." (52 characters with
+   its space) unless the description names `graph start` itself, so keep the
+   description under 970 characters: when the sentence does not fit it is left
+   out and publish warns (`admin.skill_over_budget`, with the length).
 2. **Rules for you**: how to decide between two types, which values a
    field takes in practice, when to create versus update, what to look up
    before writing (an existing entity with a similar name), what needs the
