@@ -921,12 +921,15 @@ own action, `read.function`, in the `read` level.
   `missing: read.function`. A name that is not a function is
   `function.not_found`. Listing is no recorded decision: it writes no denial
   event, like `graph graphs`; `run` is.
-- **Graph skill.** The generated graph skill lists the featured functions:
-  their names and summaries are schema-level text like type names. It is the
-  same for every reader of the graph (it is read with `read.describe`) unless
-  the reader has [read limits](#read-limits): then it lists the functions that
-  reader sees and none that names a hidden term. Running one still needs
-  `read.function`.
+- **Graph skill.** The generated graph skill lists the featured functions only
+  to a reader who may `read.function` (their names and summaries are
+  schema-level text like type names, but a function the reader may not run is
+  not worth its context). A reader without the right gets one line saying that
+  functions are not for this token, and no name. With [read limits](#read-limits)
+  it lists the functions that reader sees and none that names a hidden term.
+  The claim of an installed copy records a digest of what that reader's render
+  shows of the catalogs, so granting or taking `read.function` makes the copy
+  stale ([Skills](skills.md#per-reader)).
 - **Read limits.** A caller who sees only some types does not see a function
   that names a hidden term, and the others run over what the caller sees
   ([Functions and actions of a limited reader](#functions-and-actions-of-a-limited-reader)).

@@ -9,6 +9,7 @@ from graph_cli.kernel.json_access import req_list
 from graph_cli.kernel.ports.catalog import GraphEntry, SkillSlot
 from graph_cli.kernel.read_view import UNLIMITED, ReadView
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.kernel.skill_featured import catalog_digest, kind_digest
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.describe import describe_model
 from graph_cli.services.read.catalogs import ReadCatalogs
@@ -65,12 +66,28 @@ class ReadSkills(ReadCatalogs):
         the digest of the visible types, as before markings existed."""
         return self.read_view(actor, entry).digest
 
-    def skill_featured(self, entry: GraphEntry) -> str:
-        """The digest of what a generated skill shows of the graph's published catalogs
+    def skill_featured(self, actor: ActorContext, entry: GraphEntry) -> str:
+        """The digest of what a generated skill shows of the graph's catalogs for ``actor``
         (``kernel.skill_featured``), recorded in the claim of an installed copy so a change of
-        the featured entries or of what the graph has makes it stale. Of the whole catalog, not
-        of this reader's part; derived, no access control."""
-        return self._catalog.skill_featured(entry.id)
+        the featured entries or of what the graph has makes it stale.
+
+        A caller without read limits and with every marking who may ``read.function`` sees the
+        whole catalog: the digest stored with it, read from three small files. For any other
+        caller it is computed from exactly the documents its render uses (the featured entries
+        it sees, the presence of what it may use; whether functions are withheld from it), so
+        a publish that only changes what it cannot see leaves its copy fresh, no digest of
+        hidden content reaches it, and a change of its rights that changes the render makes the
+        copy stale. The marker at install, the freshness check of a command and ``skills
+        check`` all take this value, for the same actor. Derived, no access control."""
+        view = self.read_view(actor, entry)
+        if not view.limited and not self._function_denials(actor, entry):
+            return self._catalog.skill_featured(entry.id)
+        functions, actions, views = self._skill_catalogs(actor, entry, view, limits=True)
+        return catalog_digest(
+            kind_digest("functions", functions),
+            kind_digest("actions", actions),
+            kind_digest("views", views),
+        )
 
     def _skill_documents(
         self,
@@ -84,12 +101,25 @@ class ReadSkills(ReadCatalogs):
         """``describe_model`` of ``model`` with the compiled function catalog (the functions
         that fit a reader with ``view``) and the action catalog narrowed to the
         actions ``actor`` may run (within its read limits when ``limits``)."""
+        functions, actions, views = self._skill_catalogs(actor, entry, view, limits=limits)
+        return describe_model(entry, model, functions, actions, views)
+
+    def _skill_catalogs(
+        self, actor: ActorContext, entry: GraphEntry, view: ReadView, *, limits: bool
+    ) -> tuple[JsonObject | None, JsonObject | None, JsonObject | None]:
+        """The compiled function, action and view catalogs as the render of ``actor`` sees them
+        (``None``: nothing to list). Functions: those that fit ``view``; with ``limits`` and no
+        ``read.function`` none, and the document says ``withheld`` so the block can say that
+        functions are not for this token. Actions: those ``actor`` may run. Views: those it may
+        see."""
         found = self._published_slot(entry)
-        catalog: JsonObject | None = None
+        functions: JsonObject | None = None
         if found is not None and found[1].count:
             document = found[1].compiled
-            if not view.limited:
-                catalog = document
+            if limits and self._function_denials(actor, entry):
+                functions = {**document, "functions": [], "withheld": True}
+            elif not view.limited:
+                functions = document
             else:
                 hidden = self._hidden_functions(entry, found, view)
                 kept = [
@@ -97,10 +127,11 @@ class ReadSkills(ReadCatalogs):
                     for e in req_list(document, "functions")
                     if isinstance(e, dict) and e.get("name") not in hidden
                 ]
-                catalog = {**document, "functions": kept} if kept else None
-        actions = self._visible_catalog(actor, entry, limits=limits)
-        return describe_model(
-            entry, model, catalog, actions, self._views_catalog(actor, entry, view)
+                functions = {**document, "functions": kept} if kept else None
+        return (
+            functions,
+            self._visible_catalog(actor, entry, limits=limits),
+            self._views_catalog(actor, entry, view),
         )
 
     def _views_catalog(

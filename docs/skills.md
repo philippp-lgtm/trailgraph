@@ -129,6 +129,15 @@ field makes the copy `stale` (see [Stale skills](#stale-skills)) and `graph
 skills install` renders it again. A marking change on a type the reader does
 not see leaves the claim alone.
 
+The featured functions are listed only to a reader who may `read.function`: a reader
+without it gets one line saying that functions are not for this token, and no name. The
+digest of what the render shows of the catalogs (see [Stale skills](#stale-skills)) is the
+stored one of the whole catalog for a reader without read limits, with every marking and with
+`read.function`. For any other reader it is computed from exactly the documents its render
+uses, so a featured entry it cannot see changes nothing for its copy (it stays `fresh`, and
+no digest of hidden content appears in a warning), a featured entry it sees makes it stale,
+and a change of its rights that changes the render does too.
+
 A field that carries [markings](access_control.md#markings) is listed only for
 a reader who holds all of them, and then with a short mark naming them (`marked
 ex:personal`, several joined by `+`; they are conjunctive). The mark costs a few
@@ -282,8 +291,9 @@ first or last entry of a kind) leaves every copy `fresh`, and one that is makes 
 A copy installed before the digest was recorded has none and is not judged on it by
 the commands; `graph skills check` reports it `stale` (it also compares what the marker
 says the copy was rendered from, not the program version) and `graph start` refreshes it.
-The digest covers the whole published catalog, not what one reader may see, so a featured
-action the reader may not run still moves it. It judges freshness only and is not access
+For a reader without read limits (and with `read.function`) the digest covers the whole
+published catalog, so a featured action that reader may not run still moves it (its copy is then
+refreshed to the same files). It judges freshness only and is not access
 control: nothing checks the stored value against the catalog it came from, and a claim
 may carry any digest or none.
 

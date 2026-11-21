@@ -835,7 +835,9 @@ def skill_functions(catalog: JsonObject) -> JsonObject:
         for entry in entries:
             if isinstance(entry, dict):
                 kept.append({k: entry[k] for k in SKILL_FUNCTION_KEYS if k in entry})
-    return {"schema": catalog.get("schema"), "functions": kept}
+    withheld: JsonObject = {"withheld": True} if catalog.get("withheld") is True else {}
+    # a reader who may not run functions: the block says so
+    return {"schema": catalog.get("schema"), "functions": kept, **withheld}
 
 
 # The keys of an action entry a graph skill reads: the signature and whether it needs

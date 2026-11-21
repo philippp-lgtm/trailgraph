@@ -40,6 +40,7 @@ class Model:
     functions: Sequence[JsonObject]  # active catalog entries, by module then name
     actions: Sequence[JsonObject]  # active action catalog entries, by module then name
     views: Sequence[JsonObject]  # active view catalog entries, by module then name
+    functions_withheld: bool = False  # the reader may not use functions: no entries, a line says so
 
     @staticmethod
     def of(
@@ -100,6 +101,7 @@ class Model:
             functions=_active_functions(bundle),
             actions=_active_actions(bundle),
             views=_active_views(bundle),
+            functions_withheld=_withheld(bundle, "functions"),
         )
 
     @property
@@ -122,6 +124,11 @@ class Model:
             for key in ("relations_out", "relations_in"):
                 found |= {req_str(as_object(r, key), "curie") for r in req_list(body, key)}
         return sorted(found)
+
+
+def _withheld(bundle: JsonObject, key: str) -> bool:
+    document = bundle.get(key)
+    return isinstance(document, dict) and document.get("withheld") is True
 
 
 def _active_functions(bundle: JsonObject) -> list[JsonObject]:

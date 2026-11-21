@@ -92,3 +92,13 @@ def test_the_kinds_are_told_apart_and_combined() -> None:
     assert len({f, a, v}) == 3
     assert catalog_digest(f, a, v) != catalog_digest(a, f, v)
     assert catalog_digest(f, a, v) == catalog_digest(f, a, v)
+
+
+def test_a_reader_who_may_not_use_functions_has_a_digest_of_its_own() -> None:
+    nothing = kind_digest("functions", None)
+    withheld = {**functions(), "withheld": True}
+    assert kind_digest("functions", withheld) != nothing  # another line is rendered
+    assert kind_digest("functions", {**functions(entry("a", featured=True)), "withheld": True}) != (
+        kind_digest("functions", functions(entry("a", featured=True)))
+    )
+    assert kind_digest("functions", {**functions(), "withheld": False}) == nothing

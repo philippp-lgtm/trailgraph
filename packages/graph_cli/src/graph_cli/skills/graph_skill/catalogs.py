@@ -62,6 +62,11 @@ def _function_line(function: JsonObject) -> str:
 
 def render_functions(doc: Model) -> list[str]:
     """Level 0: a few featured functions and how to find the rest (K12)."""
+    if doc.functions_withheld:
+        return [
+            "This token may not run named functions in this graph (`read.function`): do not"
+            " look for one or write a query instead; tell the user what you cannot do."
+        ]
     if not doc.functions:
         return ["This graph has no published functions."]
     name = doc.name

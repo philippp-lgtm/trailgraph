@@ -224,7 +224,9 @@ class SkillGate:
             return  # unpublished: an installed copy is unavailable, not stale
         # Only a template is rendered per reader; a static skill is the same for everyone
         seen = self.visible(entry) if slot.kind == GENERATED else None
-        shown = _featured_of(self, entry) if slot.kind == GENERATED else None
+        # computed only for a copy that recorded a digest: it is the hot path
+        judged = slot.kind == GENERATED and any(c.featured is not None for c in claims)
+        shown = _featured_of(self, entry) if judged else None
         stale = [s for c in claims if (s := graph_stale(c, entry, slot, seen, shown)) is not None]
         report(stale, write=self.write, warnings=self.warnings, project_dir=self.project_dir)
 

@@ -159,8 +159,9 @@ def test_the_skill_is_rendered_per_token_and_carries_the_digest_of_the_visible_s
     assert "Named functions:" in text_a and "items_by_condition" not in text_a  # not featured
     assert limited["source"]["visible"].startswith("sha256:")
     assert "visible" not in full["source"]
-    # what the render shows of the catalogs is the same for both: the digest covers the whole one
-    assert limited["source"]["featured"] == full["source"]["featured"]
+    # what the render shows of the catalogs: the whole catalog's digest for B (it sees all), the
+    # one of what A sees for A (hidden entries never enter it)
+    assert limited["source"]["featured"] != full["source"]["featured"]
 
 
 def read_with(server: ServerApp, token: str, claim: str) -> Any:
@@ -192,3 +193,54 @@ def test_a_claim_of_another_visible_set_is_stale(
     # B sees everything: its copy has no digest, and A's copy is stale for it
     assert read_with(served, b, unlimited).json["warnings"] == []
     assert [w["code"] for w in read_with(served, b, mine).json["warnings"]] == ["skills.stale"]
+
+
+# ---- what the render shows of the catalogs, for a limited token (graph start plan S6) ----------
+
+
+def republish(run_cli: CliRunner, tmp_path: Path, name: str, **featured: bool) -> None:
+    """Publish the functions with ``featured`` set per function name (others as they are)."""
+    folder = tmp_path / f"functions_{name}"
+    shutil.copytree(FIXTURES / "functions" / "inventory" / "valid", folder)
+    for function, value in featured.items():
+        path = folder / f"{function}.yaml"
+        text = path.read_text()
+        text = text.replace("featured: true\n", "").replace("featured: false\n", "")
+        path.write_text(text.replace("\nparams:", f"\nfeatured: {str(value).lower()}\nparams:", 1))
+    published = admin(run_cli, "graph", "functions", "publish", "example_graph", str(folder))
+    assert published.code == 0, published.envelope
+
+
+def test_the_featured_claim_of_a_limited_token_covers_only_what_it_sees(
+    run_cli: CliRunner, served: ServerApp, installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """A featured entry the token cannot see changes nothing for it: its copy stays fresh and no
+    digest of hidden content reaches it; a featured entry it sees makes the copy stale. The
+    digest is the one the skill carries when the server renders it."""
+    a, b = installation["tokens"]["a"], installation["tokens"]["b"]
+    listing = command(served, "graphs", a).json["data"]["items"]
+    (graph,) = [g["id"] for g in listing if g["name"] == "example_graph"]
+
+    def claim(token: str) -> str:
+        source = skill(served, token)["source"]
+        base = f"graph={graph};hash={source['hash']};bundle=inventory;version=1.0.0"
+        seen = f";visible={source['visible']}" if "visible" in source else ""
+        return f"{base}{seen};featured={source['featured']};scope=user"
+
+    mine = claim(a)
+    whole_before = skill(served, b)["source"]["featured"]
+    assert read_with(served, a, mine).json["warnings"] == []  # fresh right after install
+    # the function A cannot see (it names a location) is unfeatured: nothing changes for A...
+    republish(run_cli, tmp_path, "hidden", items_in_location=False)
+    assert skill(served, b)["source"]["featured"] != whole_before  # the whole catalog moved
+    assert read_with(served, a, mine).json["warnings"] == []
+    assert claim(a) == mine
+    # ...and one A can see is featured: A's copy is stale, B's too
+    republish(run_cli, tmp_path, "seen", items_in_location=False, items_by_condition=True)
+    moved = read_with(served, a, mine)
+    assert [w["code"] for w in moved.json["warnings"]] == ["skills.stale"]
+    (entry,) = moved.json["warnings"][0]["details"]["skills"]
+    whole_now = skill(served, b)["source"]["featured"]
+    shown = {entry["installed"]["featured"], entry["current"]["featured"]}
+    assert shown.isdisjoint({whole_before, whole_now})  # per-reader values, not the whole catalog's
+    assert read_with(served, a, claim(a)).json["warnings"] == []  # fresh again after a refresh

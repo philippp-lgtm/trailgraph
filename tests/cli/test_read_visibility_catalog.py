@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 from harness import CliRunner
-from support.admin import Outcome, admin, init, write_documents
+from support.admin import Outcome, admin, data_root, init, write_documents
 from support.app import app, create_graph
 from support.fixtures import FIXTURES
 from support.read_limits import install, shown, the_same_but_for, without_suggestions
@@ -420,3 +420,118 @@ def test_a_policy_change_makes_the_installed_skill_stale(
     assert (
         "skills.stale" not in ok(run_cli, "find", "--type", "inv:Item", cwd=project).warning_codes
     )
+
+
+# ---- what the render shows of the catalogs, per reader (graph start plan S6) -----------------
+
+
+def set_featured(tmp_path: Path, name: str, **featured: bool) -> Path:
+    """The function sources with ``featured`` set per function name."""
+    folder = tmp_path / f"functions_{name}"
+    shutil.copytree(tmp_path / "functions", folder)
+    for function, value in featured.items():
+        path = folder / f"{function}.yaml"
+        text = path.read_text().replace("featured: true\n", "").replace("featured: false\n", "")
+        path.write_text(text.replace("\nparams:", f"\nfeatured: {str(value).lower()}\nparams:", 1))
+    return folder
+
+
+def check_states(
+    run_cli: CliRunner, project: Path, env: dict[str, str] | None = None
+) -> dict[str, str]:
+    done = app(
+        run_cli,
+        "skills",
+        "check",
+        "--scope",
+        "project",
+        "--dir",
+        str(project),
+        cwd=project,
+        env=env,
+    )
+    return {s["skill"]: s["status"] for s in done.data["skills"]}
+
+
+def test_a_limited_copy_is_fresh_after_install_and_only_what_it_sees_makes_it_stale(
+    run_cli: CliRunner, world: dict[str, str], tmp_path: Path, isolated_env: dict[str, str]
+) -> None:
+    """The digest of a limited reader covers the featured entries it sees: unfeaturing the
+    function that names a hidden location changes nothing for it (copy fresh for check and for a
+    read), featuring one it sees makes the copy stale. No digest of the whole catalog reaches
+    it."""
+    limit(run_cli, tmp_path, "inv:Item", writes=WRITES_ITEMS)
+    publish_skill(run_cli, tmp_path)
+    project = project_with_pointer(tmp_path)
+    assert install_skills(run_cli, project).code == 0
+    mine = marker_source(project)["featured"]
+    assert check_states(run_cli, project) == {"graph-cli": "fresh", "graph-example-graph": "fresh"}
+    find = ("find", "--type", "inv:Item", "--graph", "example_graph")
+    assert app(run_cli, *find, cwd=project).warning_codes == []
+    hidden = set_featured(tmp_path, "hidden", items_in_location=False)
+    published = admin(run_cli, "graph", "functions", "publish", "example_graph", str(hidden))
+    assert published.code == 0, published.envelope
+    assert app(run_cli, *find, cwd=project).warning_codes == []
+    assert check_states(run_cli, project)["graph-example-graph"] == "fresh"
+    seen = set_featured(tmp_path, "seen", items_in_location=False, items_by_condition=True)
+    published = admin(run_cli, "graph", "functions", "publish", "example_graph", str(seen))
+    assert published.code == 0, published.envelope
+    stale = app(run_cli, *find, cwd=project)
+    assert stale.warning_codes == ["skills.stale"], stale.envelope
+    (entry,) = stale.envelope["warnings"][0]["details"]["skills"]
+    assert entry["installed"]["featured"] == mine
+    assert check_states(run_cli, project)["graph-example-graph"] == "stale"
+    # no digest of the whole catalog reaches the limited reader
+    from graph_cli.catalog.file_catalog import FileCatalog
+    from graph_cli.kernel.ids import GraphId, parse_id
+
+    root = data_root(isolated_env)
+    graph = next((root / "graphs").iterdir())
+    whole = FileCatalog(root).skill_featured(GraphId(parse_id(graph.name)))
+    assert whole not in {entry["installed"]["featured"], entry["current"]["featured"]}
+    assert install_skills(run_cli, project).code == 0
+    assert app(run_cli, *find, cwd=project).warning_codes == []
+
+
+NO_FUNCTIONS = """\
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {{graphs: "*", level: write}}
+no_project: {{"*": write}}
+{deny}"""
+DENY_FUNCTIONS = """\
+deny:
+  - {id: no_functions, agent_type: [explore], action: ["read.function"]}
+"""
+EXPLORE = {**ENV, "GRAPH_CLI_AGENT_ID": "agent-1", "GRAPH_CLI_AGENT_TYPE": "explore"}
+
+
+def test_a_caller_without_read_function_gets_no_function_lines_and_a_stale_copy_when_that_changes(
+    run_cli: CliRunner, world: dict[str, str], tmp_path: Path
+) -> None:
+    """The graph skill lists featured functions only to a caller who may ``read.function``;
+    the block says in one line that functions are not for this token. The copy records a
+    digest for that caller, so granting the right makes it stale."""
+    work = tmp_path / "policies"
+    install(run_cli, work, NO_FUNCTIONS.format(deny=DENY_FUNCTIONS))
+    publish_skill(run_cli, tmp_path, "")
+    project = project_with_pointer(tmp_path)
+    args = ("skills", "install", "--scope", "project", "--dir", str(project), "--graph")
+    assert app(run_cli, *args, "example_graph", cwd=project, env=EXPLORE).code == 0
+    text = b"".join(installed_graph_skill(project).values()).decode()
+    assert "This token may not run named functions in this graph" in text
+    assert "items_in_location" not in text and "Named actions:" in text
+    states = check_states(run_cli, project, EXPLORE)
+    assert states == {"graph-cli": "fresh", "graph-example-graph": "fresh"}
+    find = ("find", "--type", "inv:Item", "--graph", "example_graph")
+    assert app(run_cli, *find, cwd=project, env=EXPLORE).warning_codes == []
+    # without the denial the same caller reads functions: its copy is stale, a refresh lists them
+    install(run_cli, work, NO_FUNCTIONS.format(deny=""))
+    stale = app(run_cli, *find, cwd=project, env=EXPLORE)
+    assert stale.warning_codes == ["skills.stale"], stale.envelope
+    assert check_states(run_cli, project, EXPLORE)["graph-example-graph"] == "stale"
+    assert app(run_cli, *args, "example_graph", cwd=project, env=EXPLORE).code == 0
+    refreshed = b"".join(installed_graph_skill(project).values()).decode()
+    assert "may not run named functions" not in refreshed and "items_in_location" in refreshed
+    assert app(run_cli, *find, cwd=project, env=EXPLORE).warning_codes == []

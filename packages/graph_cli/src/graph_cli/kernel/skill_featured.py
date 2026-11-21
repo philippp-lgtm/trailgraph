@@ -10,6 +10,7 @@ for every caller and can be stored once with the compiled catalog when it is pub
 ``featured`` key of ``slot.json``). It is derived and judges freshness only: it is no access
 control and nothing checks it against the catalog it came from.
 
+A document that says ``withheld`` (a reader may not use the entries at all) has its own digest.
 Every featured entry counts, not only the few the lines show, and a featured entry that is
 deprecated stays in with its status, so deprecating it changes the digest (it leaves the lines).
 The projection keeps whole ``params`` lists and the ``reason`` of an action: better stale too
@@ -42,7 +43,10 @@ def kind_digest(kind: str, compiled: Mapping[str, JsonValue] | None) -> str:
             key=lambda e: (str(e.get("module") or ""), str(e.get("name"))),
         )
         featured = [_projection(e, keys) for e in chosen]
-    return hash_value({"kind": kind, "present": present, "featured": featured})
+    shown: dict[str, JsonValue] = {"kind": kind, "present": present, "featured": featured}
+    if compiled is not None and compiled.get("withheld") is True:
+        shown["withheld"] = True  # a reader who may not use them sees a different line
+    return hash_value(shown)
 
 
 def catalog_digest(functions: str, actions: str, views: str) -> str:

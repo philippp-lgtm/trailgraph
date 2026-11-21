@@ -144,7 +144,7 @@ def graph_skill(ctx: AppContext, entry: GraphEntry, warnings: list[WarningRecord
         inventory = app_inventory()
         names = ctx.reader.skill_names_model(ctx.actor, entry, request)
         digest = ctx.reader.skill_digest(ctx.actor, entry)
-        featured = ctx.reader.skill_featured(entry)
+        featured = ctx.reader.skill_featured(ctx.actor, entry)
     skill, found = sources.graph_skill(
         entry,
         slot,

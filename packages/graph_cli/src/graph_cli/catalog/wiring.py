@@ -606,7 +606,7 @@ class AppServices:
                 pointer,
                 command_warnings,
                 lambda entry: reader.skill_digest(actor, entry),
-                reader.skill_featured,
+                lambda entry: reader.skill_featured(actor, entry),
             ),
         )
         unknown = project_warning(actor, policy.current(None))  # fails closed on a bad policy

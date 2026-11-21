@@ -206,7 +206,9 @@ def test_a_graph_without_a_catalog_has_no_function(svc: ServiceEnv) -> None:
 def test_the_skill_model_carries_no_query_text_for_a_reader_without_read_function(
     svc: ServiceEnv,
 ) -> None:
-    """K10: ``read.describe`` alone gets names, summaries and signatures, never the queries."""
+    """K10: the skill model never carries the queries. A reader without ``read.function`` gets no
+    function at all, only the mark that they are withheld (graph start plan S4); one who may
+    reads names, summaries and signatures."""
     rules: list[JsonValue] = [
         {"id": "no_function", "effect": "deny", "action": ["read.function"], "resource": "graph:*"},
         {"id": "describe", "effect": "allow", "action": ["read.describe"], "resource": "graph:*"},
@@ -229,11 +231,19 @@ def test_the_skill_model_carries_no_query_text_for_a_reader_without_read_functio
         open_view(svc, narrow)  # running a function is refused
     model, _ = narrow.skill_model(svc.actor, entry, REQUEST)
     full, _ = svc.make_reader().skill_model(svc.actor, entry, REQUEST)
-    assert model == full  # the same reduced document for every reader of the description
-    functions = model["functions"]
+    assert model["functions"] == {
+        "schema": "graph_cli.functions/1",
+        "functions": [],
+        "withheld": True,
+    }
+    assert {k: v for k, v in model.items() if k != "functions"} == {
+        k: v for k, v in full.items() if k != "functions"
+    }  # the rest is the same for every reader of the description
+    functions = full["functions"]
     assert isinstance(functions, dict) and functions["functions"]
     for function in functions["functions"]:  # type: ignore[union-attr]
         assert set(function) <= set(SKILL_FUNCTION_KEYS)  # type: ignore[arg-type]
-    text = json.dumps(model)
-    assert "located_in" in text  # the model itself stays
-    assert "WHERE l.id" not in text and "ORDER BY" not in text and "source_query" not in text
+    for document in (model, full):
+        text = json.dumps(document)
+        assert "located_in" in text  # the model itself stays
+        assert "WHERE l.id" not in text and "ORDER BY" not in text and "source_query" not in text

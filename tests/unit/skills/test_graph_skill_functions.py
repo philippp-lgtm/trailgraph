@@ -187,6 +187,16 @@ def test_a_curated_functions_page_is_refused() -> None:
     assert [(p.rule, p.path) for p in problems] == [("template", FUNCTIONS_FILE)]
 
 
+def test_a_reader_who_may_not_run_functions_gets_one_line_and_no_name() -> None:
+    withheld = {**catalog(), "functions": [], "withheld": True}
+    files = render(withheld)
+    skill = text(files, SKILL_FILE)
+    assert "This token may not run named functions in this graph (`read.function`)" in skill
+    assert "members_of_unit" not in "".join(text(files, p) for p in files)
+    assert "Named functions:" not in skill and "graph run <function>" not in skill
+    assert render(None) != files  # not the line of a graph without functions
+
+
 def test_the_catalog_must_have_the_schema() -> None:
     documents, graph = render_inputs(MODEL, functions={"schema": "other/1", "functions": []})
     template, _ = parse_template(template_files())
