@@ -37,8 +37,8 @@ by a minor release and is explored by agents top down.
   of one table per type. See [Skills](../../docs/skills.md) for how it is published and
   installed.
 - **Named read functions** (`functions/`, one `graph_cli.function/1` file each) for the
-  recurring questions: members of a unit, missing trainings, policies, employer, reporting chain,
-  vacant positions. Each takes typed `ref` parameters and agents run it with `graph run`; the
+  recurring questions: members of a unit, missing trainings of a unit, the trainings a person
+  needs, policies, employer, shareholders, reporting chain, vacant positions. Each takes typed `ref` parameters and agents run it with `graph run`; the
   curated skill lists the featured ones through its `functions` block. See
   [Functions](../../docs/cli_graph.md#functions) and the `authoring-graph-functions` admin skill.
 - **Named write actions** (`actions/`, one `graph_cli.action/1` file each) for the recurring

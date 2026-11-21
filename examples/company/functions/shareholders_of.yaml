@@ -1,0 +1,35 @@
+schema: graph_cli.function/1
+name: shareholders_of
+module: legal
+summary: Who holds stakes in the given legal entities, with the percent of each stake and its date.
+use_when: >-
+  Who owns a legal entity or subsidiary, the shareholders and their percentages, whether a holder
+  owns more than half (the parent company), and which stakes are recorded at all. Not for what an
+  entity itself owns.
+params:
+  entity:
+    type: ref
+    class: leg:LegalEntity
+    many: true
+    summary: The legal entities whose shareholders are asked for; repeat the parameter for several.
+query: |
+  MATCH (s:Shareholding)-[:stake_in]->(e:LegalEntity)
+  WHERE e.id IN $entity
+  MATCH (s)-[:shareholder]->(h)
+  RETURN e.name AS entity, h.name AS shareholder, h.alias AS shareholder_alias, s.percent AS percent,
+    s.since AS since
+  ORDER BY entity, shareholder
+returns:
+  - column: entity
+    summary: Name of the legal entity.
+  - column: shareholder
+    summary: Name of the legal entity or person that holds the stake.
+  - column: shareholder_alias
+    summary: Alias of that holder.
+  - column: percent
+    summary: Share of the capital, in percent (decimal text); more than 50 makes the holder the parent company.
+  - column: since
+    summary: Date the stake was acquired, if recorded.
+examples:
+  - question: Who owns this company, and is there a parent company?
+featured: true

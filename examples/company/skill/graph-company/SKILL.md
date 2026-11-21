@@ -32,15 +32,10 @@ recording changes to them. The rules below say what the model itself cannot.
   hold them.
 - A binding rule is a policy and says what must hold; how to carry it out is an
   instruction. Ask which of the two the text is before creating either.
-- Look up the name (`graph lookup`) before creating a person, unit, entity or process:
-  the graph warns about near duplicates, and a second copy splits the history.
-- Employees, positions, policies, tasks and legal entities move through states with
-  `graph transition`. Ask the user before a move that ends something (`left`,
-  `abolished`, `withdrawn`, `dissolved`, `cancelled`).
+- Ask the user before a state change that ends something (`left`, `abolished`,
+  `withdrawn`, `dissolved`, `cancelled`).
 - One shareholding per owner and entity, percent as decimal text. A parent company is the
-  holder of more than half of another entity: derive it with a query, do not store it.
-- Subject matter is what is true of the company (a stake, a reporting line). How you
-  found out, or why you changed it, goes into `--reason`, not into a value.
+  holder of more than half of another entity: read it from the shareholdings, never store it.
 
 ## Reading
 
@@ -48,29 +43,9 @@ recording changes to them. The rules below say what the model itself cannot.
 
 <!-- graph_cli:block functions -->
 
-Questions that no function answers (replace the placeholders):
-
-```sh
-graph lookup "<name>" --graph company
-graph query 'MATCH (p:Employee)-[:holds]->(q:Position) WHERE q.title = $title RETURN p.name' --graph company --param title="<position title>"
-graph query 'MATCH (p:Person)-[:holds]->(:Position)-[:carries]->(:Role)<-[:required_for]-(t:Training) WHERE p.name = $name RETURN DISTINCT t.title' --graph company --param name="<person name>"
-graph query 'MATCH (s:Shareholding)-[:stake_in]->(e:LegalEntity), (s)-[:shareholder]->(h) WHERE e.name = $name RETURN h.name, s.percent' --graph company --param name="<entity name>"
-```
-
-More recipes: [references/recipes.md](references/recipes.md).
-
 ## Writing
 
 <!-- graph_cli:block actions -->
-
-When no action fits, write several linked entities as one change set and check it first:
-
-```sh
-graph apply <file> --graph company --dry-run
-```
-
-When a write is refused for a relation that does not fit, the answer names the relations
-that do connect the two types; follow that path instead of forcing the edge.
 
 ## Model
 
