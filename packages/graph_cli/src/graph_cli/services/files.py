@@ -541,7 +541,7 @@ class FileService:
     ) -> tuple[Revision, list[WarningRecord]]:
         """A ``files:File`` family entity, authorized for ``read.get`` on its type."""
         types = self._family(view)
-        entity, found = resolve_ref(ref, view.snapshot)
+        entity, found = resolve_ref(ref, view.snapshot, argument="ref")
         revision = view.snapshot.get(entity)
         if revision is None:
             raise GraphCliError(

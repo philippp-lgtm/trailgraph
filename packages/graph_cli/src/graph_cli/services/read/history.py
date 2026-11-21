@@ -24,7 +24,7 @@ class ReadHistory(ReadState):
     ) -> tuple[dict[str, JsonValue], Page, list[WarningRecord]]:
         """One entity's revisions, newest first: when, by which command, why, and the
         names of what changed against the revision before (B8.15)."""
-        entity, warnings = resolve_ref(ref, view.snapshot)
+        entity, warnings = resolve_ref(ref, view.snapshot, argument="ref")
         metas = list(view.snapshot.history(entity))
         if not metas:
             raise GraphCliError(

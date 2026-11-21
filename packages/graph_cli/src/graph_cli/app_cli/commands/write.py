@@ -40,6 +40,7 @@ from graph_cli.kernel.ids import TERM_REF_RE, EdgeId, EntityRef, TermRef, parse_
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.query.plan import split_assignment
 from graph_cli.services.read import graph_json
+from graph_cli.services.refs import invalid_ref
 
 WRITE_ERRORS: Final = (
     *GRAPH_ERRORS,
@@ -69,10 +70,12 @@ def usage(argument: str, message: str, actual: JsonValue = None) -> GraphCliErro
     )
 
 
-def _ref(text: str, argument: str) -> EntityRef:
+def _ref(text: str, argument: str, lookup_for: str | None = None) -> EntityRef:
+    """A reference argument; a name is refused with a hint to look it up (for the relation the
+    entity is the target of, when there is one)."""
     ref = parse_entity_ref(text, allow_abbrev=True)
     if ref is None:
-        raise usage(argument, "expected a full id, an alias or 8-32 trailing hex digits", text)
+        raise invalid_ref(text, argument=argument, lookup_for=lookup_for)
     return ref
 
 
@@ -218,7 +221,7 @@ def create(
     edges = []
     for value in edge:
         rel, target = split_assignment(value, "--edge")
-        edges.append(EdgeSpec(_term(rel, "--edge"), _ref(target, "--edge")))
+        edges.append(EdgeSpec(_term(rel, "--edge"), _ref(target, "--edge", rel)))
     op = CreateOp(
         type=_term(type, "type"),
         attrs=values,
@@ -341,7 +344,7 @@ def link(
     merge_values(texts, values, "--qualifier-json")
     if target_rev is not None and target_rev < 1:
         raise usage("--target-rev", "expected 1 or more", target_rev)
-    spec = EdgeSpec(_term(rel, "rel"), _ref(target, "target"), {**texts, **values}, target_rev)
+    spec = EdgeSpec(_term(rel, "rel"), _ref(target, "target", rel), {**texts, **values}, target_rev)
     op = LinkOp(_ref(ref, "ref"), spec, expect)
     args: dict[str, JsonValue] = {
         "ref": ref,
@@ -388,7 +391,7 @@ def unlink(
         op = UnlinkOp(
             _ref(ref, "ref"),
             rel=_term(rel, "rel"),
-            target=_ref(target, "target"),
+            target=_ref(target, "target", rel),
             expect_rev=expect,
         )
     args: dict[str, JsonValue] = {

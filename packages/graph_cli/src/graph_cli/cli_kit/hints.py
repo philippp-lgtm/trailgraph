@@ -12,6 +12,8 @@ from collections.abc import Callable, Mapping
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.ids import parse_id
 
 ADMIN_PROGRAM: Final = "graph-admin"
 
@@ -25,6 +27,38 @@ def _init(details: Mapping[str, JsonValue], program: str) -> str | None:
 
 def _help(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} --help"
+
+
+def _lookup_text(text: str, program: str, slot: str = "") -> str:
+    """``graph lookup`` for a text the caller gave where an entity reference goes."""
+    return f"{program} lookup {shlex.quote(text)} --json{slot}"
+
+
+def _usage(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """A name where an entity reference goes: look it up (for the slot it is meant for, when the
+    error names one); any other usage error: the help."""
+    actual = details.get("actual")
+    if details.get("expected") != "entity_ref" or not isinstance(actual, str):
+        return _help(details, program)
+    slot, kind = details.get("for"), details.get("class")
+    if isinstance(slot, str):
+        return _lookup_text(actual, program, f" --for {shlex.quote(slot)}")
+    if isinstance(kind, str):
+        return _lookup_text(actual, program, f" --type {shlex.quote(kind)}")
+    return _lookup_text(actual, program)
+
+
+def _not_found(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """A reference that names no entity and is not a full id (an alias, an abbreviation, a
+    name): look the text up. A full id has nothing to look up."""
+    ref = details.get("ref")
+    if not isinstance(ref, str):
+        return None
+    try:
+        parse_id(ref)
+    except GraphCliError:
+        return _lookup_text(ref, program)
+    return None
 
 
 def _graphs(details: Mapping[str, JsonValue], program: str) -> str | None:
@@ -228,7 +262,7 @@ def _publish(details: Mapping[str, JsonValue], program: str) -> str | None:
 
 
 _BASE: Final[dict[str, Hint | None]] = {
-    "usage.invalid_argument": _help,
+    "usage.invalid_argument": _usage,
     "usage.unknown_command": _help,
     "usage.missing_argument": _help,
     "usage.invalid_input": None,
@@ -237,7 +271,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "graph.not_in_project": _graphs,
     "graph.archived": None,
     "graph.readonly": None,
-    "entity.not_found": None,
+    "entity.not_found": _not_found,
     "entity.ambiguous_ref": None,
     "entity.revision_not_found": _history,
     "term.unknown": _term,

@@ -166,7 +166,13 @@ the command keeps the last value.
 ## References, filters and writes
 
 References in arguments are full ids, aliases or 8-32 trailing hex digits of
-an id; change set documents allow full ids, aliases and `@local` names only.
+an id; change set documents allow full ids, aliases and `@local` names only. A
+name given where a reference goes is `usage.invalid_argument` with
+`details.expected` `entity_ref` (and `argument`, `actual`, and `for` or `class`
+when the slot is known): nothing is resolved, and the hint is `graph lookup`
+for the text, with `--for` the slot (the relation of a link target, or
+`<function>.<param>`) or `--type`. An `entity.not_found` for a reference that
+is not a full id gets the same hint.
 Types and relations in read arguments (`find`, `lookup`, `search`,
 `neighbors`, `describe`) are CURIEs or, as in `graph query`, the local name
 when exactly one CURIE has it (`Topic` for `ex:Topic`); an ambiguous local

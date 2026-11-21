@@ -179,6 +179,8 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
     call("view", entity, "--as-of", "tx:1")
     call("view", "0" * 16)
     call("get", "0" * 16)
+    call("get", "Some Name")  # a name where a reference goes: a hint to look it up
+    call("history", "Some Name")
     call("find", "--type", cls, "--limit", "2")
     call("lookup", str(factory.attrs(cls)[attr]))
     call("lookup", str(factory.attrs(cls)[attr]), "--for", "items_in_location.location")
@@ -213,6 +215,7 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
     linked = factory.concrete(factory.model.relations[rel].domain[0])
     a, b = create(linked, "a"), create(linked, "b")
     call("link", a, rel, b)
+    call("link", a, rel, "Some Name")
     call("lookup", "a", "--match", "prefix", "--for", rel, "--for-source", rel)
     call("link", b, rel, a)
     call("unlink", a, rel, b)
