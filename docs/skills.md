@@ -142,7 +142,9 @@ skills install` renders it again. A marking change on a type the reader does
 not see leaves the claim alone.
 
 The featured functions are listed only to a reader who may `read.function`: a reader
-without it gets one line saying that functions are not for this token, and no name. The
+without it gets one line saying that functions are not for this token, and no name
+(when it sees at least one function: a reader whose read limits hide them all gets the
+skill of a graph without functions, with or without the right). The
 digest of what the render shows of the catalogs (see [Stale skills](#stale-skills)) is the
 stored one of the whole catalog for a reader without read limits, with every marking and with
 `read.function`. For any other reader it is computed from exactly the documents its render

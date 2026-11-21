@@ -29,15 +29,15 @@ class ReadSkills(ReadCatalogs):
     ) -> tuple[dict[str, JsonValue], tuple[WarningRecord, ...]]:
         """The model documents a generated graph skill is rendered with: those of the
         graph's current pin, as ``graph describe`` prints them (``read.describe``), plus the
-        compiled function catalog and the action catalog when the graph has them. Like the
-        type names, the function names and summaries are schema-level text, so the skill lists
-        them for every reader of the description (K10). Actions are different on purpose: a
-        skill block is a listing, so it holds only the actions the actor may run (actions plan
-        A6, as ``actions``); an actor who may run none gets the documents of a graph without
-        actions. The rest of the catalog document is kept as published, so the renderer sees
-        one shape. For an actor who sees only some types (type read limits plan V7) the
-        documents are those of its model view and hold the functions and actions that fit it,
-        so the skill names nothing the actor cannot see."""
+        compiled function catalog and the action catalog when the graph has them. The function
+        names and summaries are schema-level text like the type names, but a skill block is a
+        listing of what the actor may use: it holds the functions only when the actor may
+        ``read.function`` (else the document is ``withheld``, without names) and the actions
+        the actor may run (actions plan A6, as ``actions``); an actor who may run none gets the
+        documents of a graph without actions. The rest of the catalog document is kept as
+        published, so the renderer sees one shape. For an actor who sees only some types (type
+        read limits plan V7) the documents are those of its model view and hold the functions
+        and actions that fit it, so the skill names nothing the actor cannot see."""
         self.authorize(actor, "read.describe", f"graph:{entry.id}", request, entry)
         model, warnings = self._models.load_for_read(entry)
         view = self.read_view(actor, entry)
@@ -78,7 +78,12 @@ class ReadSkills(ReadCatalogs):
         a publish that only changes what it cannot see leaves its copy fresh, no digest of
         hidden content reaches it, and a change of its rights that changes the render makes the
         copy stale. The marker at install, the freshness check of a command and ``skills
-        check`` all take this value, for the same actor. Derived, no access control."""
+        check`` all take this value, for the same actor. Derived, no access control.
+
+        The shortcut for the unlimited caller ignores the rights that decide which actions it
+        may run, on purpose (plan S6): a change of its write rights moves no stored digest, and
+        only the comparison of files by ``graph start`` and ``skills check`` sees the
+        difference in what its render lists."""
         view = self.read_view(actor, entry)
         if not view.limited and not self._function_denials(actor, entry):
             return self._catalog.skill_featured(entry.id)
@@ -110,24 +115,31 @@ class ReadSkills(ReadCatalogs):
         """The compiled function, action and view catalogs as the render of ``actor`` sees them
         (``None``: nothing to list). Functions: those that fit ``view``; with ``limits`` and no
         ``read.function`` none, and the document says ``withheld`` so the block can say that
-        functions are not for this token. Actions: those ``actor`` may run. Views: those it may
-        see."""
+        functions are not for this token, but only for a reader that sees at least one function:
+        one whose view hides them all gets ``None`` whatever its rights. Actions: those ``actor``
+        may run. Views: those it may see."""
         found = self._published_slot(entry)
         functions: JsonObject | None = None
         if found is not None and found[1].count:
+            # What the reader's view hides goes first, the right second: a reader that sees no
+            # function must not learn through ``read.function`` that the graph has any.
             document = found[1].compiled
-            if limits and self._function_denials(actor, entry):
-                functions = {**document, "functions": [], "withheld": True}
-            elif not view.limited:
-                functions = document
-            else:
+            sees = True
+            if view.limited:
                 hidden = self._hidden_functions(entry, found, view)
                 kept = [
                     e
                     for e in req_list(document, "functions")
                     if isinstance(e, dict) and e.get("name") not in hidden
                 ]
-                functions = {**document, "functions": kept} if kept else None
+                document = {**document, "functions": kept}
+                sees = bool(kept)
+            if not sees:
+                functions = None
+            elif limits and self._function_denials(actor, entry):
+                functions = {**document, "functions": [], "withheld": True}
+            else:
+                functions = document
         return (
             functions,
             self._visible_catalog(actor, entry, limits=limits),

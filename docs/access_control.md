@@ -925,7 +925,8 @@ own action, `read.function`, in the `read` level.
   to a reader who may `read.function` (their names and summaries are
   schema-level text like type names, but a function the reader may not run is
   not worth its context). A reader without the right gets one line saying that
-  functions are not for this token, and no name. With [read limits](#read-limits)
+  functions are not for this token, and no name, unless its read limits hide every
+  function (then the right changes nothing: it learns of none). With [read limits](#read-limits)
   it lists the functions that reader sees and none that names a hidden term.
   The claim of an installed copy records a digest of what that reader's render
   shows of the catalogs, so granting or taking `read.function` makes the copy
