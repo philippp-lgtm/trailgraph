@@ -143,41 +143,90 @@ def test_modules_and_search_json(run_cli: CliRunner, root: Path) -> None:
     assert {i["curie"] for i in only.data["items"]} >= {"assign_position", "hand_over_position"}
 
 
-def test_a_denied_write_right_hides_the_action(
+def test_a_denied_write_right_marks_the_action_not_allowed(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:
+    """The caller sees all the action names but may not write tasks: lists and counts say what
+    it may use plus how many it may not; search and ``describe action`` show it marked."""
     restrict(run_cli, tmp_path, NO_TASKS, "--graph", "example_graph")
     log = FileAuditLog(root)
     before = list(log.read_lines(INSTALLATION_STREAM))
     listed = app(run_cli, "describe", "actions", env=ENV)
     assert [a["name"] for a in listed.data["actions"]] == [n for n in NAMES if n != "create_task"]
-    hidden = app(run_cli, "describe", "action", "create_task", env=ENV)
-    assert (hidden.code, hidden.error["code"]) == (1, "action.not_found")
-    assert "create_task" not in hidden.error["details"]["did_you_mean"]
-    assert app(run_cli, "describe", "search", "checklist", env=ENV).data["items"] == []
+    assert listed.data["not_allowed"] == 1
+    assert "1 more not allowed for you; --include-not-allowed lists them" in (
+        run_cli("graph", "describe", "actions", env=ENV).stdout
+    )
+    both = app(run_cli, "describe", "actions", "--include-not-allowed", env=ENV)
+    assert [a["name"] for a in both.data["actions"]] == [
+        *(n for n in NAMES if n != "create_task"),
+        "create_task",
+    ]
+    marked = both.data["actions"][-1]
+    assert marked["allowed"] is False
+    assert marked["missing"] == [{"action": "write.create", "resource": "type:ops:Task"}]
+    assert all("allowed" not in a for a in both.data["actions"][:-1])  # allowed items unchanged
+    shown = app(run_cli, "describe", "action", "create_task", env=ENV)
+    assert shown.code == 0, shown.envelope
+    assert shown.data["action"]["allowed"] is False
+    assert shown.data["action"]["missing"] == marked["missing"]
+    text = run_cli("graph", "describe", "action", "create_task", env=ENV).stdout
+    assert "NOT ALLOWED for you; missing write.create on type:ops:Task" in text
+    assert "Ask the maintainer for a role" in text
+    assert "create_task" in [a["name"] for a in both.data["actions"]]
+    hits = app(run_cli, "describe", "search", "checklist", env=ENV).data["items"]
+    assert [(i["curie"], i["allowed"], i["missing"]) for i in hits] == [
+        ("create_task", False, marked["missing"])
+    ]
+    line = run_cli("graph", "describe", "search", "checklist", env=ENV).stdout
+    assert line.rstrip().endswith("[not allowed: missing write.create on type:ops:Task]")
     modules = app(run_cli, "describe", "modules", env=ENV).data["modules"]
-    assert {m["id"]: m["actions"] for m in modules}["operations"] == 0
+    operations = {m["id"]: m for m in modules}["operations"]
+    assert (operations["actions"], operations["not_allowed"]) == (0, {"actions": 1})
+    assert "not_allowed" not in {m["id"]: m for m in modules}["organization"]
     section = app(run_cli, "describe", "module", "ops", env=ENV).data["module"]
-    assert section["actions"] == []
+    assert section["actions"] == [] and section["not_allowed"] == {"actions": 1}
+    flagged = app(run_cli, "describe", "module", "ops", "--include-not-allowed", env=ENV)
+    (row,) = flagged.data["module"]["actions"]
+    assert row["name"] == "create_task" and row["allowed"] is False
     assert list(log.read_lines(INSTALLATION_STREAM)) == before  # a listing records no denial
 
 
-def test_a_caller_who_sees_no_action_gets_the_answers_of_a_graph_without(
+def test_a_call_of_a_not_allowed_action_is_a_recorded_denial(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    restrict(run_cli, tmp_path, NO_TASKS, "--graph", "example_graph")
+    log = FileAuditLog(root)
+    before = len(list(log.read_lines(INSTALLATION_STREAM)))
+    denied = app(run_cli, "do", "create_task", "--param", "title=x", env=ENV)
+    assert (denied.code, denied.error["code"]) == (3, "access.denied")
+    assert denied.error["details"]["action"] == "write.create"
+    assert denied.error["details"]["resource"].endswith("/type:ops:Task")
+    assert len(list(log.read_lines(INSTALLATION_STREAM))) == before + 1
+    unknown = app(run_cli, "do", "create_tasks", "--param", "title=x", env=ENV)
+    assert unknown.error["code"] == "action.not_found"  # a name that is no action
+    assert len(list(log.read_lines(INSTALLATION_STREAM))) == before + 1
+
+
+def test_a_caller_who_may_run_no_action_sees_them_all_not_allowed(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:
     restrict(run_cli, tmp_path, NO_EXPLORE_WRITES)
-    assert app(run_cli, "describe", "actions", env=EXPLORE).data["actions"] == []
-    missing = app(run_cli, "describe", "action", "assign_position", env=EXPLORE)
+    listed = app(run_cli, "describe", "actions", env=EXPLORE)
+    assert listed.data["actions"] == [] and listed.data["not_allowed"] == len(NAMES)
+    shown = app(run_cli, "describe", "action", "assign_position", env=EXPLORE)
+    assert shown.data["action"]["allowed"] is False
+    assert {m["action"] for m in shown.data["action"]["missing"]} == {"write.link"}
+    missing = app(run_cli, "describe", "action", "assign_positions", env=EXPLORE)
     assert missing.error["code"] == "action.not_found"
-    assert missing.error["details"]["did_you_mean"] == []
-    assert app(run_cli, "describe", "search", "checklist", env=EXPLORE).data["items"] == []
+    assert missing.error["details"]["did_you_mean"][0] == "assign_position"
+    hits = app(run_cli, "describe", "search", "checklist", env=EXPLORE).data["items"]
+    assert [(i["curie"], i["allowed"]) for i in hits] == [("create_task", False)]
     modules = app(run_cli, "describe", "modules", env=EXPLORE).data["modules"]
-    assert all("actions" not in m for m in modules)
-    assert "actions" not in app(run_cli, "describe", "module", "org", env=EXPLORE).data["module"]
-    assert "action" not in run_cli("graph", "describe", "modules", env=EXPLORE).stdout
-    assert "Actions:" not in run_cli("graph", "describe", "module", "org", env=EXPLORE).stdout
+    assert all(m["actions"] == 0 for m in modules if "actions" in m)
+    assert sum(m.get("not_allowed", {}).get("actions", 0) for m in modules) == len(NAMES)
     function = app(run_cli, "lookup", "x", "--for", "assign_position.person", env=EXPLORE)
-    assert function.error["code"] == "function.not_found"
+    assert function.error["code"] == "function.not_found"  # a parameter fit is for what may run
     assert function.error["message"] == "no function 'assign_position'"
 
 

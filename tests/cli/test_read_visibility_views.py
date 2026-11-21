@@ -332,15 +332,16 @@ def test_a_view_that_runs_functions_needs_read_function(run_cli: CliRunner, worl
     install(run_cli, world, NO_EXPLORE % ("functions", "read.function"))
     assert ok(run_cli, "view", "--name", "names_rows").code == 0
     explore = {**EXPLORE}
-    assert named(run_cli, "names_rows", "staff_catalog", env=explore) == ["staff_catalog"]
-    asked = shown(app(run_cli, "view", "--name", "names_rows", env=explore))
-    absent = shown(app(run_cli, "view", "--name", "names_rowz", env=explore))
-    assert asked["error"]["code"] == "view.not_found"
-    the_same_but_for(
-        without_suggestions(asked), without_suggestions(absent), ("names_rows", "names_rowz")
-    )
-    denied = app(run_cli, "run", "colleague_names", env=explore)  # the control: run is denied
-    assert denied.error["code"] == "access.denied"
+    assert named(run_cli, "staff_catalog", env=explore) == ["staff_catalog"]
+    # the caller sees all the view names, so the call is a recorded denial naming the right...
+    denied = app(run_cli, "view", "--name", "names_rows", env=explore)
+    assert (denied.code, denied.error["code"]) == (3, "access.denied"), denied.envelope
+    assert denied.error["details"]["action"] == "read.function"
+    # ...while a name that was never published is not found, as before
+    absent = app(run_cli, "view", "--name", "names_rowz", env=explore)
+    assert (absent.code, absent.error["code"]) == (1, "view.not_found")
+    control = app(run_cli, "run", "colleague_names", env=explore)  # run is denied the same way
+    assert control.error["code"] == "access.denied"
 
 
 def test_a_set_view_needs_read_find_and_an_entity_view_does_not(
@@ -352,9 +353,16 @@ def test_a_set_view_needs_read_find_and_an_entity_view_does_not(
     assert (
         app(run_cli, "find", "--type", "stf:Employee", env=explore).error["code"] == "access.denied"
     )
-    for name in ("staff_catalog", "pay_roll", "names_rows"):
+    # a set view the caller fully sees is not allowed (recorded denial); one that names marked
+    # attributes the caller does not hold stays hidden, whatever the right
+    denied = app(run_cli, "view", "--name", "staff_catalog", env=explore)
+    assert (denied.code, denied.error["code"]) == (3, "access.denied"), denied.envelope
+    assert denied.error["details"]["action"] == "read.find"
+    for name in ("pay_roll", "names_rows"):
         outcome = app(run_cli, "view", "--name", name, env=explore)
-        assert (outcome.code, outcome.error["code"]) == (1, "view.not_found"), name
+        assert outcome.error["code"] in ("view.not_found", "access.denied"), name
+    hidden = app(run_cli, "view", "--name", "pay_roll", env=explore)
+    assert hidden.error["code"] == "view.not_found"  # it names the salary
     entity = ok(run_cli, "view", "CON-0001", "--name", "colleague_mail", env=explore)
     assert entity.data["view"]["name"] == "colleague_mail"
     assert ok(run_cli, "view", "CON-0001", env=explore).data["view"]["name"] == "colleague_overview"
@@ -597,7 +605,7 @@ def test_the_affordance_names_the_other_views_the_caller_sees(
     assert "colleague_crew" not in affordance("EMP-0001")
 
 
-def test_a_caller_without_read_function_or_read_find_is_not_told_about_those_views(
+def test_a_caller_without_read_function_or_read_find_is_told_the_view_is_not_allowed(
     run_cli: CliRunner, world: Path
 ) -> None:
     install(run_cli, world, NO_EXPLORE % ("functions", "read.function"))
@@ -605,10 +613,18 @@ def test_a_caller_without_read_function_or_read_find_is_not_told_about_those_vie
     assert "names_rows" in listed(run_cli) and "names_rows" not in listed(run_cli, explore)
     assert "staff_catalog" in listed(run_cli, explore)
     asked = app(run_cli, "describe", "view", "names_rows", env=explore)
-    assert (asked.code, asked.error["code"]) == (1, "view.not_found")
+    assert asked.code == 0, asked.envelope
+    assert asked.data["view"]["allowed"] is False
+    assert asked.data["view"]["missing"] == [{"action": "read.function", "resource": "graph"}]
+    counted = app(run_cli, "describe", "views", env=explore).data
+    assert counted["not_allowed"] >= 1 and "names_rows" not in [v["name"] for v in counted["views"]]
+    both = app(run_cli, "describe", "views", "--include-not-allowed", env=explore).data["views"]
+    assert [v["allowed"] for v in both if v["name"] == "names_rows"] == [False]
     install(run_cli, world, NO_EXPLORE % ("find", "read.find"))
     without_find = listed(run_cli, explore)
     assert "staff_catalog" not in without_find and "pay_roll" not in without_find
     assert "colleague_mail" in without_find  # entity views need read.get only
     hits = ok(run_cli, "describe", "search", "staff", "--kind", "view", env=explore).data["items"]
-    assert [i["curie"] for i in hits] == []
+    marked = {i["curie"]: i for i in hits if i.get("allowed") is False}
+    assert marked["staff_catalog"]["missing"] == [{"action": "read.find", "resource": "graph"}]
+    assert "pay_roll" not in marked and "pay_roll" not in {i["curie"] for i in hits}  # hidden

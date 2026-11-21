@@ -16,34 +16,32 @@ not allowed.
 import inspect
 import itertools
 from collections.abc import Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
 from support import markings as marked
-from support import views as view_fixtures
-from support.actions import publish_actions, valid_sources
+from support.actions import publish_actions
 from support.catalog_leaks import assert_hidden_absent
+from support.catalog_policies import (
+    EMPLOYEE_LINKS,
+    GRAPH,
+    LIMITS,
+    RIGHTS,
+    Fixed,
+    Policy,
+    company_env,
+    publish_functions,
+    reader,
+)
 from support.services import ServiceEnv
 
 from graph_cli.access_control.compiler import compile_policy
 from graph_cli.access_control.policy import policy_set
-from graph_cli.kernel.canonical import hash_value
-from graph_cli.kernel.ports.catalog import (
-    FunctionsSlot,
-    KineticSlot,
-    functions_hash,
-    sources_hash,
-)
-from graph_cli.kernel.ports.policy import PolicySet
-from graph_cli.kinetic.compile import compile_catalog
-from graph_cli.kinetic.view_compile import compile_views
 from graph_cli.services.action_rights import NeedResult
 from graph_cli.services.catalog_access import Classified, Missing, allowed_entries
 from graph_cli.services.read import ReadService
 
-GRAPH = "example_graph"
 KINDS = ("functions", "actions", "views")
 
 # Fixed rows of the company example: what the toy catalogs hold.
@@ -70,88 +68,9 @@ FUNCTION_VIEWS = {"legacy_unit_overview", "members_report", "org_catalog", "unit
 SET_VIEWS = {"members_report", "org_catalog", "tasks_by_state"}
 
 
-class Fixed:
-    """A policy source with one fixed policy set."""
-
-    def __init__(self, policy: PolicySet) -> None:
-        self.policy = policy
-
-    def current(self, graph: object) -> PolicySet:
-        return self.policy
-
-    def refresh(self) -> None:
-        pass
-
-
-@dataclass(frozen=True)
-class Policy:
-    """A caller's policy, as the matrix varies it."""
-
-    grant: str = "level: write"
-    deny: tuple[str, ...] = ()  # read.function, read.find
-    types: tuple[tuple[str, str], ...] = ()  # graph layer: type -> read | none
-    obligations: bool = False
-
-    def compiled(self, env: ServiceEnv) -> PolicySet:
-        graphs = {GRAPH: env.entry.id}
-        deny = "".join(f"  - {{id: no_{a.replace('.', '_')}, action: [{a}]}}\n" for a in self.deny)
-        installation = (
-            "schema: graph_cli.policy/1\nid: installation\ngrants:\n"
-            f"  - {{entrypoint: app, graphs: [{GRAPH}], {self.grant}}}\n"
-            'no_project: {"*": write}\n' + (f"deny:\n{deny}" if deny else "")
-        )
-        layers = [compile_policy(installation.encode(), file="i.yaml", graphs=graphs).document]
-        if self.types or self.obligations:
-            graph = "schema: graph_cli.policy/1\nid: graph\n"
-            if self.types:
-                graph += "types:\n" + "".join(f'  "{t}": {m}\n' for t, m in self.types)
-            if self.obligations:
-                graph += (
-                    "obligations:\n  - {action: [write.*], require_reason: true, max_batch: 1}\n"
-                )
-            layers.append(
-                compile_policy(
-                    graph.encode(),
-                    file="g.yaml",
-                    graphs=graphs,
-                    graph=env.entry.id,
-                    roles=frozenset(),
-                ).document
-            )
-        return policy_set(*layers)  # type: ignore[arg-type]
-
-
-def publish_functions(env: ServiceEnv, sources: dict[str, str]) -> None:
-    compiled, problems = compile_catalog(sources, env.model)
-    assert problems == []
-    files = {name: text.encode() for name, text in sources.items()}
-    env.catalog.functions[env.entry.id] = FunctionsSlot(  # type: ignore[union-attr]
-        functions_hash(files), hash_value(compiled), env.entry.pin, compiled, {}
-    )
-
-
-def publish_views(env: ServiceEnv) -> None:
-    function_entries = view_fixtures.function_entries(env.model)
-    sources = view_fixtures.valid_sources()
-    compiled, problems = compile_views(sources, env.model, function_entries)
-    assert [p.to_json() for p in problems] == []
-    files = {name: text.encode() for name, text in sources.items()}
-    env.catalog.views[env.entry.id] = KineticSlot(  # type: ignore[union-attr]
-        sources_hash(files), hash_value(compiled), env.entry.pin, compiled, {}, kind="views"
-    )
-
-
 @pytest.fixture
 def env(tmp_path: Path) -> ServiceEnv:
-    found = ServiceEnv("memory", "company", tmp_path / "root", example_version="1.1.0")
-    publish_functions(found, view_fixtures.function_sources())
-    publish_actions(found, valid_sources())
-    publish_views(found)
-    return found
-
-
-def reader(env: ServiceEnv, policy: Policy | None = None) -> ReadService:
-    return env.make_reader(None if policy is None else Fixed(policy.compiled(env)))
+    return company_env(tmp_path / "root")
 
 
 def classified(env: ServiceEnv, read: ReadService) -> dict[str, tuple[Classified[Any], ...]]:
@@ -183,8 +102,6 @@ def test_a_caller_with_every_right_may_use_everything(env: ServiceEnv) -> None:
         assert not_allowed(found[kind]) == {}
         assert all(c.allowed for c in found[kind])
 
-
-EMPLOYEE_LINKS = "level: read, writes: {ppl:Employee: {link: [leg:employed_by]}}"
 
 # What the listings returned at da83a4a (before the classification), by running that code once on
 # these policies: the independent oracle for the allowed half.
@@ -513,24 +430,6 @@ def test_a_view_over_a_function_the_reader_does_not_see_is_hidden_not_not_allowe
 
 # ---- the property: hidden depends on the read view alone ---------------------------------
 
-LIMITS: tuple[tuple[tuple[str, str], ...], ...] = (
-    (),
-    (("ops:Task", "none"),),
-    (("org:Position", "none"),),
-    (("org:Department", "none"),),
-    (("ppl:Employee", "none"), ("ppl:External", "none")),
-    (("ops:Training", "none"), ("leg:LegalEntity", "none")),
-)
-RIGHTS: tuple[dict[str, Any], ...] = (
-    {},
-    {"deny": ("read.function",)},
-    {"deny": ("read.find",)},
-    {"deny": ("read.function", "read.find")},
-    {"grant": "level: read"},
-    {"grant": EMPLOYEE_LINKS},
-    {"obligations": True},
-    {"grant": "level: read", "deny": ("read.function", "read.find"), "obligations": True},
-)
 MATRIX = tuple(Policy(types=limit, **rights) for limit, rights in itertools.product(LIMITS, RIGHTS))
 
 

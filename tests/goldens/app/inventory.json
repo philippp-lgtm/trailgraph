@@ -540,6 +540,13 @@
           "summary": "Also list deprecated actions."
         },
         {
+          "name": "--include-not-allowed",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also list what you see but may not use, marked allowed: false with what is missing."
+        },
+        {
           "name": "--graph",
           "type": "graph_ref",
           "required": false,
@@ -792,6 +799,13 @@
           "summary": "Also list deprecated functions."
         },
         {
+          "name": "--include-not-allowed",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also list what you see but may not use, marked allowed: false with what is missing."
+        },
+        {
           "name": "--graph",
           "type": "graph_ref",
           "required": false,
@@ -925,6 +939,13 @@
       ],
       "options": [
         {
+          "name": "--include-not-allowed",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also list what you see but may not use, marked allowed: false with what is missing."
+        },
+        {
           "name": "--graph",
           "type": "graph_ref",
           "required": false,
@@ -940,6 +961,10 @@
         {
           "command": "graph describe module <module> --json",
           "summary": "The module as graph_cli.model/1."
+        },
+        {
+          "command": "graph describe module <module> --include-not-allowed",
+          "summary": "Also the functions, actions and views you see but may not use."
         }
       ],
       "errors": [
@@ -1523,6 +1548,13 @@
           "required": false,
           "repeatable": false,
           "summary": "Also list deprecated views."
+        },
+        {
+          "name": "--include-not-allowed",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also list what you see but may not use, marked allowed: false with what is missing."
         },
         {
           "name": "--graph",

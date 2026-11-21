@@ -39,6 +39,7 @@ from graph_cli.ontology_layer.model import (
 )
 from graph_cli.ontology_layer.vocabulary import BUILTIN_MODULES, SYSTEM_FIELDS
 from graph_cli.query.plan import resolve_term, unknown_term
+from graph_cli.services.catalog_access import Classified, Denied
 
 MODEL_SCHEMA: Final = "graph_cli.model/1"
 ANY_END: Final = "any"  # how a link names a relation end without domain or range
@@ -285,7 +286,11 @@ def _link(
 
 
 class _Catalogued(Protocol):
-    """What functions and actions share for the listings: the module and the status."""
+    """What functions, actions and views share for the listings: the module, the status and
+    the listing item."""
+
+    @property
+    def name(self) -> str: ...
 
     @property
     def module(self) -> str | None: ...
@@ -293,9 +298,70 @@ class _Catalogued(Protocol):
     @property
     def deprecated(self) -> bool: ...
 
+    def summary_json(self) -> dict[str, JsonValue]: ...
+
 
 def _active_in[Entry: _Catalogued](entries: Sequence[Entry], module_id: str) -> list[Entry]:
     return [e for e in entries if e.module == module_id and not e.deprecated]
+
+
+def _denied_in[Entry: _Catalogued](
+    denied: Sequence[Classified[Entry]], module_id: str | None, include_deprecated: bool = False
+) -> list[Classified[Entry]]:
+    """The not-allowed entries of a module (all modules: ``None``); deprecated ones only with
+    ``include_deprecated``."""
+    return [
+        c
+        for c in denied
+        if (include_deprecated or not c.entry.deprecated)
+        and (module_id is None or c.entry.module == module_id)
+    ]
+
+
+def _listing[Entry: _Catalogued](
+    allowed: Sequence[Entry] | None,
+    denied: Sequence[Classified[Entry]],
+    wanted: str | None,
+    include_deprecated: bool,
+    include_not_allowed: bool,
+) -> dict[str, JsonValue]:
+    """The ``items`` of a list command, and ``not_allowed``, the count of the entries the caller
+    sees but may not use, when there are any. The count never covers a hidden entry (the
+    classification does not hold one). With ``include_not_allowed`` those entries are listed
+    after the allowed ones, marked ``allowed: false`` with what is ``missing``."""
+    items: list[JsonValue] = [
+        e.summary_json()
+        for e in allowed or ()
+        if (include_deprecated or not e.deprecated) and (wanted is None or e.module == wanted)
+    ]
+    blocked = _denied_in(denied, wanted, include_deprecated)
+    if include_not_allowed:
+        items += [{**c.entry.summary_json(), **c.access_json()} for c in blocked]
+    return {"items": items, **({"not_allowed": len(blocked)} if blocked else {})}
+
+
+def _count_not_allowed(denied: Denied, module_id: str) -> dict[str, JsonValue]:
+    """Per kind, how many entries of the module the caller sees but may not use (kinds with
+    none are left out)."""
+    counts = {
+        kind: len(_denied_in(found, module_id))
+        for kind, found in (
+            ("functions", denied.functions),
+            ("actions", denied.actions),
+            ("views", denied.views),
+        )
+    }
+    return {kind: n for kind, n in counts.items() if n}
+
+
+def _module_count(
+    allowed: Sequence[_Catalogued] | None, blocked: Sequence[object], module_id: str
+) -> int | None:
+    """The module's count of one kind, or ``None`` when the caller has none of that kind to
+    count (nothing allowed and nothing not allowed)."""
+    if allowed is None and not blocked:
+        return None
+    return len(_active_in(allowed or (), module_id))
 
 
 def describe_modules(
@@ -303,10 +369,15 @@ def describe_modules(
     model: CompiledModel,
     functions: Sequence[FunctionEntry] | None = None,
     actions: Sequence[ActionEntry] | None = None,
+    views: Sequence[ViewEntry] | None = None,
+    denied: Denied | None = None,
 ) -> dict[str, JsonValue]:
     """Level 0: the subject areas of the graph, one item per module (sorted by id). With
-    ``functions`` (the ones the caller may see; ``None``: the graph has none or they are
-    hidden) every module also counts its active functions, with ``actions`` likewise."""
+    ``functions``, ``actions`` and ``views`` (the ones the caller may use; ``None``: the graph
+    has none or they are hidden) every module also counts its active ones. ``denied`` holds the
+    entries the caller sees but may not use: a module with some names the count per kind in
+    ``not_allowed``, and a kind with only such entries is counted as 0."""
+    denied = denied or Denied()
     index = ModuleIndex(model)
     modules: list[JsonValue] = []
     for info in sorted(model.modules, key=lambda m: m.id):
@@ -319,10 +390,17 @@ def describe_modules(
             "types": len(index.types(info.id)),
             "relations": len(index.relations(info.id)),
         }
-        if functions is not None:
-            item["functions"] = len(_active_in(functions, info.id))
-        if actions is not None:
-            item["actions"] = len(_active_in(actions, info.id))
+        for kind, allowed, blocked in (
+            ("functions", functions, denied.functions),
+            ("actions", actions, denied.actions),
+            ("views", views, denied.views),
+        ):
+            counted = _module_count(allowed, blocked, info.id)
+            if counted is not None:
+                item[kind] = counted
+        refused = _count_not_allowed(denied, info.id)
+        if refused:
+            item["not_allowed"] = refused
         item["links"] = index.neighbours(info.id)
         modules.append(item)
     return model_envelope(entry, model, modules=modules)
@@ -334,11 +412,18 @@ def describe_module(
     name: str,
     functions: Sequence[FunctionEntry] | None = None,
     actions: Sequence[ActionEntry] | None = None,
+    views: Sequence[ViewEntry] | None = None,
+    denied: Denied | None = None,
+    *,
+    include_not_allowed: bool = False,
 ) -> dict[str, JsonValue]:
     """Level 1: one module (id or prefix): its types, the relations that stay inside it, the
     cross-module relations leaving (``links_out``) and arriving (``links_in``) and the rules
-    whose target is one of its types. With ``functions`` or ``actions`` (see
-    ``describe_modules``) also its active functions or actions."""
+    whose target is one of its types. With ``functions``, ``actions`` or ``views`` (see
+    ``describe_modules``) also its active ones. What the caller sees but may not use is counted
+    in ``not_allowed`` (per kind), and listed after the allowed ones, marked, with
+    ``include_not_allowed``."""
+    denied = denied or Denied()
     index = ModuleIndex(model)
     module_id = index.resolve(name)
     info = index.infos[module_id]
@@ -376,17 +461,32 @@ def describe_module(
             if index.owner(rule.target) == module_id
         ],
     }
-    if functions is not None:
-        body["functions"] = [
-            {"name": f.name, "summary": f.defn.summary, "signature": f.signature}
-            for f in _active_in(functions, module_id)
-        ]
-    if actions is not None:
-        body["actions"] = [
-            {"name": a.name, "summary": a.defn.summary, "signature": a.signature}
-            for a in _active_in(actions, module_id)
-        ]
+    for kind, allowed, blocked in (
+        ("functions", functions, denied.functions),
+        ("actions", actions, denied.actions),
+        ("views", views, denied.views),
+    ):
+        if allowed is None and not blocked:
+            continue
+        rows: list[JsonValue] = [_module_row(e, {}) for e in _active_in(allowed or (), module_id)]
+        if include_not_allowed:
+            rows += [_module_row(c.entry, c.access_json()) for c in _denied_in(blocked, module_id)]
+        body[kind] = rows
+    refused = _count_not_allowed(denied, module_id)
+    if refused:
+        body["not_allowed"] = refused
     return model_envelope(entry, model, module=body)
+
+
+def _module_row(entry: _Catalogued, marks: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    """A function, action or view in the list of a module: name, summary, signature."""
+    shown = entry.summary_json()
+    return {
+        "name": shown["name"],
+        "summary": shown["summary"],
+        "signature": shown["signature"],
+        **marks,
+    }
 
 
 def describe_functions(
@@ -396,16 +496,16 @@ def describe_functions(
     *,
     module: str | None = None,
     include_deprecated: bool = False,
+    denied: Sequence[Classified[FunctionEntry]] = (),
+    include_not_allowed: bool = False,
 ) -> dict[str, JsonValue]:
-    """The named functions of the graph (by name); with ``module`` (id or prefix) those the
-    module owns. Deprecated ones only with ``include_deprecated``. ``None``: none visible."""
+    """The functions of the graph (by name); with ``module`` (id or prefix) those the module
+    owns. Deprecated ones only with ``include_deprecated``. ``None``: none to use. ``denied``
+    are the ones the caller sees but may not use: counted in ``not_allowed``, listed after the
+    others (marked, with what is ``missing``) with ``include_not_allowed``."""
     wanted = ModuleIndex(model).filter(module)
-    items: list[JsonValue] = [
-        f.summary_json()
-        for f in functions or ()
-        if (include_deprecated or not f.deprecated) and (wanted is None or f.module == wanted)
-    ]
-    return _filtered(entry, model, wanted, functions=items)
+    found = _listing(functions, denied, wanted, include_deprecated, include_not_allowed)
+    return _filtered(entry, model, wanted, functions=found.pop("items"), **found)
 
 
 def describe_function(
@@ -413,13 +513,21 @@ def describe_function(
     model: CompiledModel,
     functions: Sequence[FunctionEntry] | None,
     name: str,
+    denied: Sequence[Classified[FunctionEntry]] = (),
 ) -> dict[str, JsonValue]:
     """One function with everything its definition says, the normalized query text and its
     hash; ``function.not_found`` with ``did_you_mean`` for an unknown name. ``replaced_by`` names
-    a function only when it is among the given ones (a hidden replacement is ``null``)."""
-    found = find_entry(functions, name)
+    a function only when it is among the given ones (a hidden replacement is ``null``).
+    ``denied`` are the functions the caller sees but may not use: such a function is described like
+    any other, marked ``allowed: false`` with what is ``missing``, and counts as seen for
+    ``did_you_mean``; ``replaced_by`` names only a replacement the caller may use."""
+    seen = [*(functions or ()), *(c.entry for c in denied)]
+    found = find_entry(seen, name)
     detail = found.detail_json()
     detail["replaced_by"] = seen_replacement(found.defn.replaced_by, functions)
+    blocked = next((c for c in denied if c.entry is found), None)
+    if blocked is not None:
+        detail.update(blocked.access_json())
     return model_envelope(entry, model, function=detail)
 
 
@@ -430,16 +538,16 @@ def describe_actions(
     *,
     module: str | None = None,
     include_deprecated: bool = False,
+    denied: Sequence[Classified[ActionEntry]] = (),
+    include_not_allowed: bool = False,
 ) -> dict[str, JsonValue]:
     """The actions of the graph (by name); with ``module`` (id or prefix) those the module
-    owns. Deprecated ones only with ``include_deprecated``. ``None``: none visible."""
+    owns. Deprecated ones only with ``include_deprecated``. ``None``: none to use. ``denied``
+    are the ones the caller sees but may not use: counted in ``not_allowed``, listed after the
+    others (marked, with what is ``missing``) with ``include_not_allowed``."""
     wanted = ModuleIndex(model).filter(module)
-    items: list[JsonValue] = [
-        a.summary_json()
-        for a in actions or ()
-        if (include_deprecated or not a.deprecated) and (wanted is None or a.module == wanted)
-    ]
-    return _filtered(entry, model, wanted, actions=items)
+    found = _listing(actions, denied, wanted, include_deprecated, include_not_allowed)
+    return _filtered(entry, model, wanted, actions=found.pop("items"), **found)
 
 
 def describe_action(
@@ -447,14 +555,22 @@ def describe_action(
     model: CompiledModel,
     actions: Sequence[ActionEntry] | None,
     name: str,
+    denied: Sequence[Classified[ActionEntry]] = (),
 ) -> dict[str, JsonValue]:
     """One action with everything its definition says, the compiled ops, the terms it touches,
     the write rights it needs and its hash; ``action.not_found`` with ``did_you_mean`` (over
     the given actions only) for an unknown name. ``replaced_by`` names an action only when it is
-    among the given ones (a replacement the reader may not run is ``null``)."""
-    found = find_action(actions, name)
+    among the given ones (a replacement the reader may not run is ``null``).
+    ``denied`` are the actions the caller sees but may not use: such a action is described like
+    any other, marked ``allowed: false`` with what is ``missing``, and counts as seen for
+    ``did_you_mean``; ``replaced_by`` names only a replacement the caller may use."""
+    seen = [*(actions or ()), *(c.entry for c in denied)]
+    found = find_action(seen, name)
     detail = found.detail_json()
     detail["replaced_by"] = seen_replacement(found.defn.replaced_by, actions)
+    blocked = next((c for c in denied if c.entry is found), None)
+    if blocked is not None:
+        detail.update(blocked.access_json())
     return model_envelope(entry, model, action=detail)
 
 
@@ -465,16 +581,16 @@ def describe_views(
     *,
     module: str | None = None,
     include_deprecated: bool = False,
+    denied: Sequence[Classified[ViewEntry]] = (),
+    include_not_allowed: bool = False,
 ) -> dict[str, JsonValue]:
-    """The published views of the graph (by name); with ``module`` (id or prefix) those the
-    module owns. Deprecated ones only with ``include_deprecated``. ``None``: none visible."""
+    """The views of the graph (by name); with ``module`` (id or prefix) those the module
+    owns. Deprecated ones only with ``include_deprecated``. ``None``: none to use. ``denied``
+    are the ones the caller sees but may not use: counted in ``not_allowed``, listed after the
+    others (marked, with what is ``missing``) with ``include_not_allowed``."""
     wanted = ModuleIndex(model).filter(module)
-    items: list[JsonValue] = [
-        v.summary_json()
-        for v in views or ()
-        if (include_deprecated or not v.deprecated) and (wanted is None or v.module == wanted)
-    ]
-    return _filtered(entry, model, wanted, views=items)
+    found = _listing(views, denied, wanted, include_deprecated, include_not_allowed)
+    return _filtered(entry, model, wanted, views=found.pop("items"), **found)
 
 
 def describe_view(
@@ -482,13 +598,21 @@ def describe_view(
     model: CompiledModel,
     views: Sequence[ViewEntry] | None,
     name: str,
+    denied: Sequence[Classified[ViewEntry]] = (),
 ) -> dict[str, JsonValue]:
     """One view with everything its definition says (normalized), the terms and functions it
     touches and its hash; ``view.not_found`` with ``did_you_mean`` (over the given views only)
-    for an unknown name. ``replaced_by`` names a view only when it is among the given ones."""
-    found = find_view(views, name)
+    for an unknown name. ``replaced_by`` names a view only when it is among the given ones.
+    ``denied`` are the views the caller sees but may not use: such a view is described like
+    any other, marked ``allowed: false`` with what is ``missing``, and counts as seen for
+    ``did_you_mean``; ``replaced_by`` names only a replacement the caller may use."""
+    seen = [*(views or ()), *(c.entry for c in denied)]
+    found = find_view(seen, name)
     detail = found.detail_json()
     detail["replaced_by"] = seen_replacement(found.defn.replaced_by, views)
+    blocked = next((c for c in denied if c.entry is found), None)
+    if blocked is not None:
+        detail.update(blocked.access_json())
     return model_envelope(entry, model, view=detail)
 
 

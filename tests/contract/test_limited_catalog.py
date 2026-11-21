@@ -298,15 +298,37 @@ def test_a_need_is_met_only_by_a_type_the_reader_sees(company: ServiceEnv) -> No
     assert set(allowed) - set(hidden) >= {"assign_position", "hand_over_position"}
 
 
-def test_an_action_hidden_by_its_needs_is_not_found_by_do(company: ServiceEnv) -> None:
+def test_an_action_that_names_a_hidden_type_is_not_found_by_do(company: ServiceEnv) -> None:
     svc = company
     source = policy(
         svc, ("write.*", "ppl:External", "no_external_writes"), ("read.get", "ppl:Employee", "h")
     )
     service = action_service(svc, source)
-    asked = raised(do, service, svc, "hand_over_position", "position=a", "person=b")
-    absent = raised(do, service, svc, "hand_over_nothing", "position=a", "person=b")
+    asked = raised(do, service, svc, "offboard_employee", "employee=a", reason="r")
+    absent = raised(do, service, svc, "offboard_nothing", "employee=a", reason="r")
     assert asked[0] == "action.not_found"
-    the_same_but_for(asked, absent, "hand_over_position", "hand_over_nothing")
+    the_same_but_for(asked, absent, "offboard_employee", "offboard_nothing")
     # an action that names the hidden employee type is not listed or described at all
     assert "offboard_employee" not in listed(svc, source)
+
+
+def test_an_action_the_reader_sees_but_may_not_run_is_a_recorded_denial(
+    company: ServiceEnv,
+) -> None:
+    """Employees hidden and externals not writable: ``hand_over_position`` names only terms the
+    reader sees (the abstract person class stays), so it is not allowed, not absent. The denial
+    names the external type and never the hidden one."""
+    svc = company
+    source = policy(
+        svc, ("write.*", "ppl:External", "no_external_writes"), ("read.get", "ppl:Employee", "h")
+    )
+    service = action_service(svc, source)
+    events = len(svc.installation_events())
+    code, message, details = raised(
+        do, service, svc, "hand_over_position", "position=a", "person=b"
+    )
+    assert code == "access.denied"
+    assert details["resource"] == f"graph:{svc.entry.id}/type:ppl:External"
+    assert "Employee" not in message and "Employee" not in str(details)
+    assert len(svc.installation_events()) == events + 1  # a call is a recorded access
+    assert svc.installation_events()[-1]["result"]["status"] == "denied"  # type: ignore[index]

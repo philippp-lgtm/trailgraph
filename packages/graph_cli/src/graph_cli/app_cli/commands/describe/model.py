@@ -7,14 +7,15 @@ from typing import Final
 
 from graph_cli.app_cli.commands.common import GRAPH, GRAPH_ERRORS, command_line, next_page
 from graph_cli.app_cli.commands.describe.shared import (
+    ACCESS_MARKS,
+    INCLUDE_NOT_ALLOWED,
     MODULE_FILTER,
     MODULE_OPTION,
+    catalogs,
     describe_spec,
     function_call,
+    item_mark,
     open_view,
-    visible_actions,
-    visible_functions,
-    visible_views,
 )
 from graph_cli.app_cli.output_schemas import NULLABLE_STRING, STRINGS, model_document
 from graph_cli.cli_kit.envelope import Result
@@ -112,6 +113,10 @@ _MODULE_HEAD: Final = {
 }
 _FUNCTION_COUNT: Final = {"functions": INTEGER}
 _ACTION_COUNT: Final = {"actions": INTEGER}
+_VIEW_COUNT: Final = {"views": INTEGER}
+# per kind, how many entries of the module the caller sees but may not use (kinds with none absent)
+_NOT_ALLOWED: Final = obj(optional={"functions": INTEGER, "actions": INTEGER, "views": INTEGER})
+_MODULE_ROW: Final = obj({"name": STRING, "summary": STRING, "signature": STRING}, ACCESS_MARKS)
 _MODULES: Final = model_document(
     {
         "modules": array(
@@ -123,8 +128,10 @@ _MODULES: Final = model_document(
                     "links": array(obj({"module": STRING, "out": INTEGER, "in": INTEGER})),
                 },
                 {
-                    **_FUNCTION_COUNT,  # only when the caller may see the graph's functions
+                    **_FUNCTION_COUNT,  # only when the caller sees functions of the graph
                     **_ACTION_COUNT,  # likewise its actions
+                    **_VIEW_COUNT,  # likewise its views
+                    "not_allowed": _NOT_ALLOWED,  # only when the caller may not use some
                 },
             )
         )
@@ -152,12 +159,10 @@ _MODULE: Final = model_document(
                 "rules": array(obj({"id": STRING, "severity": STRING, **_DOC})),
             },
             {
-                "functions": array(  # only when the caller may see the graph's functions
-                    obj({"name": STRING, "summary": STRING, "signature": STRING})
-                ),
-                "actions": array(  # likewise its actions
-                    obj({"name": STRING, "summary": STRING, "signature": STRING})
-                ),
+                "functions": array(_MODULE_ROW),  # only when the caller sees functions
+                "actions": array(_MODULE_ROW),  # likewise its actions
+                "views": array(_MODULE_ROW),  # likewise its views
+                "not_allowed": _NOT_ALLOWED,  # only when the caller may not use some
             },
         )
     }
@@ -182,7 +187,8 @@ _SEARCH: Final = model_document(
                             "how": enum("exact", "prefix", "word", "contains", "phrase", "words"),
                         }
                     ),
-                }
+                },
+                ACCESS_MARKS,  # only a function, action or view the caller may not use
             )
         ),
     },
@@ -229,7 +235,17 @@ def _modules_text(data: JsonObject) -> str:
             f"  {_count(item['types'], 'type')}, {_count(item['relations'], 'relation')}"
             + (f", {_count(item['functions'], 'function')}" if "functions" in item else "")
             + (f", {_count(item['actions'], 'action')}" if "actions" in item else "")
+            + (f", {_count(item['views'], 'view')}" if "views" in item else "")
         )
+        if "not_allowed" in item:
+            refused = as_object(item["not_allowed"], "not_allowed")
+            lines.append(
+                "  not allowed for you: "
+                + ", ".join(f"{n} {kind}" for kind, n in refused.items())
+                + "; graph describe module "
+                + req_str(item, "id")
+                + " --include-not-allowed lists them"
+            )
         lines.append(f"  {req_str(item, 'summary')}")
         links = [as_object(v, "link") for v in req_list(item, "links")]
         if links:
@@ -298,27 +314,46 @@ def _module_text(data: JsonObject) -> str:
             f"  {req_str(rule, 'id')} ({req_str(rule, 'severity')})  {req_str(rule, 'summary')}"
         )
     section("Rules:", rules)
-    if "functions" in item:
-        calls = [as_object(v, "function") for v in req_list(item, "functions")]
-        section("Functions:", [f"  {function_call(c)}  {req_str(c, 'summary')}" for c in calls])
-    if "actions" in item:
-        runs = [as_object(v, "action") for v in req_list(item, "actions")]
-        section("Actions:", [f"  {function_call(r)}  {req_str(r, 'summary')}" for r in runs])
+    for key, title in (("functions", "Functions:"), ("actions", "Actions:"), ("views", "Views:")):
+        if key in item:
+            rows = [as_object(v, key) for v in req_list(item, key)]
+            section(
+                title,
+                [f"  {function_call(r)}  {req_str(r, 'summary')}{item_mark(r)}" for r in rows],
+            )
+    if "not_allowed" in item:
+        refused = as_object(item["not_allowed"], "not_allowed")
+        lines.append(
+            "Not allowed for you: "
+            + ", ".join(f"{n} {kind}" for kind, n in refused.items())
+            + "; --include-not-allowed lists them"
+        )
     return "\n".join(lines) + "\n"
 
 
 def describe_modules(state: CommandState, graph: str | None) -> Result:
     view = open_view(state, graph, "describe modules")
+    found = catalogs(state, view)
     data = describe.describe_modules(
-        view.entry, view.model, visible_functions(state, view), visible_actions(state, view)
+        view.entry, view.model, found.functions, found.actions, found.views, found.denied
     )
     return Result(data=data, graph=view.envelope_graph(), text=_modules_text(data))
 
 
-def describe_module(state: CommandState, module: str, graph: str | None) -> Result:
+def describe_module(
+    state: CommandState, module: str, include_not_allowed: bool, graph: str | None
+) -> Result:
     view = open_view(state, graph, "describe module")
+    found = catalogs(state, view)
     data = describe.describe_module(
-        view.entry, view.model, module, visible_functions(state, view), visible_actions(state, view)
+        view.entry,
+        view.model,
+        module,
+        found.functions,
+        found.actions,
+        found.views,
+        found.denied,
+        include_not_allowed=include_not_allowed,
     )
     return Result(data=data, graph=view.envelope_graph(), text=_module_text(data))
 
@@ -334,6 +369,7 @@ def _search_text(data: JsonObject) -> str:
         lines.append(
             f"{req_str(item, 'kind')}  {req_str(item, 'curie')}  [{req_str(item, 'module')}]"
             f"{deprecated}{summary}  <{req_str(match, 'field')}: {req_str(match, 'how')}>"
+            f"{item_mark(item)}"
         )
     return "\n".join(lines or ["-"]) + "\n"
 
@@ -348,6 +384,7 @@ def describe_search(
     graph: str | None,
 ) -> Result:
     view = open_view(state, graph, "describe search")
+    found = catalogs(state, view)
     data, total = search_model(
         view.entry,
         view.model,
@@ -356,9 +393,10 @@ def describe_search(
         module=module,
         limit=limit,
         offset=offset,
-        functions=visible_functions(state, view),
-        actions=visible_actions(state, view),
-        views=visible_views(state, view),
+        functions=found.functions,
+        actions=found.actions,
+        views=found.views,
+        denied=found.denied,
     )
     page = Page(total, len(req_list(data, "items")), limit, offset).to_json()
     options = (("--kind", kind), ("--module", (module,) if module else ()))
@@ -478,7 +516,12 @@ SPECS: Final = (
         examples=(
             Example("graph describe module <module>", "Everything one subject area holds."),
             Example("graph describe module <module> --json", "The module as graph_cli.model/1."),
+            Example(
+                "graph describe module <module> --include-not-allowed",
+                "Also the functions, actions and views you see but may not use.",
+            ),
         ),
+        options=(INCLUDE_NOT_ALLOWED,),
     ),
     CommandSpec(
         path=("describe", "search"),
@@ -493,7 +536,9 @@ SPECS: Final = (
             "Looks at names, CURIEs, summaries and descriptions of the model, and at the "
             "names, summaries and purpose of the graph's functions, actions and views, never "
             "at graph data (that is graph search). Ignores case, accents and punctuation; "
-            "best matches first."
+            "best matches first. A function, action or view you see but may not use is "
+            "found too, marked allowed: false with what is missing, after the others of its "
+            "rank."
         ),
         params=(
             ParamSpec("text", "string", "The words to look for.", required=True, positional=True),

@@ -697,6 +697,27 @@
               },
               "hash": {
                 "type": "string"
+              },
+              "allowed": {
+                "type": "boolean"
+              },
+              "missing": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "action": {
+                      "type": "string"
+                    },
+                    "resource": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "resource"
+                  ]
+                }
               }
             },
             "required": [
@@ -791,6 +812,27 @@
                     "active",
                     "deprecated"
                   ]
+                },
+                "allowed": {
+                  "type": "boolean"
+                },
+                "missing": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string"
+                      },
+                      "resource": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "resource"
+                    ]
+                  }
                 }
               },
               "required": [
@@ -804,6 +846,9 @@
           },
           "module": {
             "type": "string"
+          },
+          "not_allowed": {
+            "type": "integer"
           }
         },
         "required": [
@@ -1097,6 +1142,27 @@
               },
               "hash": {
                 "type": "string"
+              },
+              "allowed": {
+                "type": "boolean"
+              },
+              "missing": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "action": {
+                      "type": "string"
+                    },
+                    "resource": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "resource"
+                  ]
+                }
               }
             },
             "required": [
@@ -1189,6 +1255,27 @@
                     "active",
                     "deprecated"
                   ]
+                },
+                "allowed": {
+                  "type": "boolean"
+                },
+                "missing": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string"
+                      },
+                      "resource": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "resource"
+                    ]
+                  }
                 }
               },
               "required": [
@@ -1202,6 +1289,9 @@
           },
           "module": {
             "type": "string"
+          },
+          "not_allowed": {
+            "type": "integer"
           }
         },
         "required": [
@@ -1538,6 +1628,27 @@
                     },
                     "signature": {
                       "type": "string"
+                    },
+                    "allowed": {
+                      "type": "boolean"
+                    },
+                    "missing": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string"
+                          },
+                          "resource": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "resource"
+                        ]
+                      }
                     }
                   },
                   "required": [
@@ -1560,6 +1671,27 @@
                     },
                     "signature": {
                       "type": "string"
+                    },
+                    "allowed": {
+                      "type": "boolean"
+                    },
+                    "missing": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string"
+                          },
+                          "resource": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "resource"
+                        ]
+                      }
                     }
                   },
                   "required": [
@@ -1567,6 +1699,63 @@
                     "summary",
                     "signature"
                   ]
+                }
+              },
+              "views": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "signature": {
+                      "type": "string"
+                    },
+                    "allowed": {
+                      "type": "boolean"
+                    },
+                    "missing": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string"
+                          },
+                          "resource": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "resource"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "summary",
+                    "signature"
+                  ]
+                }
+              },
+              "not_allowed": {
+                "type": "object",
+                "properties": {
+                  "functions": {
+                    "type": "integer"
+                  },
+                  "actions": {
+                    "type": "integer"
+                  },
+                  "views": {
+                    "type": "integer"
+                  }
                 }
               }
             },
@@ -1679,6 +1868,23 @@
                 },
                 "actions": {
                   "type": "integer"
+                },
+                "views": {
+                  "type": "integer"
+                },
+                "not_allowed": {
+                  "type": "object",
+                  "properties": {
+                    "functions": {
+                      "type": "integer"
+                    },
+                    "actions": {
+                      "type": "integer"
+                    },
+                    "views": {
+                      "type": "integer"
+                    }
+                  }
                 }
               },
               "required": [
@@ -2099,6 +2305,27 @@
                     "field",
                     "how"
                   ]
+                },
+                "allowed": {
+                  "type": "boolean"
+                },
+                "missing": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string"
+                      },
+                      "resource": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "resource"
+                    ]
+                  }
                 }
               },
               "required": [
@@ -2746,6 +2973,27 @@
               },
               "hash": {
                 "type": "string"
+              },
+              "allowed": {
+                "type": "boolean"
+              },
+              "missing": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "action": {
+                      "type": "string"
+                    },
+                    "resource": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "resource"
+                  ]
+                }
               }
             },
             "required": [
@@ -2847,6 +3095,27 @@
                 },
                 "default": {
                   "type": "boolean"
+                },
+                "allowed": {
+                  "type": "boolean"
+                },
+                "missing": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string"
+                      },
+                      "resource": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "resource"
+                    ]
+                  }
                 }
               },
               "required": [
@@ -2860,6 +3129,9 @@
           },
           "module": {
             "type": "string"
+          },
+          "not_allowed": {
+            "type": "integer"
           }
         },
         "required": [
@@ -9195,6 +9467,15 @@
                         "description": "The inventory name of include_deprecated; never both.",
                         "deprecated": true
                       },
+                      "include_not_allowed": {
+                        "type": "boolean",
+                        "description": "Also list what you see but may not use, marked allowed: false with what is missing."
+                      },
+                      "--include-not-allowed": {
+                        "type": "boolean",
+                        "description": "The inventory name of include_not_allowed; never both.",
+                        "deprecated": true
+                      },
                       "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
@@ -10186,6 +10467,15 @@
                         "description": "The inventory name of include_deprecated; never both.",
                         "deprecated": true
                       },
+                      "include_not_allowed": {
+                        "type": "boolean",
+                        "description": "Also list what you see but may not use, marked allowed: false with what is missing."
+                      },
+                      "--include-not-allowed": {
+                        "type": "boolean",
+                        "description": "The inventory name of include_not_allowed; never both.",
+                        "deprecated": true
+                      },
                       "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
@@ -10836,6 +11126,15 @@
                       "module": {
                         "type": "string",
                         "description": "Module id or prefix (see describe modules)."
+                      },
+                      "include_not_allowed": {
+                        "type": "boolean",
+                        "description": "Also list what you see but may not use, marked allowed: false with what is missing."
+                      },
+                      "--include-not-allowed": {
+                        "type": "boolean",
+                        "description": "The inventory name of include_not_allowed; never both.",
+                        "deprecated": true
                       },
                       "graph": {
                         "type": "string",
@@ -13531,6 +13830,15 @@
                       "--include-deprecated": {
                         "type": "boolean",
                         "description": "The inventory name of include_deprecated; never both.",
+                        "deprecated": true
+                      },
+                      "include_not_allowed": {
+                        "type": "boolean",
+                        "description": "Also list what you see but may not use, marked allowed: false with what is missing."
+                      },
+                      "--include-not-allowed": {
+                        "type": "boolean",
+                        "description": "The inventory name of include_not_allowed; never both.",
                         "deprecated": true
                       },
                       "graph": {

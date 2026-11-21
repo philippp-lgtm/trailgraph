@@ -710,7 +710,9 @@ exactly as before. The graph itself stays as visible as the grant makes it
 ### Functions and actions of a limited reader
 
 A named function or action is shown to a limited caller only when it fits what
-the caller sees; to everyone else it does not exist.
+the caller sees; to everyone else it does not exist (it is *hidden*). What a
+caller sees in full but lacks a right for is *not allowed*, not hidden
+([next section](#functions-actions-and-views-you-may-not-use)).
 
 - **Functions** are hidden when a type or relation they touch, the class of a
   `ref` parameter, an enum parameter or the module that holds them is hidden (a module
@@ -726,6 +728,42 @@ the caller sees; to everyone else it does not exist.
   is also hidden when a parameter class, enum or relation it names is hidden, so
   `describe action` and the skill never name a hidden term. `do` and
   `describe action` of a hidden action are `action.not_found`.
+
+### Functions, actions and views you may not use
+
+Every published function, action and view is, for one caller, in one of three states.
+
+- **Hidden.** It names a type, relation, attribute, enum, module or function the caller cannot see
+  (read limits, markings). It does not exist for that caller: not listed, not counted, not found by
+  `describe search`, not suggested, and its name, authored text or hints are never in an answer or
+  an error. Hidden depends on what the caller sees and never on the rights it holds; a caller who
+  loses a right does not see more or fewer hidden entries.
+- **Allowed.** The caller sees everything the entry names and holds the rights it needs.
+- **Not allowed.** The caller sees everything the entry names but lacks a right. Only such an entry
+  is named as unusable, so nothing hidden can leak through it. The rights are `read.function` on the
+  graph (a function, and a view with a `rows` section), `read.find` (a set view) and, for an action,
+  per unmet need the first denied write decision: the write action on the type, or on the attribute
+  or relation where a write allow list or a term rule decides one. An obligation (`require_reason`,
+  `max_batch`) never makes an entry not allowed: an action that needs `--reason` is allowed. An
+  action whose unmet need has no right to name, because every type that could meet it is outside
+  what the caller sees, is hidden.
+
+What each command does with a not-allowed entry:
+
+| Command | Answer |
+| --- | --- |
+| `describe functions\|actions\|views` | lists the allowed entries; `not_allowed` is the number of the others (module and deprecation filters apply); `--include-not-allowed` lists them after the allowed ones, each with `allowed: false` and `missing` |
+| `describe modules`, `describe module M` | counts of the allowed entries per kind (`functions`, `actions`, `views`) and, per kind, the number not allowed in `not_allowed`; `describe module` lists them with `--include-not-allowed` |
+| `describe search` | finds them like allowed ones, marked `allowed: false` with `missing`, ranked after the allowed hits of the same tier |
+| `describe function\|action\|view NAME` | the whole description plus `allowed: false` and `missing` (`replaced_by` names only a replacement the caller may use) |
+| `run`, `do`, `view --name` | `access.denied`, recorded as a denial (the first denying decision, so the audit event names the right), message naming the missing right and the hint to ask the maintainer for a role |
+
+`missing` is a list of `{action, resource}`; the resource is graph-relative (`graph`,
+`type:<curie>`, `type:<curie>/attr:<name>`, `type:<curie>/rel:<curie>`) and always names something
+the caller sees. It is what the caller is told, not the complete list: for an action it holds the first denied
+write of each unmet need, so a right granted may reveal the next one missing. Listing, counting, describing and
+searching record no decision, like `graph graphs`.
+The graph skill still lists the allowed featured entries only ([Skills](skills.md#per-reader)).
 
 ### Attributes a caller lacks a marking for
 
@@ -838,12 +876,15 @@ Published views add three rules.
   a view with a `rows` section needs `read.function`, and the function must be one the caller sees.
 - **A view is visible exactly when everything it names is**: its classes, attributes, relations and
   enums, and the functions it runs. Otherwise it does not exist for the caller: `view.not_found`
-  (never `access.denied`), absent from `describe views`, `describe search` and the affordances, and
+  (a hidden view is never `access.denied`), absent from `describe views`, `describe search` and the affordances, and
   the default view of a class falls back to the next one up the class chain or to the card. The whole
   view is hidden, not a section, because its summary, purpose and section titles are authored text
-  that may name what the caller may not see. A refusal for a missing `read.find` or `read.function`
-  is the same not-found and is not recorded as a denial (`graph find` without `read.find` is
-  `access.denied` and recorded; a listing never records a denial, as for functions).
+  that may name what the caller may not see. A view the caller sees in full but that needs a
+  `read.find` or `read.function` it lacks is *not allowed*
+  ([Functions, actions and views you may not use](#functions-actions-and-views-you-may-not-use)):
+  counted in `not_allowed`, found and described with `allowed: false` and `missing`, and `view --name`
+  of it is `access.denied`, recorded like `graph find` without `read.find` (a listing never records a
+  denial, as for functions). A default view the caller may not use is skipped like a hidden one.
 - **Rows, neighbours and counts come from the caller's own snapshot and model.** An entity the caller
   does not see is not a row, an edge to it is not a neighbour, a hidden source is not counted, and an
   attribute the caller may not see is absent from `fields: all`. A cursor is tied to what the caller
@@ -871,11 +912,15 @@ own action, `read.function`, in the `read` level.
   any storage is read. A denial is audited like that of any other read (the
   `args_digest` covers the function name and the parameters; the values
   themselves are never written).
-- **Listing.** `describe functions`, `describe function`, `describe module`,
-  `describe modules` and `describe search` show functions only to callers
-  who may `read.function` on the graph. For everyone else the graph reads
-  as if it had none, and a function is `function.not_found`. Listing is no
-  recorded decision: it writes no denial event, like `graph graphs`.
+- **Listing.** `describe functions`, `describe module`, `describe modules`
+  and `describe search` show functions as usable only to callers who may
+  `read.function` on the graph. For everyone else they are *not allowed*
+  ([Functions, actions and views you may not use](#functions-actions-and-views-you-may-not-use)):
+  counted in `not_allowed`, listed with `--include-not-allowed`, found by
+  search and shown by `describe function` marked `allowed: false` with
+  `missing: read.function`. A name that is not a function is
+  `function.not_found`. Listing is no recorded decision: it writes no denial
+  event, like `graph graphs`; `run` is.
 - **Graph skill.** The generated graph skill lists the featured functions:
   their names and summaries are schema-level text like type names. It is the
   same for every reader of the graph (it is read with `read.describe`) unless
@@ -928,15 +973,18 @@ after an update.
   `describe modules` and `describe search` show an action only when, for each
   need, at least one of its concrete types allows it, with the attributes and
   relations the action writes there where the policy has rules on terms of that
-  type (any-of per need). So an action no argument could run is hidden, and a
+  type (any-of per need). So an action no argument could run is not listed, and a
   listed action can still be refused for an entity of a type the caller may not
   write; the refusal names the resource. The check
   records no decision (no denial event), like the listing of functions, and
   obligations do not hide an action: one that needs `--reason` is listed.
-  For everyone else the graph reads as if it had no such action, and `do`
-  or `describe action` of it is `action.not_found` with `did_you_mean` over
-  the visible actions only. An action that names a hidden type, relation or
-  enum is hidden from a caller with read limits in the same way
+  An action that fails the check is *not allowed*: counted in `not_allowed`,
+  listed with `--include-not-allowed`, found by search and shown by
+  `describe action` with `allowed: false` and the first denied write per unmet
+  need as `missing`, and `do` of it is `access.denied`, recorded (nothing is
+  written). An action that names a hidden type, relation or enum is *hidden*
+  from a caller with read limits: it is `action.not_found` with `did_you_mean`
+  over the actions the caller sees
   ([Functions and actions of a limited reader](#functions-and-actions-of-a-limited-reader)).
 - **Graph skill.** Unlike the functions, the generated graph skill lists
   only the featured actions the installing reader may run

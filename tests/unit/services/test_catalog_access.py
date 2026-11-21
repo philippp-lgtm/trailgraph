@@ -5,7 +5,7 @@ from graph_cli.kernel.authz import Decision
 from graph_cli.services.catalog_access import (
     Classified,
     Missing,
-    first_denied,
+    first_denial,
     missing_of,
     relative_resource,
 )
@@ -44,14 +44,18 @@ def test_the_first_denying_decision_is_the_one_kept() -> None:
     allow = decision("allow", "write.update", f"graph:{GRAPH}/type:ex:T")
     first = decision("deny", "write.update", f"graph:{GRAPH}/type:ex:T/attr:a")
     second = decision("deny", "write.update", f"graph:{GRAPH}/type:ex:T/attr:b")
-    assert first_denied([allow, first, second]) == Missing("write.update", "type:ex:T/attr:a")
-    assert first_denied([allow]) is None
-    assert first_denied([]) is None
+    assert first_denial([allow, first, second]) is first
+    assert first_denial([allow]) is None
+    assert first_denial([]) is None
 
 
-def test_an_entry_is_allowed_exactly_when_it_misses_nothing() -> None:
+def test_an_entry_is_allowed_exactly_when_nothing_denies_it() -> None:
     assert Classified("x").allowed and Classified("x").missing == ()
-    missing = (Missing("read.find"),)
-    denied = Classified("x", missing)
+    assert Classified("x").access_json() == {}
+    denied = Classified("x", (decision("deny", "read.find", f"graph:{GRAPH}"),) * 2)
     assert not denied.allowed
-    assert denied.missing_json() == [{"action": "read.find", "resource": "graph"}]
+    assert denied.missing == (Missing("read.find"),)  # the same right twice is named once
+    assert denied.access_json() == {
+        "allowed": False,
+        "missing": [{"action": "read.find", "resource": "graph"}],
+    }

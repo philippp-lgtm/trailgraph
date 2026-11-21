@@ -139,6 +139,7 @@ Usage: `graph describe actions [OPTIONS]`
 |---|---|---|---|---|
 | `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
 | `--include-deprecated` | flag | no | no | Also list deprecated actions. |
+| `--include-not-allowed` | flag | no | no | Also list what you see but may not use, marked allowed: false with what is missing. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 
 | Example | Summary |
@@ -218,6 +219,7 @@ Usage: `graph describe functions [OPTIONS]`
 |---|---|---|---|---|
 | `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
 | `--include-deprecated` | flag | no | no | Also list deprecated functions. |
+| `--include-not-allowed` | flag | no | no | Also list what you see but may not use, marked allowed: false with what is missing. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 
 | Example | Summary |
@@ -260,12 +262,14 @@ Usage: `graph describe module MODULE [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
+| `--include-not-allowed` | flag | no | no | Also list what you see but may not use, marked allowed: false with what is missing. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 
 | Example | Summary |
 |---|---|
 | `graph describe module <module>` | Everything one subject area holds. |
 | `graph describe module <module> --json` | The module as graph_cli.model/1. |
+| `graph describe module <module> --include-not-allowed` | Also the functions, actions and views you see but may not use. |
 
 ## graph describe modules
 
@@ -429,6 +433,7 @@ Usage: `graph describe views [OPTIONS]`
 |---|---|---|---|---|
 | `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
 | `--include-deprecated` | flag | no | no | Also list deprecated views. |
+| `--include-not-allowed` | flag | no | no | Also list what you see but may not use, marked allowed: false with what is missing. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 
 | Example | Summary |

@@ -332,7 +332,7 @@ def test_write_allow_lists_decide_what_each_token_may_write(
         )
     )
 
-    # 8. graph do lists and runs only what the rights allow
+    # 8. graph do lists and runs only what the rights allow; the others are refused, not hidden
     for token in (token_a, token_b):
         assert listed(server, token) == ["retire_item"]
         for hidden in ("mark_damaged", "move_item"):
@@ -342,7 +342,7 @@ def test_write_allow_lists_decide_what_each_token_may_write(
                 token,
                 args={**GRAPH_ARGS, "name": hidden, "--param": [f"item={chair}"]},
             )
-            assert gone.status == 404 and gone.error["code"] == "action.not_found", gone.json
+            assert gone.status == 403 and gone.error["code"] == "access.denied", gone.json
     retire = {"name": "retire_item", "--param": [f"item={chair}"], "--reason": "scrapped"}
     retired = command(server, "do", token_a, args={**GRAPH_ARGS, **retire})
     assert retired.status == 200, retired.json

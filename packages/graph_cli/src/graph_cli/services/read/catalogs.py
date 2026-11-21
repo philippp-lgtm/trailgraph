@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Any
 
 from graph_cli.kernel.actor import ActorContext
-from graph_cli.kernel.authz import AuthzContext
+from graph_cli.kernel.authz import AuthzContext, Decision
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry
 from graph_cli.kernel.read_view import UNLIMITED, ReadView
+from graph_cli.kernel.records import RequestMeta
 from graph_cli.kinetic.action_entries import ActionEntry, load_action_entries
 from graph_cli.kinetic.action_needs import NeedOptions
 from graph_cli.kinetic.action_needs import action_needs as derive_needs
@@ -20,11 +22,12 @@ from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.action_rights import need_decisions
 from graph_cli.services.catalog_access import (
     Classified,
-    Missing,
+    Denied,
     allowed_entries,
-    first_denied,
+    first_denial,
+    not_allowed,
 )
-from graph_cli.services.read.access import ReadAccess
+from graph_cli.services.read.access import ReadAccess, denial_error
 from graph_cli.services.read.graph_read import ActionCatalog
 from graph_cli.services.visible_catalog import hidden_actions, hidden_functions, hidden_views
 
@@ -37,7 +40,7 @@ class ReadCatalogs(ReadAccess):
         sees only the functions that fit its model view (``services.visible_catalog``); the
         parsed catalog is cached by the hash of the compiled document. The allowed half of
         ``classified_functions``."""
-        if self._function_missing(actor, entry):
+        if self._function_denials(actor, entry):
             return None
         return self._visible_functions(entry, self.read_view(actor, entry))
 
@@ -50,15 +53,14 @@ class ReadCatalogs(ReadAccess):
         Nothing for a graph the actor may not see (``read.list``). Records nothing."""
         if not self.visible(actor, entry):
             return ()
-        missing = self._function_missing(actor, entry)
+        denials = self._function_denials(actor, entry)
         view = self.read_view(actor, entry)
-        return tuple(Classified(e, missing) for e in self._visible_functions(entry, view) or ())
+        return tuple(Classified(e, denials) for e in self._visible_functions(entry, view) or ())
 
-    def _function_missing(self, actor: ActorContext, entry: GraphEntry) -> tuple[Missing, ...]:
-        """The rights every function of the graph needs and the actor lacks (a probe)."""
-        if self._may(actor, entry, "read.function"):
-            return ()
-        return (Missing("read.function"),)
+    def _function_denials(self, actor: ActorContext, entry: GraphEntry) -> tuple[Decision, ...]:
+        """The decisions that deny every function of the graph to the actor (a probe)."""
+        decision = self._probe(actor, entry, "read.function")
+        return () if decision.effect == "allow" else (decision,)
 
     def _published_slot(
         self, entry: GraphEntry
@@ -214,7 +216,7 @@ class ReadCatalogs(ReadAccess):
             for action in catalog.entries:
                 if action.name in hidden:
                     continue
-                missing: dict[Missing, None] = {}
+                denials: list[Decision] = []
                 undecided = False
                 for need in needs[action.name]:
                     result = need_decisions(
@@ -222,13 +224,13 @@ class ReadCatalogs(ReadAccess):
                     )
                     if result.met:
                         continue
-                    denied = first_denied(result.decisions)
+                    denied = first_denial(result.decisions)
                     if denied is None:
                         undecided = True
                         break
-                    missing[denied] = None
+                    denials.append(denied)
                 if not undecided:
-                    found.append(Classified(action, tuple(missing)))
+                    found.append(Classified(action, tuple(denials)))
         return tuple(found)
 
     def _hidden_actions(
@@ -244,6 +246,32 @@ class ReadCatalogs(ReadAccess):
         return self._hidden.of(
             "actions", catalog.compiled_hash, entry.pin.artifact_hash, view, compute
         )
+
+    def denied(self, actor: ActorContext, entry: GraphEntry) -> Denied:
+        """The functions, actions and views the actor sees but may not use (graph start plan S4);
+        what a listing counts and a search shows marked. Records nothing."""
+        published = self.published_actions(entry)
+        return Denied(
+            not_allowed(self.classified_functions(actor, entry)),
+            ()
+            if published is None
+            else not_allowed(self.classified_actions(actor, entry, published)),
+            not_allowed(self.classified_views(actor, entry)),
+        )
+
+    def refuse_not_allowed(
+        self,
+        actor: ActorContext,
+        entry: GraphEntry,
+        item: Classified[Any],
+        request: RequestMeta,
+    ) -> GraphCliError:
+        """The answer to a call of an entry the actor sees but may not use: the first denying
+        decision is audited as a denial (a call is a recorded access, a listing is not) and
+        raised as ``access.denied``, naming the missing right."""
+        assert item.denials, "an allowed entry is never refused"
+        decision = item.denials[0]
+        return self._record_denial(actor, decision, request, entry, denial_error(decision))
 
     # ---- views (object views stage 2) -----------------------------------
 
@@ -313,15 +341,22 @@ class ReadCatalogs(ReadAccess):
         if any(e.functions for e in entries):
             fits = frozenset(f.name for f in self._visible_functions(entry, view) or ())
             entries = tuple(e for e in entries if fits.issuperset(e.functions))
-        may_find = not any(not e.entity for e in entries) or self._may(actor, entry, "read.find")
-        may_run = not any(e.functions for e in entries) or self._may(actor, entry, "read.function")
+        find = (
+            self._probe(actor, entry, "read.find") if any(not e.entity for e in entries) else None
+        )
+        run = (
+            self._probe(actor, entry, "read.function")
+            if any(e.functions for e in entries)
+            else None
+        )
         classified: list[Classified[ViewEntry]] = []
         for e in entries:
-            missing = (
-                *(() if e.entity or may_find else (Missing("read.find"),)),
-                *(() if not e.functions or may_run else (Missing("read.function"),)),
-            )
-            classified.append(Classified(e, missing))
+            denials = [
+                d
+                for d, needed in ((find, not e.entity), (run, bool(e.functions)))
+                if d is not None and needed and d.effect != "allow"
+            ]
+            classified.append(Classified(e, tuple(denials)))
         return tuple(classified)
 
     def _visible_views(

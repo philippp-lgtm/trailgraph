@@ -289,9 +289,10 @@ def policy_with(*rules: dict[str, JsonValue], obligations: list[JsonValue] | Non
     return Source(policy_set(document))
 
 
-def test_an_action_the_actor_may_not_run_does_not_exist_for_it(svc: ServiceEnv) -> None:
-    """The policy denies the unlink of items: ``move_item`` needs it, so it is hidden (A6),
-    and the suggestions name visible actions only."""
+def test_an_action_the_actor_may_not_run_is_a_recorded_denial(svc: ServiceEnv) -> None:
+    """The policy denies the unlink of items: ``move_item`` needs it. The caller sees what the
+    action names, so the call is ``access.denied`` naming the right (recorded like any denial),
+    while a name that is not an action is not found, with suggestions of allowed actions only."""
     item, target = make_item(svc), make_location(svc)
     deny = {
         "id": "no_unlink_item",
@@ -301,15 +302,21 @@ def test_an_action_the_actor_may_not_run_does_not_exist_for_it(svc: ServiceEnv) 
     }
     service = action_service(svc, policy_with(deny))
     events = len(svc.installation_events())
+    head = svc.head_seq()
     with pytest.raises(GraphCliError) as caught:
         do(service, svc, "move_item", f"item={item}", f"location={target}")
-    assert caught.value.code == "action.not_found"
-    assert caught.value.details["did_you_mean"] == ["retire_item"]  # not move_item itself
+    assert caught.value.code == "access.denied"
+    assert caught.value.details["action"] == "write.unlink"
+    assert caught.value.details["resource"] == f"graph:{svc.entry.id}/type:inv:Item"
+    assert caught.value.details["rule"] == "no_unlink_item"
+    assert len(svc.installation_events()) == events + 1
+    assert svc.installation_events()[-1]["result"]["status"] == "denied"  # type: ignore[index]
+    assert svc.head_seq() == head  # nothing was written
     with pytest.raises(GraphCliError) as caught:
         do(service, svc, "moove_item", f"item={item}", f"location={target}")
+    assert caught.value.code == "action.not_found"
     assert "move_item" not in caught.value.details["did_you_mean"]  # type: ignore[operator]
-    assert len(svc.installation_events()) == events  # nothing to audit: no denial happened
-    do(service, svc, "retire_item", f"item={item}", reason="scrapped")  # the visible one runs
+    do(service, svc, "retire_item", f"item={item}", reason="scrapped")  # the allowed one runs
 
 
 def test_a_graph_the_actor_cannot_see_does_not_exist(svc: ServiceEnv) -> None:
