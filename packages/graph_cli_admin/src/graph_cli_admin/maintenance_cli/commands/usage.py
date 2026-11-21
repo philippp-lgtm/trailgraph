@@ -75,6 +75,11 @@ REPORT_OUTPUT: Final = obj(  # services_admin.usage.report
         "skipped_lines": INTEGER,
         # run and query calls that failed before a graph was open, by error code
         "without_graph": obj({"calls": INTEGER, "errors": obj(extra=INTEGER)}),
+        # installation-wide: sessions (by session id) whose first logged command is in the window,
+        # and how many of them began with `graph start`; whole percent, null without sessions
+        "sessions": obj(
+            {"count": INTEGER, "first_start": INTEGER, "first_start_share": nullable(INTEGER)}
+        ),
         "graphs": array(
             obj(
                 {
@@ -132,6 +137,8 @@ SPECS: Final = (
         " lists derived from them: discovery misses (a covered shape still queried), batch gaps"
         " (the covering function takes one value where the query took a list) and candidates"
         " (uncovered shapes in at least two sessions). Shapes only, no values; sessions are"
-        " counted, never listed. Each list shows 20 entries, with `<list>_more` when cut.",
+        " counted, never listed. Each list shows 20 entries, with `<list>_more` when cut. Apart"
+        " from the graphs, `sessions` counts the session ids whose first logged command is in the"
+        " window and how many began with `graph start` (not narrowed by GRAPH).",
     ),
 )

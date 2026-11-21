@@ -248,3 +248,81 @@ def test_the_text_shows_the_summary_and_indents_the_shape() -> None:
     assert "        MATCH (v1:Item) RETURN v1.name AS c1" in out
     assert "covered by f (single value)" in out
     assert "Batch gaps" in out and "shape text not logged" in out
+
+
+# ---- sessions that began with `graph start` (installation-wide) -----------------------
+
+
+def ts(minute: int, second: int = 0) -> str:
+    return f"2026-11-02T10:{minute:02d}:{second:02d}.000Z"
+
+
+def sessions(lines: list[dict[str, Any]], since: str | None = None) -> dict[str, Any]:
+    start = usage.parse_since(since) if since else None
+    return dict(usage.sessions_report(usage.aggregate(lines, since=start), start))
+
+
+def test_a_session_counts_and_began_with_start_when_its_first_line_is_start() -> None:
+    lines = [
+        line("start", session="a", ts=ts(0), graph=None),
+        line("get", session="a", ts=ts(1), graph=None),
+        line("whoami", session="b", ts=ts(0), graph=None),
+        line("start", session="b", ts=ts(1), graph=None),  # later: does not count
+        line("start", session="c", ts=ts(2), graph=None),
+    ]
+    assert sessions(lines) == {"count": 3, "first_start": 2, "first_start_share": 67}
+
+
+def test_the_earliest_line_decides_not_the_order_in_the_file() -> None:
+    lines = [line("get", session="a", ts=ts(5)), line("start", session="a", ts=ts(1), graph=None)]
+    assert sessions(lines)["first_start"] == 1
+    same = [line("get", session="a", ts=ts(1)), line("start", session="a", ts=ts(1), graph=None)]
+    assert sessions(same) == {"count": 1, "first_start": 0, "first_start_share": 0}  # file order
+
+
+def test_a_failed_start_is_still_the_first_command() -> None:
+    lines = [line("start", session="a", graph=None, code="graph.not_found")]
+    assert sessions(lines)["first_start"] == 1
+
+
+def test_lines_without_a_session_id_are_not_sessions() -> None:
+    named = line("start", session=None, graph=None)
+    named["actor"]["session"] = {"assurance": "asserted", "name": "only-a-name"}
+    lines = [line("start", session=None, graph=None), named, line("start", session="", graph=None)]
+    assert sessions(lines) == {"count": 0, "first_start": 0, "first_start_share": None}
+    assert sessions([]) == {"count": 0, "first_start": 0, "first_start_share": None}
+
+
+def test_a_session_belongs_to_the_window_its_first_line_is_in() -> None:
+    lines = [
+        line("get", session="old", ts=ts(0)),  # began before: not counted, even though...
+        line("start", session="old", ts=ts(30), graph=None),  # ...this line is in the window
+        line("start", session="edge", ts=ts(10), graph=None),  # inclusive
+        line("get", session="new", ts=ts(20)),
+    ]
+    found = sessions(lines, since="2026-11-02T10:10:00Z")
+    assert found == {"count": 2, "first_start": 1, "first_start_share": 50}
+
+
+def test_the_graph_filter_and_other_commands_do_not_narrow_the_sessions() -> None:
+    lines = [
+        line("start", session="a", graph=None),
+        line("run", session="b", function="f", graph=G2),
+        line("query", session="c", graph=G1),
+    ]
+    found = usage.aggregate(lines, graphs=frozenset({G1}))
+    assert set(found.graphs) == {G1}
+    assert usage.sessions_report(found, None)["count"] == 3
+    assert found.skipped == 0 and found.without_graph == 0  # a start line is no skipped line
+
+
+def test_the_sessions_part_names_no_session_and_the_text_says_it() -> None:
+    lines = [line("start", session="session-marker-7", graph=None), line("get", session="s8")]
+    part = sessions(lines)
+    assert "session-marker-7" not in repr(part) and "s8" not in repr(part)
+    base = {"since": None, "access_log": True, "skipped_lines": 0, "graphs": []}
+    out = usage.render({**base, "sessions": part})
+    assert "Sessions: 2, first command was start in 1 (50%)" in out
+    assert "Sessions" not in usage.render(base)  # an older answer has no such part
+    empty = usage.render({**base, "sessions": sessions([])})
+    assert "Sessions: 0, first command was start in 0" in empty and "%" not in empty

@@ -100,7 +100,7 @@ fails:
 | Key | Content |
 | --- | --- |
 | `ts` | when the command finished |
-| `command` | the command, e.g. `get`, `find`, `create` |
+| `command` | the command, e.g. `get`, `find`, `create`, `start` (which `usage report` counts as the first call of a session) |
 | `actor` | the actor, as in audit events |
 | `graph` | `{id, name, seq}` of the graph state the command used, or `null` |
 | `result` | `{status: ok}` or `{status: error, code}` |
