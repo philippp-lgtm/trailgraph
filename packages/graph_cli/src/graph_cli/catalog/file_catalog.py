@@ -29,14 +29,16 @@ from graph_cli.kernel.ports.catalog import (
     KineticSlot,
     ManifestData,
     SkillSlot,
+    SlotKind,
     graph_not_found,
 )
 from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite
 from graph_cli.kernel.records import OntologyPin
+from graph_cli.kernel.skill_featured import catalog_digest, kind_digest
 from graph_cli.storage.common.faults import FaultHook
 from graph_cli.storage.files.blob_backend import BlobBackends
 from graph_cli.storage.files.durable import Durability
-from graph_cli.storage.files.kinetic_slot import read_slot
+from graph_cli.storage.files.kinetic_slot import read_slot, read_slot_featured
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import read_manifest, read_release_file
 from graph_cli.storage.files.segments import OpLog
@@ -82,6 +84,9 @@ class FileCatalog:
         # pin: the release decides from it.
         self._follow_migration = follow_migration
         self._warnings: dict[tuple[str, str], WarningRecord] = {}
+        # kind digests computed from a compiled catalog of a slot published before ``featured``
+        # was stored: once per (graph, kind, compiled hash) in this process
+        self._featured: dict[tuple[GraphId, str, str], str] = {}
 
     @property
     def warnings(self) -> tuple[WarningRecord, ...]:
@@ -182,6 +187,28 @@ class FileCatalog:
 
     def read_views(self, graph: GraphId, *, sources: bool = False) -> KineticSlot | None:
         return read_slot(self._layout(graph), "views", sources=sources)
+
+    def skill_featured(self, graph: GraphId) -> str:
+        """Digest of what a graph skill shows of the catalogs, from the three ``slot.json`` files
+        (the compiled catalog is read only for a slot without the stored digest, once per
+        process)."""
+        layout = self._layout(graph)
+        digests: list[str] = []
+        kinds: tuple[SlotKind, ...] = ("functions", "actions", "views")
+        for kind in kinds:
+            found = read_slot_featured(layout, kind)
+            if found is None:
+                digests.append(kind_digest(kind, None))
+                continue
+            stored, compiled_hash = found
+            if stored is None:
+                key = (graph, kind, compiled_hash or "")
+                if key not in self._featured:
+                    slot = read_slot(layout, kind, sources=False)
+                    self._featured[key] = kind_digest(kind, slot.compiled if slot else None)
+                stored = self._featured[key]
+            digests.append(stored)
+        return catalog_digest(*digests)
 
     def store_for(self, graph: GraphId) -> tuple[GraphStoreRead, GraphStoreWrite]:
         store = self.file_store(graph)

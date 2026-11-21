@@ -2,8 +2,9 @@
 
 - ``modules``: the subject areas (ontology modules) of the graph as a table (module, prefix,
   summary, number of types, links to other modules; built-in modules in one line) and the
-  commands to read one module (``describe module``), find a term (``describe search``) and
-  read a type (``describe type``). For a modular graph it takes the place of ``types`` and
+  commands to read one module (``describe module``, which also lists its functions and
+  actions: no per-module count or list of them is kept here), find a term (``describe search``)
+  and read a type (``describe type``). For a modular graph it takes the place of ``types`` and
   ``relations`` in the template.
 
 A graph with two or more non-built-in modules is modular: every generated skill then also
@@ -16,12 +17,9 @@ kernel-only: the module line formats follow the CLI text output but are written 
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 from graph_cli.kernel.canonical import JsonObject
 from graph_cli.kernel.ids import format_alias
 from graph_cli.kernel.json_access import opt_str, req_list, req_obj, req_str
-from graph_cli.skills.graph_skill.catalogs import module_actions, module_functions
 from graph_cli.skills.graph_skill.model import Model, objects
 from graph_cli.skills.graph_skill.naming import labelled_fields, name_fields
 from graph_cli.skills.graph_skill.pieces import code, codes, md_table, plain, term_summary
@@ -42,16 +40,12 @@ def render_modules(doc: Model) -> list[str]:
     graph) get one line, not a row."""
     shown = [m for m in doc.modules if m.get("builtin") is not True]
     built = [req_str(m, "id") for m in doc.modules if m.get("builtin") is True]
-    counts = _counts(doc.functions)  # the column exists only for a graph with functions
-    action_counts = _counts(doc.actions)  # likewise for actions
     lines = md_table(
         [
             "Module",
             "Prefix",
             "What it holds",
             "Types",
-            *(["Functions"] if doc.functions else []),
-            *(["Actions"] if doc.actions else []),
             "Links to other modules",
         ],
         [
@@ -60,8 +54,6 @@ def render_modules(doc: Model) -> list[str]:
                 code(req_str(m, "prefix")),
                 plain(opt_str(m, "summary")),
                 str(m["types"]),
-                *([str(counts.get(req_str(m, "id"), 0))] if doc.functions else []),
-                *([str(action_counts.get(req_str(m, "id"), 0))] if doc.actions else []),
                 _module_links(m),
             ]
             for m in shown
@@ -80,22 +72,17 @@ def render_modules(doc: Model) -> list[str]:
         f"- For the fields, states and relations of one type: `graph describe type <type>"
         f" --graph {name} --json`.",
     ]
+    if doc.functions or doc.actions:
+        lines.append(
+            f"- The functions and actions of a module are listed by the same command, not here:"
+            f" `graph describe module <module> --graph {name}`."
+        )
     if doc.modular:
         lines.append(
             f"- The same module views as text, and an index of every type with its module:"
             f" [{MODEL_FILE}]({MODEL_FILE}) and the pages `{MODULES_DIR}<module>.md`."
         )
     return lines
-
-
-def _counts(entries: Sequence[JsonObject]) -> dict[str, int]:
-    """Catalog entries per module id."""
-    counts: dict[str, int] = {}
-    for entry in entries:
-        module = opt_str(entry, "module")
-        if module is not None:
-            counts[module] = counts.get(module, 0) + 1
-    return counts
 
 
 def _page_link(doc: Model, module_id: str) -> str:
@@ -252,6 +239,9 @@ def module_page(doc: Model, module_id: str, stamp: str) -> str:
         if rules
         else ["None."]
     )
-    lines += module_functions(doc, module_id)
-    lines += module_actions(doc, module_id)
+    if doc.functions or doc.actions:
+        lines += [
+            "",
+            f"Its functions and actions: `graph describe module {module_id} --graph {name}`.",
+        ]
     return "\n".join(lines) + "\n"

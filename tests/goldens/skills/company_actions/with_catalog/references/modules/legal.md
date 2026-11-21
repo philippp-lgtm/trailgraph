@@ -38,6 +38,4 @@ Ontology `company` 1.1.0. The live source is `graph describe module legal --grap
 |---|---|---|
 | `leg.stakes_within_capital` | warning | The stakes in a legal entity add up to at most 100 percent. |
 
-## Actions
-
-None.
+Its functions and actions: `graph describe module legal --graph example_graph`.

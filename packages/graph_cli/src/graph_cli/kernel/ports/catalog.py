@@ -12,6 +12,7 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import GraphId, TermRef
 from graph_cli.kernel.migration_marker import MigrationMarker
 from graph_cli.kernel.records import OntologyPin
+from graph_cli.kernel.skill_featured import kind_digest
 
 if TYPE_CHECKING:
     from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite
@@ -190,13 +191,21 @@ class KineticSlot:
         }
 
     def slot_json(self) -> dict[str, JsonValue]:
-        """The slot's ``slot.json`` document."""
+        """The slot's ``slot.json`` document. ``featured`` is derived from ``compiled`` once, here
+        at publish: what a graph skill shows of this catalog (``kernel.skill_featured``), so the
+        freshness check reads it without the compiled catalog."""
         return {
             "schema": self.spec.slot_schema,
             "hash": self.hash,
             "compiled_hash": self.compiled_hash,
             "published_against": self.published_against.to_json(),
+            "featured": self.featured,
         }
+
+    @property
+    def featured(self) -> str:
+        """``kernel.skill_featured.kind_digest`` of the compiled catalog."""
+        return kind_digest(self.kind, self.compiled)
 
 
 FunctionsSlot = KineticSlot  # the name existing code uses for ``kind="functions"``
@@ -245,6 +254,13 @@ class Catalog(Protocol):
     def read_views(self, graph: GraphId, *, sources: bool = False) -> KineticSlot | None:
         """The graph's published view catalog, or ``None`` when none was published (views
         plan V9); ``sources`` as for ``read_functions``."""
+        ...
+
+    def skill_featured(self, graph: GraphId) -> str:
+        """What a generated graph skill shows of the graph's published catalogs, as one digest
+        (``kernel.skill_featured.catalog_digest`` of the three kinds; an unpublished kind counts
+        as an empty one). It is derived and is no access control: it only tells whether an
+        installed copy still shows what the catalogs say."""
         ...
 
     def store_for(self, graph: GraphId) -> tuple[GraphStoreRead, GraphStoreWrite]: ...

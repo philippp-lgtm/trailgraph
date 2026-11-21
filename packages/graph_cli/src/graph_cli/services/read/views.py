@@ -8,7 +8,7 @@ from typing import Final
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId
-from graph_cli.kernel.records import Revision
+from graph_cli.kernel.records import RequestMeta, Revision
 from graph_cli.kinetic import params as kinetic_params
 from graph_cli.kinetic.card import AffordancesSpec, file_classes_of, generated_spec, render, spec_of
 from graph_cli.kinetic.entries import FunctionEntry, find_entry, seen_replacement
@@ -66,7 +66,7 @@ class ReadViews(ReadEntities, ReadQueries):
         resolved: tuple[EntityId, Revision, list[WarningRecord], list[str], list[str]] | None = None
         notes: list[WarningRecord] = []
         if name is not None and name != CARD:
-            chosen = find_view(self._visible_views(view.actor, view.entry, view.read_view), name)
+            chosen = self._named_view(view, name)
         elif name is None and ref is not None:
             published = self._published_views(view.entry)
             if published is not None and any(v.defn.default for v in published[0]):
@@ -93,6 +93,19 @@ class ReadViews(ReadEntities, ReadQueries):
             data, warnings = self._card(view, ref, pairs, cursor, page_bytes, resolved)
             return data, [*warnings, *notes]
         return self._authored_view(view, chosen, ref, pairs, cursor, page_bytes, as_of, resolved)
+
+    def _named_view(self, view: GraphRead, name: str) -> ViewEntry:
+        """The view ``name`` asked for: ``view.not_found`` unless the caller sees it, and a
+        recorded ``access.denied`` (naming the right it lacks) when it sees the view but may
+        not use it."""
+        classified = self._classified_views(view.actor, view.entry, view.read_view)
+        for item in classified:
+            if item.entry.name == name and not item.allowed:
+                request = RequestMeta.of(view.command, {"graph": view.entry.name, "name": name})
+                raise self.refuse_not_allowed(view.actor, view.entry, item, request)
+        # an exact name that is not allowed was refused above: what is found here is allowed, and
+        # the suggestions of a name that is none are over everything the caller sees
+        return find_view([c.entry for c in classified], name)
 
     def _card(
         self,

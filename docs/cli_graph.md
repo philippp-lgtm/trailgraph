@@ -71,22 +71,23 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 
 | Command | What it does |
 | --- | --- |
+| `start [--graph G] [--check] [--dir D]` | the first call of a session, in a few lines (at most about 1,500 bytes for five graphs; `--json` is `graph_cli.start/1`): whether this program and the installed skills are current (stale copies are refreshed as `self update` does, the program is never replaced; `--check` only reports), who acts, and per graph you reach its title, your level (and what a deny rule withholds below it), the number of modules, types, functions, actions and views you may use, the number you see but may not use (`actions 5 (+2 not allowed)`) and the commands that search them. See [Starting a session](#starting-a-session) |
 | `whoami` | the acting identity (principal, agent, session, project and, over the server, the roles of the token) and what the policy allows: the project scope and, per graph, the level, the actions a deny rule withholds below it, read-only types, write obligations and, for a caller whose level is below `write`, `writes`: what a write allow list lets it write per type and verb (see [Write allow lists](access_control.md#write-allow-lists)) and, for a caller limited to some types, `reads`: the types it sees (see [Read limits](access_control.md#read-limits)) and, for a graph whose ontology marks fields that the caller does not all hold, `markings`: the markings it holds (`[]` for none; see [Markings](access_control.md#markings)); `writes` names no field the caller cannot see |
 | `graphs` | the graphs this project may see and use, with the title that says what each is for and the default language of their values (BCP 47, null when unset) |
 | `describe commands` | every command as data (`graph_cli.inventory/1`): arguments, options, examples, error codes, exit codes |
 | `describe types`, `describe type T`, `describe fields T`, `describe relations`, `describe lifecycle T` | the selected graph's ontology (`graph_cli.model/1`); the `graph` block names the graph's default language; every term with a summary carries `deprecated`; `describe types` and `describe relations` take `--module M` (id or prefix) and then list only the terms of that module: its types, the relations it declares or has a class at one end of; the answer names the module in `module` |
-| `describe modules` | the subject areas of the ontology, one item per module: id, prefix, version, summary, `builtin`, the number of types and relations, and `links` (the modules it connects to, with the number of relations in each direction); the first call on a graph with several modules. When the graph has functions you may read, each module also has a `functions` count of its active functions; likewise an `actions` count when you may run actions |
-| `describe module M` | one module (id or prefix): its types, the relations that stay inside it, `links_out` and `links_in` (relations to and from other modules, as `from -rel-> to`, with the module that declares the relation in `module` and the modules at its other ends in `other_modules`) and the rules on its types; an unknown module is `term.unknown` with `did_you_mean`; `describe type` names the owning module in `module`. The text form is made for agents to read: it leaves out cardinalities and the summaries of links, which `describe type` gives; the skills point agents to it. When the graph has functions you may read, a `functions` section lists the module's active functions (`name`, `summary`, `signature`; text: `Functions:`), likewise an `actions` section (text: `Actions:`) when you may run actions |
-| `describe search TEXT` | find terms of the ontology when you only know a word: types, relations, fields (under the class that declares them), enum values and lifecycle states, by name, CURIE, summary and description, and the graph's functions, actions and views you may see (by name, summary and, last, what they are for); reads the model, never graph data (that is `search`). Ignores case, accents and punctuation; best first: whole name, name prefix, word of the name, name contains, summary, description. Each hit has `kind` (`type`, `relation`, `attribute`, `enum_value`, `state`, `function`, `action`, `view`; a function's, action's or view's `curie` is its name, see [Functions](#functions) and [Actions](#actions); views are the ones you can call, see `describe views`), `curie` (a field, value or state is its owner's CURIE, a dot and its name), `of` (the owner), `module`, `summary`, `deprecated` and `match` (`field`, `how`). `--kind` (repeatable) and `--module M` narrow it; paged like `search` (`--limit`, `--offset`, next-page hint) |
-| `describe functions [--module M] [--include-deprecated]` | the named functions of the graph (`graph_cli.model/1`), one item per function: `name`, `module`, `summary`, `signature` (`unit: ref org:OrgUnit, include_vacant?: boolean`; `?` marks an optional parameter) and `status`; deprecated functions only with `--include-deprecated`. See [Functions](#functions) |
-| `describe actions [--module M] [--include-deprecated]` | the actions of the graph that you may run (`graph_cli.model/1`), one item per action: `name`, `module`, `summary`, `signature` and `status`; deprecated actions only with `--include-deprecated`; an action whose write rights you lack does not exist for you. See [Actions](#actions) |
-| `describe action NAME` | one action completely: summary, `use_when`, `reason`, parameters, preconditions, the compiled operations, the types and relations it touches, the write rights it needs (`needs`), examples and its hash; an unknown or hidden name is `action.not_found` with `did_you_mean`. See [Actions](#actions) |
-| `describe function NAME` | one function completely: summary, `use_when`, parameters, the result columns, examples, the types and relations its query touches, the normalized query text (copy it as the start of an ad-hoc query) and its hash; an unknown name is `function.not_found` with `did_you_mean` |
-| `describe views [--module M] [--include-deprecated]` | the published views of the graph you can call (`graph_cli.model/1`), one item per view: `name`, `module`, `summary`, `takes` (the class an entity view shows; left out for a set view), `default` (only when true), `signature` and `status`; deprecated views only with `--include-deprecated`. A view you cannot see in full (it names a type, attribute, relation or function that is hidden from you, or it needs `read.find` or `read.function` that you lack) does not exist for you |
-| `describe view NAME` | one view completely: summary, `use_when`, `takes`, `default`, parameters, every section with the types, relations, fields and function it reads, examples, `touches` (types, relations, attributes, functions), `hash` and `call`, the command that calls it; `replaced_by` names a view only when you see it; an unknown or hidden name is `view.not_found` with `did_you_mean` over the visible names and a hint to search the views by words |
+| `describe modules` | the subject areas of the ontology, one item per module: id, prefix, version, summary, `builtin`, the number of types and relations, and `links` (the modules it connects to, with the number of relations in each direction); the first call on a graph with several modules. When the graph has functions, actions or views you see, each module also has a `functions`, `actions` and `views` count of the active ones you may use. What you see but may not use is counted per kind in `not_allowed` (only on a module that has some; see [Entries you may not use](#entries-you-may-not-use)) |
+| `describe module M` | one module (id or prefix): its types, the relations that stay inside it, `links_out` and `links_in` (relations to and from other modules, as `from -rel-> to`, with the module that declares the relation in `module` and the modules at its other ends in `other_modules`) and the rules on its types; an unknown module is `term.unknown` with `did_you_mean`; `describe type` names the owning module in `module`. The text form is made for agents to read: it leaves out cardinalities and the summaries of links, which `describe type` gives; the skills point agents to it. When the graph has functions, actions or views you see, a `functions`, `actions` and `views` section lists the module's active ones you may use (`name`, `summary`, `signature`; text: `Functions:`, `Actions:`, `Views:`), and `not_allowed` counts the ones you may not; `--include-not-allowed` lists those too, after the others and marked |
+| `describe search TEXT` | find terms of the ontology when you only know a word: types, relations, fields (under the class that declares them), enum values and lifecycle states, by name, CURIE, summary and description, and the graph's functions, actions and views you see (by name, summary and, last, what they are for; one you may not use is found too, marked `allowed: false` with `missing`, after the others of its rank, see [Entries you may not use](#entries-you-may-not-use)); reads the model, never graph data (that is `search`). Ignores case, accents and punctuation; best first: whole name, name prefix, word of the name, name contains, summary, description. Each hit has `kind` (`type`, `relation`, `attribute`, `enum_value`, `state`, `function`, `action`, `view`; a function's, action's or view's `curie` is its name, see [Functions](#functions) and [Actions](#actions); views are the ones you can call, see `describe views`), `curie` (a field, value or state is its owner's CURIE, a dot and its name), `of` (the owner), `module`, `summary`, `deprecated` and `match` (`field`, `how`). `--kind` (repeatable) and `--module M` narrow it; paged like `search` (`--limit`, `--offset`, next-page hint) |
+| `describe functions [--module M] [--include-deprecated] [--include-not-allowed]` | the named functions of the graph you may run (`graph_cli.model/1`), one item per function: `name`, `module`, `summary`, `signature` (`unit: ref org:OrgUnit, include_vacant?: boolean`; `?` marks an optional parameter) and `status`; deprecated functions only with `--include-deprecated`; `not_allowed` counts the ones you see but may not run, `--include-not-allowed` lists them too. See [Functions](#functions) |
+| `describe actions [--module M] [--include-deprecated] [--include-not-allowed]` | the actions of the graph that you may run (`graph_cli.model/1`), one item per action: `name`, `module`, `summary`, `signature` and `status`; deprecated actions only with `--include-deprecated`; `not_allowed` counts the actions whose write rights you lack (`--include-not-allowed` lists them too). See [Actions](#actions) |
+| `describe action NAME` | one action completely: summary, `use_when`, `reason`, parameters, preconditions, the compiled operations, the types and relations it touches, the write rights it needs (`needs`), examples and its hash; an unknown or hidden name is `action.not_found` with `did_you_mean`; an action you may not run is shown marked `allowed: false` with `missing`, without its operations, conditions, examples, needs and hash. See [Actions](#actions) |
+| `describe function NAME` | one function completely: summary, `use_when`, parameters, the result columns, examples, the types and relations its query touches, the normalized query text (copy it as the start of an ad-hoc query) and its hash; an unknown name is `function.not_found` with `did_you_mean`; a function you may not run is shown marked `allowed: false` with `missing`, without its query, examples, touched terms and hash (see [Entries you may not use](#entries-you-may-not-use)) |
+| `describe views [--module M] [--include-deprecated] [--include-not-allowed]` | the published views of the graph you can call (`graph_cli.model/1`), one item per view: `name`, `module`, `summary`, `takes` (the class an entity view shows; left out for a set view), `default` (only when true), `signature` and `status`; deprecated views only with `--include-deprecated`. A view you cannot see in full (it names a type, attribute, relation or function that is hidden from you) does not exist for you; one you see in full but that needs `read.find` or `read.function` that you lack is counted in `not_allowed` (`--include-not-allowed` lists it) |
+| `describe view NAME` | one view completely: summary, `use_when`, `takes`, `default`, parameters, every section with the types, relations, fields and function it reads, examples, `touches` (types, relations, attributes, functions), `hash` and `call`, the command that calls it; `replaced_by` names a view only when you see it; an unknown or hidden name is `view.not_found` with `did_you_mean` over the names you see and a hint to search the views by words; a view you may not use is shown marked `allowed: false` with `missing`, without its sections, examples, touched terms, hash and call command |
 | `describe schema` | the ontology as `graph query` sees it: labels with their properties, one relationship pattern per relation (`(:A)-[:rel]->(:B)`), names written as a query needs them (see [Cypher queries](#cypher-queries)); `--compact` leaves out the properties; `--module M` limits it to the module's relations and labels plus the labels at the other end of its links |
 | `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them; `--rev N` shows an earlier revision; `--fields` keeps only named parts and `--full` adds the system fields (see [Fewer fields](#fewer-fields)); `--affordances` adds what applies next (see [What an entity can do next](#what-an-entity-can-do-next)) |
-| `view [REF]` | what is known about one entity in one answer, at most 6 KiB: key fields, relations with counts and the first neighbours, files with pages, what applies next; what is cut is counted and named in a hint; `--as-of` reads an earlier state (see [An entity at a glance](#an-entity-at-a-glance)). A graph can publish views: `--name NAME` picks one (`--name card` is always the generated card), an entity view takes the REF of an entity of its class, and without `--name` the default view of the entity's class answers instead of the card; a set view takes no REF and lists entities and function rows in pages of `--page-bytes` bytes, `--cursor` continues a page (`view.cursor_stale` once the graph changed; `--as-of tx:<seq>` pages the state you started with); `--param name=value` gives a view parameter. A set view needs `read.find` as well as `read.get`, one that runs functions `read.function`; a view that names what the caller may not see is `view.not_found`. Not `graph-admin view`, the live view |
+| `view [REF]` | what is known about one entity in one answer, at most 6 KiB: key fields, relations with counts and the first neighbours, files with pages, what applies next; what is cut is counted and named in a hint; `--as-of` reads an earlier state (see [An entity at a glance](#an-entity-at-a-glance)). A graph can publish views: `--name NAME` picks one (`--name card` is always the generated card), an entity view takes the REF of an entity of its class, and without `--name` the default view of the entity's class answers instead of the card; a set view takes no REF and lists entities and function rows in pages of `--page-bytes` bytes, `--cursor` continues a page (`view.cursor_stale` once the graph changed; `--as-of tx:<seq>` pages the state you started with); `--param name=value` gives a view parameter. A set view needs `read.find` as well as `read.get`, one that runs functions `read.function`; a view that names what the caller may not see is `view.not_found`, and one that needs a right the caller lacks is `access.denied`, recorded. Not `graph-admin view`, the live view |
 | `history REF` | one entity's revisions, newest first: time, command (and, for a write by `do`, the `action` with its `name` and `hash`), reason, whether your own session wrote it, and the names (not values) of the fields and relations that changed; paged |
 | `changes --since POSITION` | what changed in the whole graph after a position (`tx:<seq>`, `tx:<seq>/<entity id>` or an RFC 3339 time with offset), oldest first: per tx its time, command, reason and the entities it changed as ids, types, revisions and the names (not values) that changed; continue with the `next` of the answer while `more`; paged by entity items (`--limit`) |
 | `find` | entities by `--type`, `--where`, `--rel`/`--in-rel` (`rel=<id>,<id>` matches an edge to any listed entity); sorted, paged (`--limit`, `--offset`) with a next-page hint; `--fields` and `--full` as for `get` |
@@ -97,7 +98,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `run NAME` | run a named function of the graph (`--param name=value`, once per value for a list parameter; `--limit`, `--offset`): the parameters are read by the types the function declares, the answer is `data.function` (`name`, `hash`), `data.columns` and `data.items` with a `page`, like `query`. See [Functions](#functions) |
 | `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed; `update --add`/`--remove` change a list attribute (see [References, filters and writes](#references-filters-and-writes)) |
 | `transition REF STATE`, `supersede BY TARGET...`, `retract REF` | lifecycle and provenance; `supersede` and `retract` need `--reason`; over a relation with `on_target_inactive: refuse` they are refused while active entities still point at the target (`data.referential.target_referenced` lists them; relink or retract them in the same change set) |
-| `do NAME` | run a named action of the graph: a reviewed write the maintainer published (`--param name=value`, once per value for a list parameter; `--dry-run`, `--reason`, `--idempotency-key`, `--graph`). The parameters are read by the types the action declares, a reference takes an id, alias or trailing hex digits, never a name. The service checks the action's preconditions and expands it in the state it finds under the graph lock, then writes one transaction with one audit intent that names the action; `--dry-run` shows every entity it would write. The answer is the write result plus `data.action` (`name`, `hash`). A retry with the same `--idempotency-key` and parameters returns the recorded result; the caller needs the write rights of every op it expands to, and an action it may not run is `action.not_found`. See [Actions](#actions) |
+| `do NAME` | run a named action of the graph: a reviewed write the maintainer published (`--param name=value`, once per value for a list parameter; `--dry-run`, `--reason`, `--idempotency-key`, `--graph`). The parameters are read by the types the action declares, a reference takes an id, alias or trailing hex digits, never a name. The service checks the action's preconditions and expands it in the state it finds under the graph lock, then writes one transaction with one audit intent that names the action; `--dry-run` shows every entity it would write. The answer is the write result plus `data.action` (`name`, `hash`). A retry with the same `--idempotency-key` and parameters returns the recorded result; the caller needs the write rights of every op it expands to, and an action it sees but may not run is `access.denied` (recorded, naming the right); one that names what the caller may not see is `action.not_found`. See [Actions](#actions) |
 | `apply FILE` | change set documents (one JSON document or JSONL; `-` reads stdin); `--summary` leaves out the entities of each result and keeps `entity_count` and the findings |
 | `file add PATH` | store a file as `files:File` (or `--type` subclass) with its origin; known content is returned, not stored twice; then extract its metadata records (size, type, page count, ...) and answer them in `metadata`, `--no-extract` skips that, and a failure to extract is a warning, never a failed add (see [Files](files.md), [Metadata](files.md#metadata)) |
 | `file path REF` | the read-only path of a stored file; `--origin` the path it came from on this machine |
@@ -107,6 +108,43 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `skills check --scope user\|project` | compare installed skills with what this program installs now; exit 1 unless all are fresh |
 | `self update` | in the remote mode install the server's build of `graph` when it differs, then refresh the agent skills of the project (`--dir`) and the user, adding the skills of the project's graphs; `--check` only reports, `--force` replaces skills edited by hand (see [Self update](server.md#self-update)) |
 | `connect ENDPOINT --code CODE` | set up this machine and a folder (`--dir`) for a server from a one-time enrollment code: the project's token, the remote mode in `config.toml`, a pointer, the program and the project's graph skills; `--label` labels the token, `--force` replaces another endpoint or a stored token (see [Enrollment](server.md#enrollment)) |
+
+## Starting a session
+
+`graph start` is the one call an agent makes first. It is a meta command: the skill check never
+refuses or warns on it (it is how a stale copy is found), it writes nothing but skill files and it
+never replaces the program.
+
+- **Program and skills.** For every scope that has a skill of this program (the project's, found
+  from `--dir` or the working directory, and the user's) it does what `graph self update` does for
+  the skills: refreshes stale copies and, in the project scope only, installs the skills of the
+  pointer's graphs that are not installed yet (the user scope is refreshed with what it has: the
+  project an agent happens to run in decides nothing about what is installed for the user). Each copy is `fresh`, `refreshed` (if you loaded it earlier in the session, load it
+  again), `modified` (edited by hand, left alone), `foreign` (not installed by this program, left
+  alone) or `unavailable`; with `--check` nothing is written and the copies that would change are
+  `stale` or `missing`. In the remote mode the program's build is compared with the server's and a
+  different one is named with the hint `graph self update`, and the skills are then only reported
+  (`stale`), not written: `self update` replaces the program and renders them again; a checkout has no build to compare
+  (`unchecked`). Without an installed skill there is nothing to refresh.
+- **Graphs.** One item per graph the project may use (as `graphs`): `name`, `title`, `level` (what
+  you can do: `write` or `read` when any write or read action is allowed, `none` when none is, so
+  one denied read action does not read as no access), `withheld` (the actions a deny rule takes away
+  below it, as `whoami` lists them; the text shows `read; no read.function`, with `+N` for more),
+  `skill` (the skill to load, `graph-<name>`, null when the graph has none), `counts`
+  (`modules`, `types` and the active `functions`, `actions` and `views` you may use, as
+  [`describe modules`](#commands) counts them) and, only when there are some, `not_allowed`: how many
+  of each kind you see but may not use ([Entries you may not use](#entries-you-may-not-use)). A
+  function, action or view you cannot see is in no number. Nothing is recorded. A graph whose model
+  and catalogs are not open to you (no `read.describe`) has `counts: null`. `hidden_count` is the
+  number of graphs the pointer file leaves out.
+- **`--graph G`** limits the answer to that graph and adds `modules`: each module's id, summary, the
+  number of types and the counts per kind, as `describe modules`.
+- **In the remote mode** the graphs and counts come from the server and the program and skills are
+  judged and refreshed here; the text is rendered from both.
+
+Counts and search hits are what your token may use. The text ends with the search commands to copy
+(`describe search TEXT [--kind ...] [--module M] [--limit N]`, `describe module M`) and the rule that
+a hit marked not allowed is to be reported to the user, not worked around.
 
 ## Graph selection
 
@@ -735,7 +773,8 @@ different types (a department and a cost center, a subject and a topic).
 range, subtypes included, because the entity is about to be its target;
 `--for <function>.<param>` (or `<action>.<param>`) does the same with the class
 of a function's or action's `ref` parameter (it needs the right to run functions
-or the action, otherwise the name is `function.not_found`); `--for-source <relation>` keeps the types
+or the action, otherwise the name is `function.not_found`, also for one you see but
+may not use, [Entries you may not use](#entries-you-may-not-use)); `--for-source <relation>` keeps the types
 of its domain. Both options may be given and narrow `--type` further; when
 no type is left the answer is `usage.invalid_argument`. Nothing is picked
 for the caller: every fitting candidate is listed, and matches of other
@@ -891,6 +930,31 @@ what was found and expected), `query.unbound_variable` and
 `query.ambiguous_term`, `query.too_large` and `query.invalid_value` (exit
 1).
 
+## Entries you may not use
+
+A function, action or view is one of three things for a caller (the rules are in
+[Access control](access_control.md#functions-actions-and-views-you-may-not-use)):
+
+- **allowed**: you see everything it names and hold the rights it needs;
+- **not allowed**: you see everything it names but lack a right (`read.function` for a function,
+  `read.find` for a set view, `read.function` for a view that runs functions, a write right for an
+  action);
+- **hidden**: it names something you cannot see; it does not exist for you.
+
+Lists and counts say what you may use. A list adds `not_allowed`, the number of entries you see but
+may not use, when there are any, and `--include-not-allowed` (on `describe functions`, `actions`,
+`views` and `module`) lists them after the others. `describe search` and `describe function|action|view
+NAME` show such an entry marked `allowed: false` with `missing`, the rights you lack (a list of
+`{action, resource}`; what it holds is in
+[Access control](access_control.md#functions-actions-and-views-you-may-not-use)). A search ranks it after the allowed hits of the same rank and
+matches it on its name, summary, `use_when` and parameter names only. The description gives what the
+entry is for and how it is called (summary, `use_when`, signature, parameters without default values),
+not its query, operations, conditions, sections, examples, touched terms, needs or hash. An entry you
+may use has neither key. Listing, counting and searching record nothing. Calling a not-allowed entry is
+a recorded access: `run`, `do` and `view` answer `access.denied` naming the right you lack (exit 3).
+Tell the user instead of working around it; a maintainer can give your token a role that holds the
+right.
+
 ## Functions
 
 A graph can carry named read functions: curated, typed queries that the
@@ -910,7 +974,8 @@ are found and read, never changed, with the `describe` commands:
   local names, inverse labels and summaries of the types and relations its
   query touches (`match.field` is `touches`). A question in plain words
   therefore finds the function that answers it.
-- `describe modules` and `describe module M` list the functions per module.
+- `describe modules` and `describe module M` count and list the functions per module.
+- A function you see but may not run (no `read.function`) is counted as `not_allowed`, shown by `describe function NAME` and found by `describe search`, marked `allowed: false` with `missing`; see [Entries you may not use](#entries-you-may-not-use).
 - `run NAME --param name=value ...` runs a function. Each `--param` is read
   by the type the function declares (`string`, `integer`, `decimal`,
   `boolean`, `date`, `datetime`, `enum`, `ref`), never guessed from its
@@ -936,10 +1001,11 @@ are found and read, never changed, with the `describe` commands:
   the catalog being checked) the run is refused with `function.stale`: tell
   the maintainer.
 
-Functions are shown only to callers who may `read.function` on the graph
+A function is usable only by callers who may `read.function` on the graph
 (see [Access control](access_control.md#functions)); for everyone else the
-graph reads as if it had none. A graph that has no functions shows nothing
-about them in any `describe` command.
+functions are *not allowed*, not absent ([Entries you may not use](#entries-you-may-not-use)).
+A graph that has no functions shows nothing about them in any `describe`
+command.
 
 Maintainers write functions as one YAML file each and publish them with
 `graph-admin` ([`graph functions publish`](cli_graph_admin.md#commands)). The
@@ -1013,10 +1079,11 @@ Run one with `do NAME --param name=value ...`, with `--dry-run` first:
   `action.stale`: tell the maintainer.
 
 An action needs no right of its own: it is allowed when every write it
-expands to is allowed to you, and an action whose writes you may not make
-is not shown and is `action.not_found` (see
+expands to is allowed to you. An action whose writes you may not make is
+not listed but counted as not allowed, and `do` of it is `access.denied`
+(see [Entries you may not use](#entries-you-may-not-use) and
 [Access control](access_control.md#actions)). A graph that has no actions
-(or none you may run) shows nothing about them in any `describe` command.
+shows nothing about them in any `describe` command.
 When no action fits, use the primitives.
 
 Maintainers write actions as one YAML file each and publish them with

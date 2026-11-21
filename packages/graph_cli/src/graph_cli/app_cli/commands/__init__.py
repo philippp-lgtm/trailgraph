@@ -16,6 +16,7 @@ def all_specs() -> tuple[CommandSpec, ...]:
         read,
         self_update,
         skills,
+        start,
         write,
     )
 
@@ -28,6 +29,7 @@ def all_specs() -> tuple[CommandSpec, ...]:
         *apply.SPECS,
         *files.SPECS,
         *skills.SPECS,
+        *start.SPECS,
         *self_update.SPECS,
         *connect.SPECS,
     )

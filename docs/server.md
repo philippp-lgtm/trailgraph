@@ -346,6 +346,12 @@ server runs is not handed out (the server names it on stderr at start), so
 a client never installs a build the server then refuses. `[server] dist =
 false` turns `/v1/dist/` off (404).
 
+`graph start` (the first call of a session) does the skill half of this without replacing the
+program: the server answers the graphs and what the token may use (`POST /v1/commands/start`, the
+usual command route), the client compares its build with the manifest below, refreshes the stale skill
+copies from the server's skills and names a different build with the hint `graph self update` (the
+skills are then only reported: the update renders them again).
+
 `graph self update` brings a machine in step with the server:
 
 1. In the remote mode, when the server runs another build of `graph`, it
@@ -369,8 +375,8 @@ false` turns `/v1/dist/` off (404).
 
 `--check` changes nothing: it compares the builds and dry-runs the skill
 refresh, and exits 0 only when nothing is outdated (else
-`update.available`). `remote.client_outdated` and `skills.outdated` name
-`graph self update` as their hint. `graph-admin self update` does step 1
+`update.available`). `remote.client_outdated` names `graph self update` as its hint;
+`skills.outdated` names `graph start`, which refreshes the skills without replacing the program. `graph-admin self update` does step 1
 for `graph-admin` with the admin token; it installs no skills (its admin
 skills are refreshed by `graph-admin workspace sync` or `skills install`).
 
@@ -378,10 +384,12 @@ skills are refreshed by `graph-admin workspace sync` or `skills install`).
 
 A client sends the graph skills installed for its agent in
 `Graph-Cli-Skills`: one item per installed copy, separated by `, `, each
-`graph=<graph id>;hash=<slot hash>[;bundle=<bundle>;version=<version>];scope=<project|user>`
-(the bundle and version of a generated skill's model). The server judges
+`graph=<graph id>;hash=<slot hash>[;bundle=<bundle>;version=<version>][;visible=<digest>][;featured=<digest>];scope=<project|user>`
+(the bundle and version of a generated skill's model, the digest of what a limited reader sees,
+the digest of what the render shows of the catalogs: the featured lines and whether the graph has
+functions, actions and views). The server judges
 the item of the graph a command selects against the graph's published
-skill and pin: a write is refused with `skills.outdated` (422), a read
+skill, pin and catalogs: a write is refused with `skills.outdated` (422), a read
 warns `skills.stale` ([Stale skills](skills.md#stale-skills)). A malformed
 item is ignored, and a client without installed skills sends no header:
 like the build check, this keeps agents consistent and is no access

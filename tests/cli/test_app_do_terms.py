@@ -218,12 +218,17 @@ def test_an_action_is_listed_when_every_need_has_a_type_that_passes(
 
 
 def test_an_optional_parameters_entry_counts_as_written(run_cli: CliRunner, world: World) -> None:
-    """``create_task`` writes ``due_on`` when ``due`` is given: a list without it hides the
-    action even for a caller who would leave the parameter out."""
+    """``create_task`` writes ``due_on`` when ``due`` is given: a list without it makes the
+    action not allowed even for a caller who would leave the parameter out."""
     install(run_cli, world, WRITES.replace("[title, due_on]", "[title]"))
     assert "create_task" not in listed(run_cli)
     missing = app(run_cli, "do", "create_task", "--param", "title=T", env=ENV)
-    assert missing.error["code"] == "action.not_found"
+    assert missing.error["code"] == "access.denied"
+    assert missing.error["details"]["resource"].endswith("/type:ops:Task/attr:due_on")
+    described = app(run_cli, "describe", "action", "create_task", env=ENV).data["action"]
+    assert described["missing"] == [
+        {"action": "write.create", "resource": "type:ops:Task/attr:due_on"}
+    ]
 
 
 def test_a_listed_action_runs_with_every_optional_parameter_given(
@@ -247,21 +252,21 @@ def test_a_listed_action_runs_with_every_optional_parameter_given(
     assert other.code == 0, other.envelope
 
 
-def test_an_action_is_hidden_when_no_subtype_of_its_class_passes(
+def test_an_action_is_not_allowed_when_no_subtype_of_its_class_passes(
     run_cli: CliRunner, world: World
 ) -> None:
     install(run_cli, world, OTHER_TYPE)
     assert listed(run_cli) == []
     missing = assign(run_cli, world.ids["employee"], world.ids["free"])
-    assert (missing.code, missing.error["code"]) == (1, "action.not_found")
+    assert (missing.code, missing.error["code"]) == (3, "access.denied")
 
 
 def test_type_limits_on_the_subtypes_decide_a_superclass_need(
     run_cli: CliRunner, world: World
 ) -> None:
     """Exact type rules hit the subtypes, never the abstract class: with both subtypes
-    limited to read, no argument could pass and the action is hidden; with one, it is listed
-    and runs for the other."""
+    limited to read, no argument could pass and the action is not listed (not allowed); with
+    one, it is listed and runs for the other."""
     ids = world.ids
     install(run_cli, world, EVERYTHING)
     install(run_cli, world, limits("ppl:Employee"), "--graph", "example_graph")
@@ -274,8 +279,9 @@ def test_type_limits_on_the_subtypes_decide_a_superclass_need(
     names = listed(run_cli)
     assert "assign_position" not in names and "hand_over_position" not in names
     assert "create_task" in names  # tasks are not limited
-    hidden = assign(run_cli, ids["external"], ids["free"])
-    assert hidden.error["code"] == "action.not_found"
+    refusal = assign(run_cli, ids["external"], ids["free"])
+    assert refusal.error["code"] == "access.denied"  # the caller sees both types: not allowed
+    assert refusal.error["details"]["action"] == "write.link"
 
 
 # ---- running -----------------------------------------------------------------------------

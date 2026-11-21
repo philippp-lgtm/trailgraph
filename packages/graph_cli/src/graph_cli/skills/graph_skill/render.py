@@ -12,12 +12,8 @@ from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.ports.catalog import GraphEntry, skill_hash
-from graph_cli.skills.graph_skill.catalogs import (
-    actions_file,
-    functions_file,
-    render_actions,
-    render_functions,
-)
+from graph_cli.skills.graph_skill.catalogs import render_actions, render_functions
+from graph_cli.skills.graph_skill.description import with_start_sentence
 from graph_cli.skills.graph_skill.model import Model
 from graph_cli.skills.graph_skill.modules import module_page, render_modules
 from graph_cli.skills.graph_skill.naming import render_names
@@ -25,14 +21,7 @@ from graph_cli.skills.graph_skill.reference import model_file, render_model_poin
 from graph_cli.skills.graph_skill.relations import render_relations
 from graph_cli.skills.graph_skill.start import render_start
 from graph_cli.skills.graph_skill.type_blocks import render_constraints, render_types
-from graph_cli.skills.template import (
-    ACTIONS_FILE,
-    FUNCTIONS_FILE,
-    MODEL_FILE,
-    MODULES_DIR,
-    Template,
-    parse_template,
-)
+from graph_cli.skills.template import MODEL_FILE, MODULES_DIR, Template, parse_template
 from graph_cli.skills.tree import SKILL_FILE, Problem, SkillFiles, validate
 
 GENERATOR: Final = "graph_cli.skills"
@@ -59,6 +48,7 @@ def render_graph_skill(
     lines = template.lines
     for index, name in reversed(template.blocks):
         lines[index : index + 1] = blocks[name]
+    lines = with_start_sentence(lines)
     end = frontmatter_end(lines)
     lines[end:end] = ["", stamp]
     return {
@@ -69,12 +59,6 @@ def render_graph_skill(
             f"{MODULES_DIR}{module_id}.md": module_page(doc, module_id, stamp)
             for module_id in (doc.pages if doc.modular else {})
         },
-        **(
-            {FUNCTIONS_FILE: functions_file(doc, stamp)}
-            if doc.functions and not doc.modular
-            else {}
-        ),
-        **({ACTIONS_FILE: actions_file(doc, stamp)} if doc.actions and not doc.modular else {}),
     }
 
 

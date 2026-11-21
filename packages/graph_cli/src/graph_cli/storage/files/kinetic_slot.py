@@ -72,6 +72,30 @@ def read_slot(layout: GraphLayout, kind: SlotKind, *, sources: bool) -> KineticS
     return KineticSlot(digest, compiled_hash, pin, compiled, files, kind)
 
 
+def read_slot_featured(layout: GraphLayout, kind: SlotKind) -> tuple[str | None, str | None] | None:
+    """``(featured, compiled hash)`` of the published catalog of ``kind`` from ``slot.json`` alone
+    (no compiled catalog is read or checked), ``None`` when none is published. ``featured`` is the
+    digest stored at publish (``KineticSlot.featured``), ``None`` for a slot published before it
+    was stored; the compiled hash then names what to compute it from. Derived data for the
+    freshness check: a value that is not a hash counts as absent, nothing more is verified."""
+    spec = KINDS[kind]
+    slot = f"graphs/{layout.root.name}/{kind}/slot.json"
+    try:
+        data = layout.kinetic_slot(kind).read_bytes()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise _unavailable(f"cannot read {slot}", exc) from exc
+    try:
+        doc = as_object(parse_json(data), "slot.json")
+        compiled_hash = req_str(doc, "compiled_hash")
+    except (CanonicalError, JsonShapeError) as exc:
+        raise _invalid(spec, slot, f"unreadable: {exc}") from exc
+    featured = doc.get("featured")
+    stored = featured if isinstance(featured, str) and HASH_RE.match(featured) else None
+    return stored, compiled_hash
+
+
 def _read_compiled(path: Path, digest: str, spec: KindSpec, slot: str) -> JsonObject:
     try:
         data = path.read_bytes()

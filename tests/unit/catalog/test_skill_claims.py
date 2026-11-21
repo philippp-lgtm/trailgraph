@@ -293,3 +293,88 @@ def test_the_gate_compares_the_digest_for_a_template_only() -> None:
         entry(),  # type: ignore[arg-type]
     )
     assert static == []
+
+
+# ---- what the render shows of the catalogs (graph start plan S6) --------------------------
+
+F1, F2 = ("sha256:" + c * 64 for c in "ab")
+
+
+def test_a_marker_records_the_featured_digest_and_a_bad_one_drops_the_claim(
+    tmp_path: Path,
+) -> None:
+    model = {"bundle": "inventory", "version": "1.2.0"}
+    marker(tmp_path / "a", "graph-example-graph", "graph", graph_source(model=model, featured=F1))
+    marker(tmp_path / "b", "graph-example-graph", "graph", graph_source(model=model))
+    marker(tmp_path / "c", "graph-example-graph", "graph", graph_source(featured="nope"))
+    assert read_claims([("user", tmp_path / "a")]) == (
+        SkillClaim("user", H1, GRAPH, ("inventory", "1.2.0"), None, F1),
+    )
+    # a copy installed before the digest was recorded has none
+    assert read_claims([("user", tmp_path / "b")])[0].featured is None
+    assert read_claims([("user", tmp_path / "c")]) == ()
+
+
+def test_the_header_carries_the_featured_digest_when_the_copy_recorded_it() -> None:
+    recorded = SkillClaim("user", H1, GRAPH, ("inventory", "1.2.0"), H2, F1)
+    old = SkillClaim("project", H1, GRAPH, ("inventory", "1.2.0"))
+    header = claims_header((recorded, old))
+    assert header == (
+        f"graph={GRAPH};hash={H1};bundle=inventory;version=1.2.0;visible={H2};featured={F1};"
+        f"scope=user, graph={GRAPH};hash={H1};bundle=inventory;version=1.2.0;scope=project"
+    )
+    assert parse_claims_header(header) == (recorded, old)
+    assert parse_claims_header(f"graph={GRAPH};hash={H1};featured=nope;scope=user") == ()
+
+
+def test_a_template_is_stale_when_what_the_catalogs_show_moved() -> None:
+    generated = slot("generated")
+    model = ("inventory", "1.2.0")
+    claim = SkillClaim("user", H1, GRAPH, model, None, F1)
+    assert graph_stale(claim, entry(), generated, None, F1) is None
+    stale = graph_stale(claim, entry(), generated, None, F2)
+    assert stale is not None
+    assert stale["installed"]["featured"] == F1 and stale["current"]["featured"] == F2  # type: ignore[index]
+    # the digest is named only when it is a reason
+    other = graph_stale(
+        SkillClaim("user", H2, GRAPH, model, None, F1), entry(), generated, None, F1
+    )
+    assert other is not None and "featured" not in other["installed"]  # type: ignore[operator]
+    # a copy without a digest is not judged on it, and neither is an unknown current one
+    old = SkillClaim("user", H1, GRAPH, model)
+    assert graph_stale(old, entry(), generated, None, F2) is None
+    assert graph_stale(claim, entry(), generated, None, None) is None
+
+
+def test_the_gate_judges_the_featured_digest_for_a_template_only_and_survives_a_bad_slot() -> None:
+    model = ("inventory", "1.2.0")
+    claims = [SkillClaim("user", H1, GRAPH, model, None, F1)]
+
+    def gate(now: Any, write: bool = False) -> list[WarningRecord]:
+        warnings: list[WarningRecord] = []
+        SkillGate(lambda: claims, write, warnings, None, lambda e: None, now).check(
+            Catalog(slot("generated")),  # type: ignore[arg-type]
+            entry(),
+        )
+        return warnings
+
+    assert [w.code for w in gate(lambda e: F2)] == ["skills.stale"]
+    assert gate(lambda e: F1) == []
+
+    def broken(found: GraphEntry) -> str:
+        raise GraphCliError("functions.slot_invalid", "damaged")
+
+    assert gate(broken) == []  # a damaged catalog is for the maintainer
+    with pytest.raises(GraphCliError) as refused:
+        SkillGate(lambda: claims, True, [], None, lambda e: None, lambda e: F2).check(
+            Catalog(slot("generated")),  # type: ignore[arg-type]
+            entry(),
+        )
+    assert refused.value.code == "skills.outdated"
+    static: list[WarningRecord] = []
+    plain = [SkillClaim("user", H1, GRAPH, None, None, F1)]
+    SkillGate(lambda: plain, False, static, None, lambda e: None, lambda e: F2).check(
+        Catalog(slot("static")),  # type: ignore[arg-type]
+        entry(),
+    )
+    assert static == []  # a static skill shows no catalog

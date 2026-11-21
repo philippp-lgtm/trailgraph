@@ -26,6 +26,4 @@ None.
 
 None.
 
-## Functions
-
-None.
+Its functions and actions: `graph describe module company --graph example_graph`.

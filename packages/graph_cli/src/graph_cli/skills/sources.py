@@ -15,7 +15,9 @@ A reader with type read limits gets the skill rendered from its model view (the 
 ``model``), so the check of the curated text takes the documents of the full model
 (``names``): curated text is the maintainer's prose, and a problem about a type the reader
 cannot see would name it. The marker records a digest of what the reader sees (``visible``),
-which the freshness check compares.
+which the freshness check compares, and a digest of what the render shows of the catalogs
+(``featured``: the featured lines and whether there are functions, actions and views; the lists
+and counts themselves are not in the render).
 """
 
 from __future__ import annotations
@@ -59,6 +61,7 @@ def graph_skill(
     inventory: Mapping[str, JsonValue] | None = None,
     names: Mapping[str, JsonValue] | None = None,
     visible: str | None = None,
+    featured: str | None = None,
 ) -> tuple[RenderedSkill, list[WarningRecord]]:
     """The skill of ``entry`` from its slot; ``skills.source_invalid`` if it cannot be used.
 
@@ -66,7 +69,8 @@ def graph_skill(
     ``inventory`` (this program's, for the checks of the curated text). For a reader with
     type read limits ``model`` is its view, ``names`` the documents of the full model the
     curated text is checked against (default: ``model``) and ``visible`` the digest of what
-    it sees, recorded in the marker.
+    it sees, recorded in the marker. ``featured`` is the digest of what the render shows of the
+    published catalogs (``kernel.skill_featured``), recorded for a ``generated`` slot.
     """
     name = graph_skill_name(entry.name)
     details: dict[str, JsonValue] = {"graph": entry.name, "skill": name}
@@ -104,6 +108,8 @@ def graph_skill(
             "bundle": req_str(ontology, "bundle"),
             "version": req_str(ontology, "version"),
         }
+        if featured is not None:
+            source["featured"] = featured
         unknown = check_names(template, model if names is None else names, graph, inventory)
         if unknown:
             warnings.append(unknown_names(entry, unknown))

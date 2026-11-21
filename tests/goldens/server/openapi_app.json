@@ -510,9 +510,6 @@
                   }
                 ]
               },
-              "featured": {
-                "type": "boolean"
-              },
               "reason": {
                 "type": "string",
                 "enum": [
@@ -554,11 +551,14 @@
                     "many": {
                       "type": "boolean"
                     },
-                    "default": {},
                     "summary": {
                       "type": "string"
                     },
+                    "default": {},
                     "optional": {
+                      "type": "boolean"
+                    },
+                    "required": {
                       "type": "boolean"
                     }
                   },
@@ -568,10 +568,12 @@
                     "class",
                     "enum",
                     "many",
-                    "default",
                     "summary"
                   ]
                 }
+              },
+              "featured": {
+                "type": "boolean"
               },
               "preconditions": {
                 "type": "array",
@@ -697,6 +699,27 @@
               },
               "hash": {
                 "type": "string"
+              },
+              "allowed": {
+                "type": "boolean"
+              },
+              "missing": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "action": {
+                      "type": "string"
+                    },
+                    "resource": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "resource"
+                  ]
+                }
               }
             },
             "required": [
@@ -707,15 +730,8 @@
               "status",
               "use_when",
               "replaced_by",
-              "featured",
               "reason",
-              "params",
-              "preconditions",
-              "examples",
-              "ops",
-              "touches",
-              "needs",
-              "hash"
+              "params"
             ]
           }
         },
@@ -791,6 +807,27 @@
                     "active",
                     "deprecated"
                   ]
+                },
+                "allowed": {
+                  "type": "boolean"
+                },
+                "missing": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string"
+                      },
+                      "resource": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "resource"
+                    ]
+                  }
                 }
               },
               "required": [
@@ -804,6 +841,9 @@
           },
           "module": {
             "type": "string"
+          },
+          "not_allowed": {
+            "type": "integer"
           }
         },
         "required": [
@@ -943,9 +983,6 @@
                   }
                 ]
               },
-              "featured": {
-                "type": "boolean"
-              },
               "params": {
                 "type": "array",
                 "items": {
@@ -980,9 +1017,15 @@
                     "many": {
                       "type": "boolean"
                     },
-                    "default": {},
                     "summary": {
                       "type": "string"
+                    },
+                    "default": {},
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "required": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -991,10 +1034,12 @@
                     "class",
                     "enum",
                     "many",
-                    "default",
                     "summary"
                   ]
                 }
+              },
+              "featured": {
+                "type": "boolean"
               },
               "returns": {
                 "type": "array",
@@ -1097,6 +1142,27 @@
               },
               "hash": {
                 "type": "string"
+              },
+              "allowed": {
+                "type": "boolean"
+              },
+              "missing": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "action": {
+                      "type": "string"
+                    },
+                    "resource": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "resource"
+                  ]
+                }
               }
             },
             "required": [
@@ -1107,13 +1173,7 @@
               "status",
               "use_when",
               "replaced_by",
-              "featured",
-              "params",
-              "returns",
-              "examples",
-              "touches",
-              "query",
-              "hash"
+              "params"
             ]
           }
         },
@@ -1189,6 +1249,27 @@
                     "active",
                     "deprecated"
                   ]
+                },
+                "allowed": {
+                  "type": "boolean"
+                },
+                "missing": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string"
+                      },
+                      "resource": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "resource"
+                    ]
+                  }
                 }
               },
               "required": [
@@ -1202,6 +1283,9 @@
           },
           "module": {
             "type": "string"
+          },
+          "not_allowed": {
+            "type": "integer"
           }
         },
         "required": [
@@ -1538,6 +1622,27 @@
                     },
                     "signature": {
                       "type": "string"
+                    },
+                    "allowed": {
+                      "type": "boolean"
+                    },
+                    "missing": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string"
+                          },
+                          "resource": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "resource"
+                        ]
+                      }
                     }
                   },
                   "required": [
@@ -1560,6 +1665,27 @@
                     },
                     "signature": {
                       "type": "string"
+                    },
+                    "allowed": {
+                      "type": "boolean"
+                    },
+                    "missing": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string"
+                          },
+                          "resource": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "resource"
+                        ]
+                      }
                     }
                   },
                   "required": [
@@ -1567,6 +1693,63 @@
                     "summary",
                     "signature"
                   ]
+                }
+              },
+              "views": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "signature": {
+                      "type": "string"
+                    },
+                    "allowed": {
+                      "type": "boolean"
+                    },
+                    "missing": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string"
+                          },
+                          "resource": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "resource"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "summary",
+                    "signature"
+                  ]
+                }
+              },
+              "not_allowed": {
+                "type": "object",
+                "properties": {
+                  "functions": {
+                    "type": "integer"
+                  },
+                  "actions": {
+                    "type": "integer"
+                  },
+                  "views": {
+                    "type": "integer"
+                  }
                 }
               }
             },
@@ -1679,6 +1862,23 @@
                 },
                 "actions": {
                   "type": "integer"
+                },
+                "views": {
+                  "type": "integer"
+                },
+                "not_allowed": {
+                  "type": "object",
+                  "properties": {
+                    "functions": {
+                      "type": "integer"
+                    },
+                    "actions": {
+                      "type": "integer"
+                    },
+                    "views": {
+                      "type": "integer"
+                    }
+                  }
                 }
               },
               "required": [
@@ -2099,6 +2299,27 @@
                     "field",
                     "how"
                   ]
+                },
+                "allowed": {
+                  "type": "boolean"
+                },
+                "missing": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string"
+                      },
+                      "resource": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "resource"
+                    ]
+                  }
                 }
               },
               "required": [
@@ -2594,9 +2815,15 @@
                     "many": {
                       "type": "boolean"
                     },
-                    "default": {},
                     "summary": {
                       "type": "string"
+                    },
+                    "default": {},
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "required": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -2605,7 +2832,6 @@
                     "class",
                     "enum",
                     "many",
-                    "default",
                     "summary"
                   ]
                 }
@@ -2746,6 +2972,27 @@
               },
               "hash": {
                 "type": "string"
+              },
+              "allowed": {
+                "type": "boolean"
+              },
+              "missing": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "action": {
+                      "type": "string"
+                    },
+                    "resource": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "resource"
+                  ]
+                }
               }
             },
             "required": [
@@ -2758,14 +3005,7 @@
               "replaced_by",
               "takes",
               "default",
-              "params",
-              "max_bytes",
-              "page_bytes",
-              "sections",
-              "examples",
-              "touches",
-              "call",
-              "hash"
+              "params"
             ]
           }
         },
@@ -2847,6 +3087,27 @@
                 },
                 "default": {
                   "type": "boolean"
+                },
+                "allowed": {
+                  "type": "boolean"
+                },
+                "missing": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string"
+                      },
+                      "resource": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "resource"
+                    ]
+                  }
                 }
               },
               "required": [
@@ -2860,6 +3121,9 @@
           },
           "module": {
             "type": "string"
+          },
+          "not_allowed": {
+            "type": "integer"
           }
         },
         "required": [
@@ -5847,6 +6111,287 @@
           "skill",
           "graph",
           "reason"
+        ]
+      },
+      "start_data": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "graph_cli.start/1"
+            ]
+          },
+          "identity": {
+            "type": "object",
+            "properties": {
+              "acting": {
+                "type": "string"
+              },
+              "project": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "roles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "acting",
+              "project",
+              "roles"
+            ]
+          },
+          "graphs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "title": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "level": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "read",
+                    "write"
+                  ]
+                },
+                "withheld": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "skill": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "counts": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "modules": {
+                          "type": "integer"
+                        },
+                        "types": {
+                          "type": "integer"
+                        },
+                        "functions": {
+                          "type": "integer"
+                        },
+                        "actions": {
+                          "type": "integer"
+                        },
+                        "views": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "modules",
+                        "types",
+                        "functions",
+                        "actions",
+                        "views"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "not_allowed": {
+                  "type": "object",
+                  "properties": {
+                    "functions": {
+                      "type": "integer"
+                    },
+                    "actions": {
+                      "type": "integer"
+                    },
+                    "views": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "modules": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      },
+                      "types": {
+                        "type": "integer"
+                      },
+                      "functions": {
+                        "type": "integer"
+                      },
+                      "actions": {
+                        "type": "integer"
+                      },
+                      "views": {
+                        "type": "integer"
+                      },
+                      "not_allowed": {
+                        "type": "object",
+                        "properties": {
+                          "functions": {
+                            "type": "integer"
+                          },
+                          "actions": {
+                            "type": "integer"
+                          },
+                          "views": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "summary",
+                      "types"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "title",
+                "level",
+                "withheld",
+                "skill",
+                "counts"
+              ]
+            }
+          },
+          "hidden_count": {
+            "type": "integer"
+          },
+          "program": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "local",
+                  "current",
+                  "outdated",
+                  "unchecked"
+                ]
+              },
+              "build": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "server_build": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "version",
+              "state"
+            ]
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "scope": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "fresh",
+                    "refreshed",
+                    "stale",
+                    "missing",
+                    "modified",
+                    "foreign",
+                    "unavailable",
+                    "error"
+                  ]
+                },
+                "skill": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "scope",
+                "state"
+              ]
+            }
+          }
+        },
+        "required": [
+          "schema",
+          "identity",
+          "graphs",
+          "hidden_count"
         ]
       },
       "supersede_data": {
@@ -9195,6 +9740,15 @@
                         "description": "The inventory name of include_deprecated; never both.",
                         "deprecated": true
                       },
+                      "include_not_allowed": {
+                        "type": "boolean",
+                        "description": "Also list what you see but may not use, marked allowed: false with what is missing."
+                      },
+                      "--include-not-allowed": {
+                        "type": "boolean",
+                        "description": "The inventory name of include_not_allowed; never both.",
+                        "deprecated": true
+                      },
                       "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
@@ -10186,6 +10740,15 @@
                         "description": "The inventory name of include_deprecated; never both.",
                         "deprecated": true
                       },
+                      "include_not_allowed": {
+                        "type": "boolean",
+                        "description": "Also list what you see but may not use, marked allowed: false with what is missing."
+                      },
+                      "--include-not-allowed": {
+                        "type": "boolean",
+                        "description": "The inventory name of include_not_allowed; never both.",
+                        "deprecated": true
+                      },
                       "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
@@ -10836,6 +11399,15 @@
                       "module": {
                         "type": "string",
                         "description": "Module id or prefix (see describe modules)."
+                      },
+                      "include_not_allowed": {
+                        "type": "boolean",
+                        "description": "Also list what you see but may not use, marked allowed: false with what is missing."
+                      },
+                      "--include-not-allowed": {
+                        "type": "boolean",
+                        "description": "The inventory name of include_not_allowed; never both.",
+                        "deprecated": true
                       },
                       "graph": {
                         "type": "string",
@@ -13531,6 +14103,15 @@
                       "--include-deprecated": {
                         "type": "boolean",
                         "description": "The inventory name of include_deprecated; never both.",
+                        "deprecated": true
+                      },
+                      "include_not_allowed": {
+                        "type": "boolean",
+                        "description": "Also list what you see but may not use, marked allowed: false with what is missing."
+                      },
+                      "--include-not-allowed": {
+                        "type": "boolean",
+                        "description": "The inventory name of include_not_allowed; never both.",
                         "deprecated": true
                       },
                       "graph": {
@@ -19916,6 +20497,377 @@
         },
         "x-graph-cli-kind": "read",
         "x-graph-cli-remote": "server"
+      }
+    },
+    "/v1/commands/start": {
+      "post": {
+        "operationId": "start",
+        "summary": "First call of a session: what is current, the graphs you reach, what you may use.",
+        "responses": {
+          "200": {
+            "description": "The answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schema": {
+                      "const": "graph_cli.envelope/1"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "command": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "graph": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/graph"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/start_data"
+                    },
+                    "page": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/page"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "hints": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/hint"
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/warning"
+                      }
+                    },
+                    "error": {
+                      "type": "null"
+                    }
+                  },
+                  "required": [
+                    "schema",
+                    "ok",
+                    "command",
+                    "graph",
+                    "data",
+                    "page",
+                    "hints",
+                    "warnings",
+                    "error"
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request: graph.not_selected, usage.invalid_argument.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "graph.not_selected",
+              "usage.invalid_argument"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized: remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "remote.unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Forbidden: access.denied, access.project_mismatch, remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "access.denied",
+              "access.project_mismatch",
+              "remote.unauthorized"
+            ]
+          },
+          "404": {
+            "description": "Not Found: graph.not_found.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "graph.not_found"
+            ]
+          },
+          "422": {
+            "description": "Unprocessable Content: graph.not_in_project, remote.client_outdated.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "graph.not_in_project",
+              "remote.client_outdated"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error: internal.error.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "internal.error"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable: backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "backend.unavailable",
+              "config.forbidden_key",
+              "config.invalid",
+              "ontology.artifact_missing"
+            ]
+          },
+          "default": {
+            "description": "The envelope with the error, or problem details on request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "graph": {
+                        "type": "string",
+                        "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+                      },
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "check": {
+                        "type": "boolean",
+                        "description": "Only report what is stale; refresh nothing."
+                      },
+                      "--check": {
+                        "type": "boolean",
+                        "description": "The inventory name of check; never both.",
+                        "deprecated": true
+                      },
+                      "dir": {
+                        "type": "object",
+                        "properties": {
+                          "files": {
+                            "type": "object",
+                            "description": "Relative path of every file to an upload of PUT /v1/uploads.",
+                            "additionalProperties": {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            }
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "files",
+                          "name"
+                        ],
+                        "description": "Project directory whose skills to refresh; default: the working one."
+                      },
+                      "--dir": {
+                        "type": "object",
+                        "properties": {
+                          "files": {
+                            "type": "object",
+                            "description": "Relative path of every file to an upload of PUT /v1/uploads.",
+                            "additionalProperties": {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            }
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "files",
+                          "name"
+                        ],
+                        "description": "The inventory name of dir; never both.",
+                        "deprecated": true
+                      }
+                    },
+                    "required": []
+                  },
+                  "actor": {
+                    "type": "object"
+                  },
+                  "pointer": {
+                    "type": "object"
+                  },
+                  "graph_env": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-cli-kind": "meta",
+        "x-graph-cli-remote": "hooked"
       }
     },
     "/v1/commands/supersede": {

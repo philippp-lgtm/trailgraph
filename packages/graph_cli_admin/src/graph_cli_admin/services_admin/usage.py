@@ -19,6 +19,19 @@ out); the reader and the catalog lookups around it are thin. A session is the ac
 id (else its name); a line without either counts under one shared bucket, so unlabelled
 callers never inflate a distinct count.
 
+One part is installation-wide: the *sessions* and how many of them began with ``graph start``
+(the one call the skills tell an agent to make first). A session here is a session id of the
+actor together with its agent id when it has one (a subagent shares the session id of its parent
+and has an id of its own, and the skills tell every agent to start, so each counts on its own;
+without an agent id the session stands alone). A line with only a session name, or none, belongs
+to no session and is not counted. The first command of a session is the ``command`` of its
+earliest line in the whole log (file order breaks a tie of timestamps), whatever the command or
+its outcome, and a line is only there for a command that opened the installation, so ``describe
+commands`` and ``--help`` are not first commands. With
+``--since`` a session counts when its first line is on or after it, however late the rest.
+``--graph`` does not narrow it. Only commands the access log records are seen (in the remote mode
+those that reach a command route of the server), and the part is empty unless the log is on.
+
 Each list holds at most ``CAP`` entries; when it was cut, a sibling ``<list>_more`` names how
 many were left out (absent otherwise, as for the affordances).
 """
@@ -43,6 +56,7 @@ from graph_cli_admin.services_admin.context import AdminContext
 
 CAP: Final = 20
 CANDIDATE_SESSIONS: Final = 2  # an uncovered shape seen in this many sessions is a candidate
+START: Final = "start"  # the command of ``graph start`` in the access log
 NO_SESSION: Final = ""  # the one bucket of lines whose actor names no session
 
 
@@ -115,8 +129,18 @@ class _Graph:
 
 
 @dataclass(slots=True)
+class _Session:
+    """The earliest line of one session and agent: when, where in the file, which command."""
+
+    first: datetime
+    order: int
+    command: str
+
+
+@dataclass(slots=True)
 class Aggregate:
     graphs: dict[str, _Graph] = field(default_factory=dict)
+    sessions: dict[tuple[str, str], _Session] = field(default_factory=dict)
     skipped: int = 0
     # run and query lines with no graph: they failed before one was open (an error envelope
     # names none), so no graph can be charged with them
@@ -137,6 +161,16 @@ def _session(actor: object) -> str:
     return NO_SESSION
 
 
+def _session_key(actor: object) -> tuple[str, str] | None:
+    """The actor's session id and agent id (``""`` without one); ``None`` for a session with a
+    name only or none (no session to count)."""
+    session = _mapping(_mapping(actor).get("session")).get("id")
+    if not isinstance(session, str) or not session:
+        return None
+    agent = _mapping(_mapping(actor).get("agent")).get("id")
+    return session, agent if isinstance(agent, str) else ""
+
+
 def _stamp(line: Mapping[str, object]) -> datetime | None:
     ts = line.get("ts")
     if not isinstance(ts, str):
@@ -155,7 +189,7 @@ def aggregate(
     ``query`` or ``function`` is malformed. Lines before ``since`` and of other graphs or
     commands are left out silently."""
     found = Aggregate()
-    for line in lines:
+    for order, line in enumerate(lines):
         if not isinstance(line, Mapping) or line.get("schema") != ACCESS_SCHEMA:
             found.skipped += 1
             continue
@@ -164,6 +198,7 @@ def aggregate(
             found.skipped += 1
             continue
         command = line.get("command")
+        _first_command(found, line, when, order)
         graph = _mapping(line.get("graph"))
         graph_id = graph.get("id")
         if command in ("run", "query") and graph_id is None and (since is None or when >= since):
@@ -190,6 +225,31 @@ def aggregate(
         elif not _fold_query(bucket, line, session, failed, stamp):
             found.skipped += 1
     return found
+
+
+def _first_command(
+    found: Aggregate, line: Mapping[str, object], when: datetime, order: int
+) -> None:
+    """Remember the earliest line of the line's session and agent, over the whole log (``since``
+    and ``graphs`` do not apply: a session belongs to the window its first line is in)."""
+    session, command = _session_key(line.get("actor")), line.get("command")
+    if session is None or not isinstance(command, str):
+        return
+    known = found.sessions.get(session)
+    if known is None or (when, order) < (known.first, known.order):
+        found.sessions[session] = _Session(when, order, command)
+
+
+def sessions_report(found: Aggregate, since: datetime | None) -> dict[str, JsonValue]:
+    """The installation-wide part: the sessions whose first line is in the window, and how many
+    of them began with ``graph start``."""
+    firsts = [s.command for s in found.sessions.values() if since is None or s.first >= since]
+    began = sum(command == START for command in firsts)
+    return {
+        "count": len(firsts),
+        "first_start": began,
+        "first_start_share": _percent(began, len(firsts)) if firsts else None,
+    }
 
 
 def _fold_run(
@@ -361,6 +421,7 @@ def report(ctx: AdminContext, *, graph_ref: str | None, since: str | None) -> Re
             "calls": folded.without_graph,
             "errors": dict(sorted(folded.without_graph_errors.items())),
         },
+        "sessions": sessions_report(folded, start),
         "graphs": rows,
     }
     return Report(data, tuple(warnings))
@@ -399,6 +460,13 @@ def render(data: Mapping[str, JsonValue]) -> str:
     if failed.get("calls"):
         codes = ", ".join(f"{c} x{n}" for c, n in _mapping(failed.get("errors")).items())
         lines.append(f"{failed['calls']} run/query call(s) failed before a graph was open: {codes}")
+    sessions = _mapping(data.get("sessions"))
+    if sessions:
+        share = sessions.get("first_start_share")
+        lines.append(
+            f"Sessions: {sessions.get('count')}, first command was start in"
+            f" {sessions.get('first_start')}" + (f" ({share}%)" if isinstance(share, int) else "")
+        )
     graphs = data.get("graphs")
     for graph in graphs if isinstance(graphs, list) else []:
         lines += _render_graph(_mapping(graph))

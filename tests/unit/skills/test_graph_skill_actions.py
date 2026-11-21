@@ -1,7 +1,7 @@
-"""Generated graph skills with an action catalog (actions plan A11): the ``actions`` block,
-the ``Actions`` column of the modules table, the ``Actions`` section of module pages and
-``references/actions.md`` of a single-module graph; the ``graph do`` names check and the
-unchanged output of a graph without actions."""
+"""Generated graph skills with an action catalog (actions plan A11): the ``actions`` block with
+its featured lines; no count, column, section or actions page (graph start plan S5: a publish
+that is not about a featured action changes nothing in the render); the ``graph do`` names
+check and the unchanged output of a graph without actions."""
 
 import re
 from typing import Any
@@ -108,17 +108,42 @@ def test_an_empty_or_deprecated_only_catalog_renders_like_none() -> None:
 def test_a_graph_without_actions_renders_as_before() -> None:
     without = render(None, COMPANY_TEMPLATE)
     assert "Actions" not in text(without, SKILL_FILE)
-    assert "## Actions" not in "".join(
+    assert "Its functions and actions" not in "".join(
         text(without, p) for p in without if p.startswith(MODULES_DIR)
     )
     assert ACTIONS_FILE not in without
     with_catalog = render(catalog(), COMPANY_TEMPLATE)
-    assert "| Actions |" in text(with_catalog, SKILL_FILE)  # the column, with a catalog
+    assert "| Actions |" not in text(with_catalog, SKILL_FILE)  # no column, even with a catalog
+
+
+def test_a_publish_that_is_not_about_a_featured_action_changes_nothing() -> None:
+    """The point of S5: new, changed, deprecated and removed actions that are not featured leave
+    every rendered file as it was; featuring one, or a changed featured line, changes it."""
+    base = render(catalog())
+    plain = [i for i, a in enumerate(catalog()["actions"]) if a.get("featured") is not True]
+    assert plain, "the fixture has an action that is not featured"
+    changed = catalog()
+    first = changed["actions"][plain[0]]
+    changed["actions"][plain[0]] = {**first, "summary": "Other text."}
+    changed["actions"].append({**first, "name": "one_more_action"})
+    changed["actions"].append({**first, "name": "gone_action", "status": "deprecated"})
+    assert render(changed) == base
+    removed = catalog()
+    removed["actions"] = [a for a in removed["actions"] if a.get("featured") is True]
+    assert render(removed) == base
+    featured = catalog()
+    featured["actions"][plain[0]] = {**featured["actions"][plain[0]], "featured": True}
+    assert render(featured) != base
+    edited = catalog()
+    loud = next(i for i, a in enumerate(edited["actions"]) if a.get("featured") is True)
+    edited["actions"][loud] = {**edited["actions"][loud], "summary": "A new summary."}
+    assert render(edited) != base
 
 
 def test_the_block_lists_the_featured_actions_with_the_pointers() -> None:
     skill = text(render(catalog()), SKILL_FILE)
-    assert "4 named actions;" in skill
+    assert "Named actions: for a change use one" in skill
+    assert "4 named actions" not in skill  # no count: the tool says it
     assert "Dry run first: `graph do <action> --param <name>=<value> --graph example_graph" in skill
     block = skill.split("## Changes", 1)[1].split("## Names", 1)[0]
     lines = [line for line in block.splitlines() if line.startswith("- `")]
@@ -147,7 +172,6 @@ def test_the_block_lists_at_most_eight() -> None:
     listed = re.findall(r"^- `action_(\d\d)\(", skill, re.MULTILINE)
     assert len(listed) == ACTIONS_FEATURED_LIMIT == 8
     assert listed == [f"{i:02d}" for i in range(ACTIONS_FEATURED_LIMIT)]
-    assert "20 named actions;" in skill
 
 
 def test_deprecated_actions_are_left_out_everywhere() -> None:
@@ -156,7 +180,7 @@ def test_deprecated_actions_are_left_out_everywhere() -> None:
     name = old["actions"][0]["name"]
     files = render(old)
     assert not any(name in text(files, path) for path in files if path.endswith(".md"))
-    assert "3 named actions;" in text(files, SKILL_FILE)
+    assert "named actions;" not in text(files, SKILL_FILE)
 
 
 def test_an_optional_parameter_is_marked() -> None:
@@ -194,61 +218,32 @@ def test_an_action_that_needs_a_reason_says_so() -> None:
     files = single_module_render(catalog_)
     line = "- `retire_item(item: ref inv:Item)`: Retire an item. Needs `--reason`."
     assert line in files[SKILL_FILE]
-    assert "| Retire an item. Needs `--reason`. |" in files["references/actions.md"]
+    assert ACTIONS_FILE not in files  # no page: the line of the block says it
     optional = single_module_render(
         {"schema": "graph_cli.action_catalog/1", "actions": [entry | {"reason": "optional"}]}
     )
     assert "Needs `--reason`" not in "".join(optional.values())
 
 
-def test_the_modules_table_counts_active_actions() -> None:
+def test_the_modules_table_has_no_action_column() -> None:
     skill = text(render(catalog()), SKILL_FILE)
-    rows = {
-        cells[1].strip(" `"): cells[5].strip()
-        for cells in (line.split("|") for line in skill.splitlines() if line.startswith("| `"))
-    }
-    assert rows == {
-        "company": "0",
-        "legal": "0",
-        "operations": "1",
-        "organization": "2",
-        "people": "1",
-    }
-    assert "| Module | Prefix | What it holds | Types | Actions |" in skill
+    assert "| Module | Prefix | What it holds | Types | Links to other modules |" in skill
+    assert "Actions |" not in skill.split("| Module |", 1)[1].split("\n", 1)[0]
 
 
-def test_functions_come_before_actions_in_the_table() -> None:
-    functions = {
-        "schema": "graph_cli.functions/1",
-        "functions": [
-            {
-                "name": "members_of_unit",
-                "module": "organization",
-                "summary": "Members.",
-                "status": "active",
-                "featured": False,
-                "params": [],
-            }
-        ],
-    }
-    documents, graph = render_inputs(MODEL, functions=functions, actions=catalog())
-    template, _ = parse_template(template_files())
-    assert template is not None
-    skill = render_graph_skill(template, documents, graph)[SKILL_FILE]
-    assert "| Types | Functions | Actions |" in skill
-
-
-def test_every_module_page_gets_an_actions_section() -> None:
+def test_every_module_page_has_one_pointer_instead_of_an_actions_section() -> None:
     files = render(catalog())
     assert ACTIONS_FILE not in files  # a modular graph has pages instead
-    page = text(files, f"{MODULES_DIR}organization.md")
-    section = page.split("## Actions", 1)[1]
-    assert "| `assign_position` | person: ref ppl:Person, position: ref org:Position" in section
-    assert "--graph example_graph --dry-run`, read what it will change" in section
-    other = [
-        p for p in files if p.startswith(MODULES_DIR) and "## Actions\n\nNone." in text(files, p)
-    ]
-    assert other  # a module without actions says so
+    pages = [p for p in files if p.startswith(MODULES_DIR)]
+    assert pages
+    for path in pages:
+        page = text(files, path)
+        module = path.removeprefix(MODULES_DIR).removesuffix(".md")
+        assert "## Actions" not in page and "assign_position" not in page
+        assert page.endswith(
+            f"\nIts functions and actions: `graph describe module {module}"
+            " --graph example_graph`.\n"
+        )
 
 
 def single_module_render(actions: dict[str, Any]) -> dict[str, str]:
@@ -266,14 +261,12 @@ def inventory_catalog() -> dict[str, Any]:
     return document
 
 
-def test_a_single_module_graph_gets_an_actions_page() -> None:
+def test_a_single_module_graph_gets_no_actions_page() -> None:
     rendered = single_module_render(inventory_catalog())
-    assert sorted(rendered) == [SKILL_FILE, ACTIONS_FILE, MODEL_FILE]
-    page = rendered[ACTIONS_FILE]
-    assert "| `move_item` | item: ref inv:Item, location: ref inv:Location |" in page
-    for name, data in rendered.items():
-        if name in (SKILL_FILE, ACTIONS_FILE):
-            assert_golden(GOLDENS / "skills" / "inventory_actions" / name, data.encode())
+    assert sorted(rendered) == [SKILL_FILE, MODEL_FILE]  # the page is no longer generated
+    assert_golden(
+        GOLDENS / "skills" / "inventory_actions" / SKILL_FILE, rendered[SKILL_FILE].encode()
+    )
 
 
 def test_a_curated_actions_page_is_refused() -> None:
@@ -293,11 +286,11 @@ def test_the_catalog_must_have_the_schema() -> None:
 def test_the_budget_adds_up() -> None:
     assert (
         (L0_FUNCTIONS, L0_ACTIONS, L0_BUDGET)
-        == (2_500, 2_000, L0_BASE + 4_500)
+        == (2_400, 1_950, L0_BASE + 4_350)
         == (
-            2_500,
-            2_000,
-            24_500,
+            2_400,
+            1_950,
+            24_350,
         )
     )
 

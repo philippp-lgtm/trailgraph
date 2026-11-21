@@ -37,12 +37,4 @@ Ontology `company` 1.1.0. The live source is `graph describe module operations -
 
 None.
 
-## Functions
-
-| Function | Parameters | Summary |
-|---|---|---|
-| `guidelines_in_effect` | unit: ref org:OrgUnit, date: date | Guidelines that apply on a date to the processes owned from a unit. |
-| `missing_required_trainings` | unit: ref org:OrgUnit | Trainings that holders of positions in a unit have not completed yet. |
-| `training_completions` | titles: list of string, since?: date | Who completed which of the given trainings since a date. |
-
-Run one with `graph run <function> --param <name>=<value> --graph example_graph --json`; `graph describe function <function> --graph example_graph` gives its columns and when to use it.
+Its functions and actions: `graph describe module operations --graph example_graph`.

@@ -296,7 +296,7 @@ def test_a_user_skill_of_another_program_refuses_writes(
     note = ("create", "inv:Location", "--set", "name=Shelf", "--set", "code=S1")
     refused = app(run_cli, *note, "--graph", "example_graph")
     assert (refused.code, refused.error["code"]) == (1, "skills.outdated")
-    assert refused.error["hint"] == "graph self update"
+    assert refused.error["hint"] == "graph start"
     assert refused.error["details"]["skills"][0]["skill"] == "graph-cli"
     listed = app(run_cli, "graphs")
     assert listed.code == 0 and listed.warning_codes == ["skills.stale"]
@@ -672,7 +672,7 @@ def test_a_release_makes_the_copy_stale_and_install_refreshes_it(
     location = ("create", "inv:Location", "--set", "name=Shelf", "--graph", "example_graph")
     refused = app(run_cli, *location, "--set", "code=S1", cwd=project)
     assert (refused.code, refused.error["code"]) == (1, "skills.outdated")
-    assert refused.error["hint"] == f"graph self update --dir {project}"
+    assert refused.error["hint"] == f"graph start --dir {project}"
     elsewhere = app(run_cli, *location, "--set", "code=S2", cwd=tmp_path)
     assert elsewhere.code == 0  # no pointer here: the project's skills are not this agent's
     refreshed = install(run_cli, *args)
@@ -764,11 +764,12 @@ def test_an_unknown_block_makes_the_skill_unavailable(
     assert (project / ".claude" / "skills" / "graph-example-graph" / "SKILL.md").is_file()
 
 
-def test_a_new_function_catalog_makes_the_generated_copy_stale(
+def test_a_first_function_catalog_with_featured_functions_makes_the_generated_copy_stale(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:
-    """The functions of a graph skill are rendered at install, so publishing functions
-    changes the render: ``check`` reports the copy as stale and install refreshes it."""
+    """The featured functions of a graph skill are rendered at install, so publishing the first
+    functions (some featured) changes the render: ``check`` reports the copy as stale and
+    install refreshes it. No column and no page lists the functions."""
     from support.functions import VALID
 
     template = FIXTURES / "skills" / "company_functions" / "graph-example-graph"
@@ -800,9 +801,9 @@ def test_a_new_function_catalog_makes_the_generated_copy_stale(
     assert statuses(stale) == {"graph-cli": "fresh", "graph-example-graph": "stale"}
     assert install(run_cli, *args).code == 0
     assert "`members_of_unit(unit: ref org:OrgUnit)`" in (skill / "SKILL.md").read_text()
-    assert "| Functions |" in (skill / "SKILL.md").read_text()
+    assert "| Functions |" not in (skill / "SKILL.md").read_text()
     page = (skill / "references" / "modules" / "organization.md").read_text()
-    assert "## Functions" in page and "| `members_of_unit` |" in page
+    assert "## Functions" not in page and "members_of_unit" not in page
     assert statuses(check(run_cli, project)) == {
         "graph-cli": "fresh",
         "graph-example-graph": "fresh",

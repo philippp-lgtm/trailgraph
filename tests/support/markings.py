@@ -70,7 +70,8 @@ no_project: {"*": write}
 """
 
 
-# Published functions and actions over ``staff`` (file name -> source), for the catalog tests:
+# Published functions and actions over ``staff`` (file name -> source), for the catalog tests, all
+# featured (so a graph skill lists every one a caller may see and a leak would show):
 # ``set_phone`` and ``colleague_names`` touch nothing marked; ``set_email``, ``set_salary``,
 # ``set_grade`` (an enum only a marked attribute uses), ``set_phone_badged`` (a precondition on
 # a marked attribute), ``employee_mail`` and ``by_grade`` (a parameter typed by that enum, no
@@ -80,6 +81,7 @@ schema: graph_cli.action/1
 name: {name}
 summary: {summary}
 use_when: {summary}
+featured: true
 params:
   who: {{type: ref, class: stf:Employee, summary: The employee.}}
 {params}\
@@ -127,6 +129,7 @@ schema: graph_cli.function/1
 name: {name}
 summary: {summary}
 use_when: {summary}
+featured: true
 params: {params}
 query: |
   {query}

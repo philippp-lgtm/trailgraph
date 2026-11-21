@@ -44,8 +44,8 @@ by a minor release and is explored by agents top down.
 - **Named write actions** (`actions/`, one `graph_cli.action/1` file each) for the recurring
   changes: staff a vacant position, hand a held position over, offboard an employee. Each
   checks its preconditions on the current state and writes through the normal write path;
-  agents run it with `graph do`, and the curated skill lists them through its `actions` block
-  instead of spelling out the steps. See [Actions](../../docs/cli_graph.md#actions) and the
+  agents run it with `graph do`, and the curated skill lists the featured ones through its
+  `actions` block instead of spelling out the steps. See [Actions](../../docs/cli_graph.md#actions) and the
   `authoring-graph-actions` admin skill.
 - **Views** (`views/`, one `graph_cli.view/1` file each): `position_overview` is an entity view
   and the default of `org:Position` (fields, the unit, the holder, and the reporting chain from
@@ -75,7 +75,7 @@ graph-admin view                          # the live view, see docs/live_view.md
 It runs `graph-admin init`, creates the graph from `ontology/1.0.0` (`--module company`
 names the main module), applies `seeds/1.0.0.jsonl`, releases `ontology/1.1.0`, applies
 `seeds/1.1.0.jsonl`, publishes the functions, the actions, the views and then the skill (the
-skill lists the functions and actions and is checked against them) and ends with `graph-admin
+skill is checked against them) and ends with `graph-admin
 graph check company` and `graph-admin audit verify`, both clean. `setup.sh 1.0.0` stops after the first version, so
 the minor release can be shown by hand:
 
@@ -115,7 +115,7 @@ graph is named `company`.
   after a failure: it creates the graph only when it is missing and releases 1.1.0 only while
   the graph is still at 1.0.0. If `graph apply` answers `access.denied`, the policy has no
   scope for the project ([Access control](../../docs/access_control.md)); if it answers
-  `skills.outdated`, run `graph self update`. The live view of a server runs where the data
+  `skills.outdated`, run `graph start`. The live view of a server runs where the data
   is ([Container](../../docs/server.md#container)).
 
 ## Explore it
@@ -170,7 +170,7 @@ graph do hand_over_position --param position=POS-0013 --param person=EMP-0003 --
 graph do offboard_employee --param employee=EMP-0007 --reason "HR confirmed" --dry-run
 ```
 
-Questions the graph answers (some also exist as functions, see `graph describe functions`; the others are `graph query`; the generated skill lists more):
+Questions the graph answers (some also exist as functions, see `graph describe functions`; the others are `graph query`; `graph start` counts the functions and actions you may use):
 
 - Who holds a position, and whom does it report to, up to the top? `(:Employee)-[:holds]->(:Position)`
   and `(:Position)-[:reports_to*1..4]->(:Position)`.

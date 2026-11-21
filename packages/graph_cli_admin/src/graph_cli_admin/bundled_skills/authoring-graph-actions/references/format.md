@@ -61,7 +61,7 @@ featured: true
 | `ops` | yes | the template: a non-empty list of ops (below), at most 50 |
 | `reason` | no | `optional` (default) or `required`: with `required`, `graph do` is refused without `--reason` |
 | `examples` | yes | at least one `{request}`: what a user would ask for, in plain words, without entity ids or names |
-| `featured` | no | `true` lists the action in the graph skill (at most 8 are listed); default `false` |
+| `featured` | no | `true` lists the action in the graph skill (at most 8 are listed); default `false`. The only key that changes the skill: publishing an action that is not featured leaves installed skills current |
 | `status` | no | `active` (default) or `deprecated` |
 | `replaced_by` | no | name of an active action; only with `status: deprecated`; an action cannot replace itself |
 

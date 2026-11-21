@@ -139,6 +139,7 @@ Usage: `graph describe actions [OPTIONS]`
 |---|---|---|---|---|
 | `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
 | `--include-deprecated` | flag | no | no | Also list deprecated actions. |
+| `--include-not-allowed` | flag | no | no | Also list what you see but may not use, marked allowed: false with what is missing. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 
 | Example | Summary |
@@ -218,6 +219,7 @@ Usage: `graph describe functions [OPTIONS]`
 |---|---|---|---|---|
 | `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
 | `--include-deprecated` | flag | no | no | Also list deprecated functions. |
+| `--include-not-allowed` | flag | no | no | Also list what you see but may not use, marked allowed: false with what is missing. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 
 | Example | Summary |
@@ -260,12 +262,14 @@ Usage: `graph describe module MODULE [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
+| `--include-not-allowed` | flag | no | no | Also list what you see but may not use, marked allowed: false with what is missing. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 
 | Example | Summary |
 |---|---|
 | `graph describe module <module>` | Everything one subject area holds. |
 | `graph describe module <module> --json` | The module as graph_cli.model/1. |
+| `graph describe module <module> --include-not-allowed` | Also the functions, actions and views you see but may not use. |
 
 ## graph describe modules
 
@@ -429,6 +433,7 @@ Usage: `graph describe views [OPTIONS]`
 |---|---|---|---|---|
 | `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
 | `--include-deprecated` | flag | no | no | Also list deprecated views. |
+| `--include-not-allowed` | flag | no | no | Also list what you see but may not use, marked allowed: false with what is missing. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 
 | Example | Summary |
@@ -948,6 +953,27 @@ Usage: `graph skills install [OPTIONS]`
 | `graph skills install --scope user --graph <graph> --json` | For every project of the user, with one graph skill. |
 | `graph skills install --scope project --dry-run --json` | Show the plan. |
 | `graph skills install --scope project --dir <dir> --project-graphs` | Skill 1 and the skills of every graph the project uses. |
+
+## graph start
+
+First call of a session: what is current, the graphs you reach, what you may use.
+
+Kind: meta. Surface: meta. Action: none. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph start [OPTIONS]`
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+| `--check` | flag | no | no | Only report what is stale; refresh nothing. |
+| `--dir` | directory | no | no | Project directory whose skills to refresh; default: the working one. |
+
+| Example | Summary |
+|---|---|
+| `graph start` | Program and skills (stale copies refreshed), graphs, counts. |
+| `graph start --json` | The same as graph_cli.start/1. |
+| `graph start --graph <graph>` | One graph, with its modules. |
+| `graph start --check` | Only report what is stale; change nothing. |
 
 ## graph supersede
 

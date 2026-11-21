@@ -1,12 +1,13 @@
 """The ``start`` block: how to begin working with the graph.
 
-- ``start``: load the ``graph-cli`` skill before the first command, how to tell the graph is
-  reachable, the graph language, and the rules of working with ``graph`` that apply from the
-  first call (plain calls, the envelope, asking for less, never guessing, functions and
-  actions first, dry runs, ``--reason`` and ``--expect``, findings), so that a graph skill
-  loaded without skill 1 still leads to safe calls (F42, F74); for a model with
-  ``files:File``, one line on the file workflow; for a graph with published views a clause
-  on the ``graph view`` rule that names ``graph describe views``.
+- ``start``: run ``graph start`` if not done in this session, load the ``graph-cli`` skill
+  before the first command, how to tell the graph is reachable, the graph language, and the
+  rules of working with ``graph`` that apply from the first call (plain calls, the envelope,
+  asking for less, never guessing, functions and actions first, dry runs, ``--reason`` and
+  ``--expect``, findings), so that a graph skill loaded without skill 1 still leads to safe
+  calls (F42, F74); for a model with ``files:File``, one line on the file workflow; for a
+  graph with published views a clause on the ``graph view`` rule that names
+  ``graph describe views``.
 
 The compiled view catalog (``graph_cli.view_catalog/1``, the key ``views``) is one more input
 document, present only when the graph has views the reader may see. Only its presence shows: one
@@ -42,12 +43,15 @@ def render_start(doc: Model) -> list[str]:
     name = doc.name
     title = f" (title: {plain(doc.title)})" if doc.title else ""
     return [
+        "If you have not yet in this session: `graph start --json` (it refreshes stale skills,"
+        " lists the graphs and what your token may use of each, and how to search them).",
+        "",
         "Load the `graph-cli` skill as well before your first `graph` command: it has every"
         " command with its options, the change sets of `graph apply` and the error codes. The"
         " rules of working with `graph` below hold from the first call, with or without it.",
         "",
-        f"Run `graph graphs --json`. Use this skill only if an item named {code(name)} is"
-        f" listed{title}. Pass `--graph {name}` to every command, as the examples here do,"
+        f"Use this skill only if an item named {code(name)} is listed{title} by `graph start` or"
+        f" `graph graphs --json`. Pass `--graph {name}` to every command, as the examples here do,"
         f" so they work in every directory; a project whose pointer makes {code(name)}"
         " the default may leave it out.",
         *_language(doc),

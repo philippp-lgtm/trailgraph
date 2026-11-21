@@ -35,16 +35,20 @@ def test_source_missing_points_at_publish() -> None:
     assert hint_for("skills.source_invalid", {"graph": "example_graph"}, program="graph") is None
 
 
-def test_outdated_hints_name_self_update() -> None:
-    """B14.18: a refused client and a stale skill catch up with ``self update``."""
+def test_outdated_skills_hint_graph_start_and_a_refused_client_self_update() -> None:
+    """Graph start plan S7: stale skills are refreshed by ``graph start`` (never the program); a
+    program that is not the server's build (B14.18) catches up with ``self update``."""
     details = {"scope": "project", "dir": "/tmp/a project"}
     assert hint_for("skills.outdated", details, program="graph") == (
-        "graph self update --dir '/tmp/a project'"
+        "graph start --dir '/tmp/a project'"
     )
-    assert hint_for("skills.outdated", {"scope": "user"}, program="graph") == "graph self update"
+    assert hint_for("skills.outdated", {"scope": "user"}, program="graph") == "graph start"
     outdated = {"program": "graph-admin", "client": "x", "server": "y"}
     assert hint_for("remote.client_outdated", outdated, program="graph-admin") == (
         "graph-admin self update"
+    )
+    assert hint_for("update.available", {"dir": "/tmp/a project"}, program="graph") == (
+        "graph self update --dir '/tmp/a project'"
     )
     command = "uv tool install --reinstall <url>"
     assert hint_for("update.unsupported_install", {"command": command}, program="graph") == (

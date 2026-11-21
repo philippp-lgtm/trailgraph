@@ -114,28 +114,43 @@ def test_search_finds_functions_in_the_json_answer(run_cli: CliRunner, root: Pat
     assert kinds.error["code"] == "usage.invalid_argument"
 
 
-def test_a_deny_on_read_function_hides_every_listing(
+def test_a_deny_on_read_function_marks_every_function_not_allowed(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:
     policy = write_policy(tmp_path / "work", "i.yaml", NO_EXPLORE_FUNCTIONS)
     applied = admin(run_cli, "policy", "apply", str(policy), "--reason", "test policy")
     assert applied.code == 0, applied.envelope
     allowed = app(run_cli, "describe", "functions", env=ENV)
-    assert len(allowed.data["functions"]) == 6
+    assert len(allowed.data["functions"]) == 6 and "not_allowed" not in allowed.data
     who = app(run_cli, "whoami", env=EXPLORE).data["permissions"]["graphs"]
     assert [g["withheld"] for g in who] == [["read.function"]]
 
     log = FileAuditLog(root)
     before = list(log.read_lines(INSTALLATION_STREAM))
-    assert app(run_cli, "describe", "functions", env=EXPLORE).data["functions"] == []
-    hidden = app(run_cli, "describe", "function", "members_of_unit", env=EXPLORE)
-    assert (hidden.code, hidden.error["code"]) == (1, "function.not_found")
-    assert hidden.error["details"]["did_you_mean"] == []
-    assert app(run_cli, "describe", "search", "headcount", env=EXPLORE).data["items"] == []
+    listed = app(run_cli, "describe", "functions", env=EXPLORE)
+    assert listed.data["functions"] == [] and listed.data["not_allowed"] == 6
+    both = app(run_cli, "describe", "functions", "--include-not-allowed", env=EXPLORE)
+    assert len(both.data["functions"]) == 6
+    assert all(f["allowed"] is False for f in both.data["functions"])
+    assert {m["resource"] for f in both.data["functions"] for m in f["missing"]} == {"graph"}
+    shown = app(run_cli, "describe", "function", "members_of_unit", env=EXPLORE)
+    assert shown.code == 0, shown.envelope
+    assert shown.data["function"]["allowed"] is False
+    assert shown.data["function"]["missing"] == [{"action": "read.function", "resource": "graph"}]
+    unknown = app(run_cli, "describe", "function", "no_such_function", env=EXPLORE)
+    assert (unknown.code, unknown.error["code"]) == (1, "function.not_found")
+    assert "members_of_unit" not in unknown.error["details"]["did_you_mean"]  # not close
+    hits = app(run_cli, "describe", "search", "headcount", env=EXPLORE).data["items"]
+    assert hits and all(h["allowed"] is False for h in hits)
     modules = app(run_cli, "describe", "modules", env=EXPLORE).data["modules"]
-    assert all("functions" not in m for m in modules)
-    assert "functions" not in app(run_cli, "describe", "module", "org", env=EXPLORE).data["module"]
+    assert all(m["functions"] == 0 for m in modules if "functions" in m)
+    assert sum(m.get("not_allowed", {}).get("functions", 0) for m in modules) == 6
+    section = app(run_cli, "describe", "module", "org", env=EXPLORE).data["module"]
+    assert section["functions"] == [] and section["not_allowed"]["functions"] >= 1
     assert list(log.read_lines(INSTALLATION_STREAM)) == before  # a listing records no denial
+    ran = app(run_cli, "run", "members_of_unit", env=EXPLORE)
+    assert (ran.code, ran.error["code"]) == (3, "access.denied")  # a call is a recorded access
+    assert len(list(log.read_lines(INSTALLATION_STREAM))) == len(before) + 1
 
 
 def test_graphs_without_a_catalog_are_unchanged(run_cli: CliRunner, root: Path) -> None:

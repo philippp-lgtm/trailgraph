@@ -132,3 +132,25 @@ def test_without_an_access_log_the_report_is_empty_and_says_why(
 
 def test_an_unknown_graph_is_not_found(run_cli: CliRunner, root: Path) -> None:
     assert admin(run_cli, "usage", "report", "nowhere").error["code"] == "graph.not_found"
+
+
+def test_the_report_counts_the_sessions_that_began_with_start(
+    run_cli: CliRunner, root: Path, isolated_env: dict[str, str]
+) -> None:
+    """Two sessions, one of which runs ``graph start`` first; a third one has no session id and
+    is not counted. ``graph start`` writes a line of its own, which is neither a graph nor a
+    skipped line."""
+    enable(isolated_env)
+    assert app(run_cli, "start", "--check", env=S1).code == 0
+    assert app(run_cli, "query", UNCOVERED.format(value=MARKER), env=S1).code == 0
+    assert app(run_cli, "query", UNCOVERED.format(value=MARKER), env=S2).code == 0
+    assert app(run_cli, "start", "--check", env=S2).code == 0
+    assert app(run_cli, "start", "--check", env=ENV).code == 0  # no session id
+    report = admin(run_cli, "usage", "report")
+    assert report.code == 0, report.envelope
+    assert report.data["sessions"] == {"count": 2, "first_start": 1, "first_start_share": 50}
+    assert report.data["skipped_lines"] == 0
+    shown = run_cli("graph-admin", "usage", "report")
+    assert "Sessions: 2, first command was start in 1 (50%)" in shown.stdout
+    limited = admin(run_cli, "usage", "report", "example_graph")
+    assert limited.data["sessions"] == report.data["sessions"]  # not narrowed by the graph

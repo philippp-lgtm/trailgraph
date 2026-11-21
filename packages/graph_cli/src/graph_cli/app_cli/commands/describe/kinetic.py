@@ -8,14 +8,20 @@ from typing import Final
 
 from graph_cli.app_cli.commands.common import GRAPH, GRAPH_ERRORS, PROGRAM
 from graph_cli.app_cli.commands.describe.shared import (
+    ACCESS_MARKS,
+    INCLUDE_NOT_ALLOWED,
     MODULE_FILTER,
     MODULE_OPTION,
+    NOT_ALLOWED_COUNT,
+    access_lines,
     describe_spec,
     function_call,
+    item_mark,
+    not_allowed_line,
     open_view,
-    visible_actions,
-    visible_functions,
-    visible_views,
+    split_actions,
+    split_functions,
+    split_views,
 )
 from graph_cli.app_cli.output_schemas import NULLABLE_STRING, STRINGS, model_document
 from graph_cli.cli_kit.envelope import Result
@@ -43,6 +49,21 @@ _FUNCTION_ITEM: Final = {
     "status": enum("active", "deprecated"),
 }
 _TOUCHED: Final = array(obj({"curie": STRING, "module": NULLABLE_STRING}))
+# A parameter as a caller who may use the entry sees it; one who may not gets the first six keys and
+# ``required`` (no default value, no example value): ``services.describe.restricted_detail``.
+_PARAM: Final = obj(
+    {
+        "name": STRING,
+        "type": STRING,
+        "class": NULLABLE_STRING,
+        "enum": NULLABLE_STRING,
+        "many": BOOLEAN,
+        "summary": STRING,
+    },
+    {"default": ANY, "optional": BOOLEAN, "required": BOOLEAN},
+)
+# What the definition of an entry that may not be used leaves out (it is optional here, and always
+# there for an entry that may be used).
 _FUNCTION: Final = model_document(
     {
         "function": obj(
@@ -50,26 +71,17 @@ _FUNCTION: Final = model_document(
                 **_FUNCTION_ITEM,
                 "use_when": STRING,
                 "replaced_by": NULLABLE_STRING,
+                "params": array(_PARAM),
+            },
+            {
                 "featured": BOOLEAN,
-                "params": array(
-                    obj(
-                        {
-                            "name": STRING,
-                            "type": STRING,
-                            "class": NULLABLE_STRING,
-                            "enum": NULLABLE_STRING,
-                            "many": BOOLEAN,
-                            "default": ANY,
-                            "summary": STRING,
-                        }
-                    )
-                ),
                 "returns": array(obj({"column": STRING, "summary": STRING})),
                 "examples": array(obj({"question": STRING, "params": obj(extra=ANY)})),
                 "touches": obj({"types": _TOUCHED, "relations": _TOUCHED}),
                 "query": STRING,
                 "hash": STRING,
-            }
+                **ACCESS_MARKS,
+            },
         )
     }
 )
@@ -87,22 +99,11 @@ _ACTION: Final = model_document(
                 **_ACTION_ITEM,
                 "use_when": STRING,
                 "replaced_by": NULLABLE_STRING,
-                "featured": BOOLEAN,
                 "reason": enum("optional", "required"),
-                "params": array(
-                    obj(
-                        {
-                            "name": STRING,
-                            "type": STRING,
-                            "class": NULLABLE_STRING,
-                            "enum": NULLABLE_STRING,
-                            "many": BOOLEAN,
-                            "default": ANY,
-                            "summary": STRING,
-                        },
-                        {"optional": BOOLEAN},
-                    )
-                ),
+                "params": array(_PARAM),
+            },
+            {
+                "featured": BOOLEAN,
                 "preconditions": array(
                     obj({"id": STRING, "on": STRING, "summary": STRING, "expr": ANY})
                 ),
@@ -111,7 +112,8 @@ _ACTION: Final = model_document(
                 "touches": obj({"types": _TOUCHED, "relations": _TOUCHED}),
                 "needs": array(obj({"action": STRING, "type": STRING})),
                 "hash": STRING,
-            }
+                **ACCESS_MARKS,
+            },
         )
     }
 )
@@ -123,6 +125,7 @@ _VIEW_ITEM: Final = {
     "status": enum("active", "deprecated"),
 }
 _VIEW_ITEM_OPTIONAL: Final = {"takes": STRING, "default": BOOLEAN}  # entity views / defaults only
+_LISTED: Final = {**MODULE_FILTER, **NOT_ALLOWED_COUNT}
 _VIEW: Final = model_document(
     {
         "view": obj(
@@ -132,19 +135,9 @@ _VIEW: Final = model_document(
                 "replaced_by": NULLABLE_STRING,
                 "takes": NULLABLE_STRING,  # null: a set view
                 "default": BOOLEAN,
-                "params": array(
-                    obj(
-                        {
-                            "name": STRING,
-                            "type": STRING,
-                            "class": NULLABLE_STRING,
-                            "enum": NULLABLE_STRING,
-                            "many": BOOLEAN,
-                            "default": ANY,
-                            "summary": STRING,
-                        }
-                    )
-                ),
+                "params": array(_PARAM),
+            },
+            {
                 "max_bytes": nullable(INTEGER),
                 "page_bytes": nullable(INTEGER),
                 "sections": array(obj({"kind": STRING, "id": STRING}, extra=ANY)),
@@ -159,7 +152,8 @@ _VIEW: Final = model_document(
                 ),
                 "call": STRING,
                 "hash": STRING,
-            }
+                **ACCESS_MARKS,
+            },
         )
     }
 )
@@ -172,20 +166,30 @@ def _functions_text(data: JsonObject) -> str:
         item = as_object(value, "function")
         deprecated = " (deprecated)" if item["status"] == "deprecated" else ""
         module = f"  [{item['module']}]" if item["module"] else ""
-        lines.append(f"{function_call(item)}{module}{deprecated}  {req_str(item, 'summary')}")
-    return "\n".join(lines or ["-"]) + "\n"
+        lines.append(
+            f"{function_call(item)}{module}{deprecated}  {req_str(item, 'summary')}"
+            f"{item_mark(item)}"
+        )
+    return "\n".join([*(lines or ["-"]), *not_allowed_line(data)]) + "\n"
 
 
 def describe_functions(
-    state: CommandState, module: str | None, include_deprecated: bool, graph: str | None
+    state: CommandState,
+    module: str | None,
+    include_deprecated: bool,
+    include_not_allowed: bool,
+    graph: str | None,
 ) -> Result:
     view = open_view(state, graph, "describe functions")
+    allowed, denied = split_functions(state, view)
     data = describe.describe_functions(
         view.entry,
         view.model,
-        visible_functions(state, view),
+        allowed,
         module=module,
         include_deprecated=include_deprecated,
+        denied=denied,
+        include_not_allowed=include_not_allowed,
     )
     return Result(data=data, graph=view.envelope_graph(), text=_functions_text(data))
 
@@ -195,7 +199,7 @@ def _param_lines(item: JsonObject) -> list[str]:
     lines = []
     for value in req_list(item, "params"):
         p = as_object(value, "param")
-        default = "" if p["default"] is None else f" (default {json.dumps(p['default'])})"
+        default = "" if p.get("default") is None else f" (default {json.dumps(p['default'])})"
         kind = {"ref": f"ref {p['class']}", "enum": f"enum {p['enum']}"}.get(
             str(p["type"]), str(p["type"])
         )
@@ -208,12 +212,15 @@ def _function_text(data: JsonObject) -> str:
     """The definition in reading order: head, parameters, columns, touched terms, query."""
     f = as_object(data["function"], "function")
     head = f"{function_call(f)}  [{f['module']}]" if f["module"] else function_call(f)
-    lines = [head, f"  {req_str(f, 'summary')}", f"  Use when: {req_str(f, 'use_when')}"]
+    lines = [head, *access_lines(f)]
+    lines += [f"  {req_str(f, 'summary')}", f"  Use when: {req_str(f, 'use_when')}"]
     if f["status"] == "deprecated":
         replaced = f"; use {f['replaced_by']}" if f["replaced_by"] else ""
         lines.append(f"  Deprecated{replaced}")
     lines.append("Parameters:")
     lines.extend(_param_lines(f))
+    if f.get("allowed") is False:  # what it returns and runs is for who may run it
+        return "\n".join(lines) + "\n"
     lines.append("Returns:")
     for value in req_list(f, "returns"):
         r = as_object(value, "column")
@@ -233,7 +240,8 @@ def _function_text(data: JsonObject) -> str:
 
 def describe_function(state: CommandState, name: str, graph: str | None) -> Result:
     view = open_view(state, graph, "describe function")
-    data = describe.describe_function(view.entry, view.model, visible_functions(state, view), name)
+    allowed, denied = split_functions(state, view)
+    data = describe.describe_function(view.entry, view.model, allowed, name, denied)
     return Result(data=data, graph=view.envelope_graph(), text=_function_text(data))
 
 
@@ -244,20 +252,30 @@ def _actions_text(data: JsonObject) -> str:
         item = as_object(value, "action")
         deprecated = " (deprecated)" if item["status"] == "deprecated" else ""
         module = f"  [{item['module']}]" if item["module"] else ""
-        lines.append(f"{function_call(item)}{module}{deprecated}  {req_str(item, 'summary')}")
-    return "\n".join(lines or ["-"]) + "\n"
+        lines.append(
+            f"{function_call(item)}{module}{deprecated}  {req_str(item, 'summary')}"
+            f"{item_mark(item)}"
+        )
+    return "\n".join([*(lines or ["-"]), *not_allowed_line(data)]) + "\n"
 
 
 def describe_actions(
-    state: CommandState, module: str | None, include_deprecated: bool, graph: str | None
+    state: CommandState,
+    module: str | None,
+    include_deprecated: bool,
+    include_not_allowed: bool,
+    graph: str | None,
 ) -> Result:
     view = open_view(state, graph, "describe actions")
+    allowed, denied = split_actions(state, view)
     data = describe.describe_actions(
         view.entry,
         view.model,
-        visible_actions(state, view),
+        allowed,
         module=module,
         include_deprecated=include_deprecated,
+        denied=denied,
+        include_not_allowed=include_not_allowed,
     )
     return Result(data=data, graph=view.envelope_graph(), text=_actions_text(data))
 
@@ -267,7 +285,8 @@ def _action_text(data: JsonObject) -> str:
     rights, examples."""
     a = as_object(data["action"], "action")
     head = f"{function_call(a)}  [{a['module']}]" if a["module"] else function_call(a)
-    lines = [head, f"  {req_str(a, 'summary')}", f"  Use when: {req_str(a, 'use_when')}"]
+    lines = [head, *access_lines(a)]
+    lines += [f"  {req_str(a, 'summary')}", f"  Use when: {req_str(a, 'use_when')}"]
     if a["status"] == "deprecated":
         replaced = f"; use {a['replaced_by']}" if a["replaced_by"] else ""
         lines.append(f"  Deprecated{replaced}")
@@ -275,6 +294,8 @@ def _action_text(data: JsonObject) -> str:
         lines.append("  Requires --reason")
     lines.append("Parameters:")
     lines.extend(_param_lines(a))
+    if a.get("allowed") is False:  # what it checks and writes is for who may run it
+        return "\n".join(lines) + "\n"
     lines.append("Preconditions:")
     for value in req_list(a, "preconditions"):
         c = as_object(value, "precondition")
@@ -298,7 +319,8 @@ def _action_text(data: JsonObject) -> str:
 
 def describe_action(state: CommandState, name: str, graph: str | None) -> Result:
     view = open_view(state, graph, "describe action")
-    data = describe.describe_action(view.entry, view.model, visible_actions(state, view), name)
+    allowed, denied = split_actions(state, view)
+    data = describe.describe_action(view.entry, view.model, allowed, name, denied)
     return Result(data=data, graph=view.envelope_graph(), text=_action_text(data))
 
 
@@ -313,21 +335,28 @@ def _views_text(data: JsonObject) -> str:
         default = ", default" if item.get("default") else ""
         lines.append(
             f"{function_call(item)}{module}{deprecated}  ({takes.strip()}{default})"
-            f"  {req_str(item, 'summary')}"
+            f"  {req_str(item, 'summary')}{item_mark(item)}"
         )
-    return "\n".join(lines or ["-"]) + "\n"
+    return "\n".join([*(lines or ["-"]), *not_allowed_line(data)]) + "\n"
 
 
 def describe_views(
-    state: CommandState, module: str | None, include_deprecated: bool, graph: str | None
+    state: CommandState,
+    module: str | None,
+    include_deprecated: bool,
+    include_not_allowed: bool,
+    graph: str | None,
 ) -> Result:
     view = open_view(state, graph, "describe views")
+    allowed, denied = split_views(state, view)
     data = describe.describe_views(
         view.entry,
         view.model,
-        visible_views(state, view),
+        allowed,
         module=module,
         include_deprecated=include_deprecated,
+        denied=denied,
+        include_not_allowed=include_not_allowed,
     )
     return Result(data=data, graph=view.envelope_graph(), text=_views_text(data))
 
@@ -401,13 +430,16 @@ def _view_text(data: JsonObject) -> str:
     flavour = f"takes {v['takes']}" if v["takes"] is not None else "set view"
     if v["default"]:
         flavour += ", default"
-    lines = [head, f"  {req_str(v, 'summary')}", f"  Use when: {req_str(v, 'use_when')}"]
+    lines = [head, *access_lines(v)]
+    lines += [f"  {req_str(v, 'summary')}", f"  Use when: {req_str(v, 'use_when')}"]
     lines.append(f"  {flavour}")
     if v["status"] == "deprecated":
         replaced = f"; use {v['replaced_by']}" if v["replaced_by"] else ""
         lines.append(f"  Deprecated{replaced}")
     lines.append("Parameters:")
     lines.extend(_param_lines(v))
+    if v.get("allowed") is False:  # what it reads is for who may call it
+        return "\n".join(lines) + "\n"
     lines.append("Sections:")
     for value in req_list(v, "sections"):
         section = as_object(value, "section")
@@ -431,9 +463,11 @@ def _view_text(data: JsonObject) -> str:
 
 def describe_view(state: CommandState, name: str, graph: str | None) -> Result:
     view = open_view(state, graph, "describe view")
-    data = describe.describe_view(view.entry, view.model, visible_views(state, view), name)
+    allowed, denied = split_views(state, view)
+    data = describe.describe_view(view.entry, view.model, allowed, name, denied)
     item = as_object(data["view"], "view")
-    data = {**data, "view": {**item, "call": _view_call(item, view.entry.name)}}
+    if item.get("allowed") is not False:  # how to call it is for who may
+        data = {**data, "view": {**item, "call": _view_call(item, view.entry.name)}}
     return Result(data=data, graph=view.envelope_graph(), text=_view_text(data))
 
 
@@ -443,7 +477,7 @@ SPECS: Final = (
         "List the named functions of the graph with their parameters.",
         describe_functions,
         with_type=False,
-        output=model_document({"functions": array(obj(_FUNCTION_ITEM))}, MODULE_FILTER),
+        output=model_document({"functions": array(obj(_FUNCTION_ITEM, ACCESS_MARKS))}, _LISTED),
         examples=(
             Example("graph describe functions", "The functions: name, parameters, summary."),
             Example(
@@ -454,6 +488,7 @@ SPECS: Final = (
         options=(
             MODULE_OPTION,
             ParamSpec("--include-deprecated", "flag", "Also list deprecated functions."),
+            INCLUDE_NOT_ALLOWED,
         ),
     ),
     CommandSpec(
@@ -465,7 +500,8 @@ SPECS: Final = (
         description=(
             "Shows what a function takes and returns, the types and relations its query "
             "touches and the normalized query text, which can be copied as the start of an "
-            "ad-hoc query. Only callers who may read functions see them."
+            "ad-hoc query. A function the caller sees but may not run (no read.function) is shown "
+            "marked allowed: false with what is missing."
         ),
         params=(
             ParamSpec("name", "string", "The function name.", required=True, positional=True),
@@ -486,7 +522,7 @@ SPECS: Final = (
         "List the actions of the graph with their parameters.",
         describe_actions,
         with_type=False,
-        output=model_document({"actions": array(obj(_ACTION_ITEM))}, MODULE_FILTER),
+        output=model_document({"actions": array(obj(_ACTION_ITEM, ACCESS_MARKS))}, _LISTED),
         examples=(
             Example("graph describe actions", "The actions: name, parameters, summary."),
             Example(
@@ -497,6 +533,7 @@ SPECS: Final = (
         options=(
             MODULE_OPTION,
             ParamSpec("--include-deprecated", "flag", "Also list deprecated actions."),
+            INCLUDE_NOT_ALLOWED,
         ),
     ),
     CommandSpec(
@@ -507,8 +544,9 @@ SPECS: Final = (
         summary="Describe one action: parameters, preconditions, operations and needed rights.",
         description=(
             "Shows what an action takes, the conditions it checks, the operations it expands "
-            "to, the types and relations it touches and the write rights it needs. Only "
-            "callers who may run an action see it."
+            "to, the types and relations it touches and the write rights it needs. An action "
+            "the caller sees but may not run is shown marked allowed: false with what is "
+            "missing."
         ),
         params=(
             ParamSpec("name", "string", "The action name.", required=True, positional=True),
@@ -528,7 +566,7 @@ SPECS: Final = (
         describe_views,
         with_type=False,
         output=model_document(
-            {"views": array(obj(_VIEW_ITEM, _VIEW_ITEM_OPTIONAL))}, MODULE_FILTER
+            {"views": array(obj(_VIEW_ITEM, {**_VIEW_ITEM_OPTIONAL, **ACCESS_MARKS}))}, _LISTED
         ),
         examples=(
             Example(
@@ -542,6 +580,7 @@ SPECS: Final = (
         options=(
             MODULE_OPTION,
             ParamSpec("--include-deprecated", "flag", "Also list deprecated views."),
+            INCLUDE_NOT_ALLOWED,
         ),
     ),
     CommandSpec(
@@ -553,8 +592,9 @@ SPECS: Final = (
         description=(
             "Shows what a published view takes (an entity of a class, or nothing: a set view), "
             "its parameters, each section and what it reads, the types, relations and "
-            "functions it touches and the command that calls it (graph view). Only callers "
-            "who may see everything a view names see it."
+            "functions it touches and the command that calls it (graph view). A view is shown "
+            "only to callers who see everything it names; one they may not use (no read.find "
+            "or read.function) is marked allowed: false with what is missing."
         ),
         params=(
             ParamSpec("name", "string", "The view name.", required=True, positional=True),

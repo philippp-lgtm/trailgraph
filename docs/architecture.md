@@ -109,7 +109,8 @@ inventory are built from the same declarations.
 Two command groups of `graph` are packages. The `describe` commands except
 `describe commands` (which stays in `app_cli.commands.meta`) live in
 `app_cli.commands.describe` (`model`: the ontology, `kinetic`: functions,
-actions and views, `shared`: what both use). The read commands live in
+actions and views, `shared`: what both use). `graph start` is `app_cli.commands.start` (the answer, its text and the
+refresh of the skill copies; the remote hook is in `app_cli.remote_hooks`). The read commands live in
 `app_cli.commands.read` (`shared`: what several of them use; `entity`: `get`
 and `view`; `history`: `history` and `changes`; `find`: `find`, `lookup`,
 `search` and `neighbors`; `query`: `query` and `run`). The package's `SPECS`
@@ -160,6 +161,7 @@ clauses (projection, aggregation, sorting, paging, `UNWIND`), `evaluate` and
 | `opening` | `ReadOpen`: `open` (the graph's model and one snapshot, the head or the state `--as-of` names, behind the read limits of the caller) and `rename_hint` (the current name of an old term a refused write names) |
 | `as_of` | the earlier state `--as-of` names: its snapshot, and the warning that says which state is read |
 | `skills` | `ReadSkills`: the published skill of a graph and the inputs a generated skill is rendered with (model documents, names, digest) |
+| `start` | `ReadStart`: what `graph start` counts of each graph the caller reaches (modules, types, the functions, actions and views it may use and the ones it may not) and of each module of one graph; nothing is recorded |
 | `installation` | `ReadInstallation`: the reads that name no graph: `graphs` (the graphs a caller may see) and `whoami` (the caller's grants, read limits and visible types) |
 | `entities` | `ReadEntities`: `get` and `neighbors`, and the actions, functions and views a reader may use next with an entity (`--affordances`); `current_entity`, the revision a ref names |
 | `finding` | `ReadFinding`: `find`, `lookup` and `search`, and how a lookup fits the functions the caller may run (`_use_fit`, `_parameter_fit`) |
@@ -215,7 +217,7 @@ looked up with `importlib.metadata`;
 | `catalog.build` | the build id an installed distribution carries (`_build_id`, written by `scripts/build_id.py`) and the `Graph-Cli-Build` header |
 | `catalog.compat` | the compatibility id of a program (wire level, inventory with answer schemas, agent skills; computed by `app_cli` and `graph_cli_admin`, cached per build) and the `Graph-Cli-Compat` header |
 | `catalog.dist` | the programs the origin hands out (`/v1/dist/` manifest), fetching a wheel and installing it as a uv tool into the environment the program runs from (`graph self update`, `graph-admin self update`) |
-| `catalog.skill_claims` | skill freshness: the claims of the installed skills' markers (both scopes), the `Graph-Cli-Skills` header, and the check a read or write runs when it selects a graph (`SkillGate`); skill 1 is checked by `app_cli.skill_check` before any read or write. The names both this module and `graph_cli.skills` rely on (marker file and schema, skill names, slot kinds) are in `kernel.skill_marker` |
+| `catalog.skill_claims` | skill freshness: the claims of the installed skills' markers (both scopes), the `Graph-Cli-Skills` header, and the check a read or write runs when it selects a graph (`SkillGate`); skill 1 is checked by `app_cli.skill_check` before any read or write. The names both this module and `graph_cli.skills` rely on (marker file and schema, skill names, slot kinds) are in `kernel.skill_marker`; the digest of what a graph skill shows of the catalogs (featured lines, presence of functions, actions and views) is `kernel.skill_featured`, stored in each catalog's `slot.json` and read through `Catalog.skill_featured` |
 | `catalog.tokens` | bearer tokens of the server API: the `graph_cli.tokens/1` document, hashing, and the server's lock-free, cached store |
 | `catalog.enrollments` | enrollment codes: the `graph_cli.enrollments/1` document, codes, lifetimes, the constant-time lookup and default token names |
 
@@ -328,6 +330,7 @@ nothing is filtered and nothing is paid.
 | --- | --- |
 | `services.visibility` | `Visibility`: the `ReadView` per actor and graph (one `access_control.effective.visibility` decision per type, one `held_markings` probe per marking the pin uses, no decision recorded), cached per policy hash, pin and actor facts; `VisibleSnapshot`, a `Snapshot` that answers for a hidden entity as for a missing one, strips every revision it hands out and sets `Query.visible`; `filter_model`, the model without hidden types and what depends on them |
 | `services.visible_catalog` | which functions, actions and views a limited caller sees: those whose terms and parameter classes all exist in the filtered model and that still compile against it |
+| `services.catalog_access` | the split of the entries a caller sees into allowed and not allowed with the rights it lacks (`Missing`, `Classified`); hidden entries are not part of it. `ReadService.classified_functions`, `classified_actions` and `classified_views` return it, and the listings keep only the allowed ones |
 | `services.view_call` | the storage-free parts of a `graph view` call: the default view of an entity's class, the key a page cursor is tied to (view, parameters, function catalog, pin, what the reader sees), the share of the query budget each `rows` section gets, and the lazily run `rows` results |
 | `kernel.query_eval`, `kernel.records`, `kernel.read_view` | `Query.visible` and `NeighborQuery.visible`, honoured in one place for every store (subjects, relation ends, traversal, totals); `Query.attributes` and `NeighborQuery.attributes`, a per-type allow list of attribute names applied before matching and ordering when the query names a masked attribute; `strip_revision`, which drops the edges into hidden entities and the attributes outside the allow list from a revision in one copy and recomputes its content hash for revisions handed out; `ReadView`, the hashable view key (types and attributes) the caches and the skill claim digest use |
 | `temporal_knowledge.migrate` | `plan_migration`: the new revision of every current revision (all record statuses) that a major release's renames and migration steps change, as a pure function of the old and new model, the derived renames, the migration file and a snapshot; no-op detection by content hash, per-step counts and samples, an overlay for `check_graph` and the blobs of the migrated revisions; `WorkingState` answers `incoming` from a reverse-edge index built on first use, so a large overlay is judged in linear time |

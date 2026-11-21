@@ -50,3 +50,6 @@ Roles let apps of one project differ. Only a maintainer changes policies and cre
    `admin.role_unknown` means the policy does not declare the role.
 4. `graph-admin policy explain --graph <graph> --role <role>` shows what a token with the role
    gets.
+5. A policy that an older build installed does not grant `read.function` (agents see
+   functions as `allowed: false`, `graph run` is `access.denied`) until `graph-admin
+   policy apply` runs again with the same source.

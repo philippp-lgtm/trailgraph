@@ -64,6 +64,27 @@ def graph_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> str:
     return reached
 
 
+def effective_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> str:
+    """What the actor can do on ``graph:<id>`` in one word: ``write`` when any write action is
+    allowed next to some read, ``read`` when any read action is, else ``none``.
+
+    ``graph_level`` demands every action of a level, so one denied read action (say
+    ``read.function``) drops it to ``none`` for a caller who reads the graph; this is the level to
+    tell that caller, with ``withheld_actions`` naming what is missing below it."""
+    reached = graph_level(actor, graph, policy)
+    if reached == ACCESS_LEVELS[-1]:
+        return reached
+    resource = f"graph:{graph}"
+
+    def holds(actions: Iterable[str]) -> bool:
+        return any(authorize(actor, a, resource, _PROBE, policy).effect == "allow" for a in actions)
+
+    reads = [a for a in level_actions("read") if not a.endswith("*")]
+    if not holds(reads):
+        return reached
+    return "write" if holds(sorted(WRITE_ACTIONS)) else "read"
+
+
 def maintains(actor: ActorContext, graph: GraphId, policy: PolicySet) -> bool:
     """Whether ``actor`` may run any graph-level maintenance action of the ``maintain``
     scope level on ``graph:<id>``: what a project admin sees of a graph."""

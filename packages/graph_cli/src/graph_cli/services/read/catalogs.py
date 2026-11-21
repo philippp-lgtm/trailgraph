@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Any
 
-from graph_cli.access_control.authorize import authorize
 from graph_cli.kernel.actor import ActorContext
-from graph_cli.kernel.authz import AuthzContext
+from graph_cli.kernel.authz import AuthzContext, Decision
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry
 from graph_cli.kernel.read_view import UNLIMITED, ReadView
+from graph_cli.kernel.records import RequestMeta
 from graph_cli.kinetic.action_entries import ActionEntry, load_action_entries
 from graph_cli.kinetic.action_needs import NeedOptions
 from graph_cli.kinetic.action_needs import action_needs as derive_needs
@@ -19,24 +20,45 @@ from graph_cli.kinetic.params import Problem
 from graph_cli.kinetic.view_entries import ViewEntry, load_view_entries
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.action_rights import need_decisions
-from graph_cli.services.read.access import VISIBLE, ReadAccess
+from graph_cli.services.catalog_access import (
+    Classified,
+    allowed_entries,
+    first_denial,
+)
+from graph_cli.services.read.access import ACCESS_DENIED_HINT, ReadAccess, denial_error
 from graph_cli.services.read.graph_read import ActionCatalog
 from graph_cli.services.visible_catalog import hidden_actions, hidden_functions, hidden_views
 
 
 class ReadCatalogs(ReadAccess):
     def functions(self, actor: ActorContext, entry: GraphEntry) -> tuple[FunctionEntry, ...] | None:
-        """The graph's published functions as the actor may see them (K10): ``None`` when the
+        """The graph's published functions as the actor may use them (K10): ``None`` when the
         graph has none or the actor may not ``read.function`` on it, so a listing shows
         nothing and records nothing (no denial event, like ``graphs``). A type limited actor
         sees only the functions that fit its model view (``services.visible_catalog``); the
-        parsed catalog is cached by the hash of the compiled document."""
-        with self.timings.phase("authorize"):
-            policy = self._policy.current(entry.id)
-            decision = authorize(actor, "read.function", f"graph:{entry.id}", VISIBLE, policy)
-        if decision.effect != "allow":
+        parsed catalog is cached by the hash of the compiled document. The allowed half of
+        ``classified_functions``."""
+        if self._function_denials(actor, entry):
             return None
         return self._visible_functions(entry, self.read_view(actor, entry))
+
+    def classified_functions(
+        self, actor: ActorContext, entry: GraphEntry
+    ) -> tuple[Classified[FunctionEntry], ...]:
+        """Every function the actor sees, with the rights it lacks (graph start plan S4): a
+        function that fits the actor's read view is allowed, or not allowed for want of
+        ``read.function``; one that names something the actor cannot see is not in the answer.
+        Nothing for a graph the actor may not see (``read.list``). Records nothing."""
+        if not self.visible(actor, entry):
+            return ()
+        denials = self._function_denials(actor, entry)
+        view = self.read_view(actor, entry)
+        return tuple(Classified(e, denials) for e in self._visible_functions(entry, view) or ())
+
+    def _function_denials(self, actor: ActorContext, entry: GraphEntry) -> tuple[Decision, ...]:
+        """The decisions that deny every function of the graph to the actor (a probe)."""
+        decision = self._probe(actor, entry, "read.function")
+        return () if decision.effect == "allow" else (decision,)
 
     def _published_slot(
         self, entry: GraphEntry
@@ -123,9 +145,9 @@ class ReadCatalogs(ReadAccess):
         return found if found.entries else None
 
     def actions(self, actor: ActorContext, entry: GraphEntry) -> tuple[ActionEntry, ...] | None:
-        """The graph's actions as the actor may see them (A6, A10): ``None`` when the graph has
-        no catalog or the actor may run none of its actions, so a caller who sees none gets the
-        answers of a graph without actions and learns nothing about them. Records nothing."""
+        """The graph's actions as the actor may run them (A6, A10): ``None`` when the graph has
+        no catalog or the actor may run none of its actions, so a caller who may run none gets
+        the answers of a graph without actions. Records nothing."""
         published = self.published_actions(entry)
         if published is None:
             return None
@@ -139,33 +161,75 @@ class ReadCatalogs(ReadAccess):
         *,
         limits: bool = True,
     ) -> tuple[ActionEntry, ...]:
-        """The actions the actor may run (actions plan A6, write allow lists plan W9): for each
-        need of the action, some concrete type allows it, with all the attributes and relations
-        the action writes there where the policy has term rules for the type
-        (``services.action_rights``). For a type limited actor also: a type the need is met on
+        """The actions the actor may run (actions plan A6, write allow lists plan W9): the
+        allowed half of the classification. ``limits=False`` leaves the actor's read view out
+        (the full model's view of its rights, for the skill render): only this allowed-only
+        method can do that, because what the full view classes as not allowed may name terms the
+        actor cannot see. Records nothing, like ``functions``."""
+        return allowed_entries(self._classify_actions(actor, entry, catalog, limits=limits))
+
+    def classified_actions(
+        self, actor: ActorContext, entry: GraphEntry, catalog: ActionCatalog
+    ) -> tuple[Classified[ActionEntry], ...]:
+        """Every action the actor sees, with the rights it lacks (graph start plan S4); nothing
+        for a graph the actor may not see (``read.list``). Always judged by the actor's read
+        view, so no entry names a hidden term. See ``_classify_actions``."""
+        if not self.visible(actor, entry):
+            return ()
+        return self._classify_actions(actor, entry, catalog, limits=True)
+
+    def _classify_actions(
+        self,
+        actor: ActorContext,
+        entry: GraphEntry,
+        catalog: ActionCatalog,
+        *,
+        limits: bool,
+    ) -> tuple[Classified[ActionEntry], ...]:
+        """The classification of the actions of ``catalog`` (graph start plan S4).
+
+        An action is allowed when, for each need, some concrete type allows it, with all the
+        attributes and relations the action writes there where the policy has term rules for
+        the type (``services.action_rights``); obligations (``--reason``, batch size) never
+        count (``has_reason=True``). For a type limited actor also: a type the need is met on
         is one it sees, and no term the action names is missing from its model view (type read
-        limits plan V7, ``services.visible_catalog``); with an attribute view, an attribute the
-        action writes is met only where the actor sees it (field visibility plan F6);
-        ``limits=False`` leaves that out (the full model's view of the actor's rights). Records
-        nothing, like ``functions``."""
+        limits plan V7, ``services.visible_catalog``); with an attribute view, an attribute
+        the action writes is met only where the actor sees it (field visibility plan F6);
+        ``limits=False`` leaves that out (the full model's view of the actor's rights): its
+        not-allowed entries may then name hidden terms and are never shown, only the allowed
+        ones are used.
+
+        An action that fails that view is hidden, and so is one with an unmet need no
+        decision was made for (every option lies outside what the actor sees): such a need has
+        no right to name. Any other action that is not allowed names, per unmet need, its first
+        denied decision. Records nothing, like ``functions``."""
         needs = self.action_needs(entry, catalog)
         view = self.read_view(actor, entry) if limits else UNLIMITED
         hidden = self._hidden_actions(entry, catalog, view) if view.limited else frozenset()
+        found: list[Classified[ActionEntry]] = []
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
             fine = self._fine.of(policy, entry.id)
             ctx = AuthzContext(op_count=1, has_reason=True, dry_run=False)
-            return tuple(
-                a
-                for a in catalog.entries
-                if a.name not in hidden
-                and all(
-                    need_decisions(
+            for action in catalog.entries:
+                if action.name in hidden:
+                    continue
+                denials: list[Decision] = []
+                undecided = False
+                for need in needs[action.name]:
+                    result = need_decisions(
                         actor, entry.id, need, ctx, policy, fine, view.types, keeps=view.keeps
-                    ).met
-                    for need in needs[a.name]
-                )
-            )
+                    )
+                    if result.met:
+                        continue
+                    denied = first_denial(result.decisions)
+                    if denied is None:
+                        undecided = True
+                        break
+                    denials.append(denied)
+                if not undecided:
+                    found.append(Classified(action, tuple(denials)))
+        return tuple(found)
 
     def _hidden_actions(
         self, entry: GraphEntry, catalog: ActionCatalog, view: ReadView
@@ -180,6 +244,28 @@ class ReadCatalogs(ReadAccess):
         return self._hidden.of(
             "actions", catalog.compiled_hash, entry.pin.artifact_hash, view, compute
         )
+
+    def refuse_not_allowed(
+        self,
+        actor: ActorContext,
+        entry: GraphEntry,
+        item: Classified[Any],
+        request: RequestMeta,
+    ) -> GraphCliError:
+        """The answer to a call of an entry the actor sees but may not use: the first denying
+        decision is audited as a denial (a call is a recorded access, a listing is not) and
+        raised as ``access.denied``, naming the missing right."""
+        assert item.denials, "an allowed entry is never refused"
+        decision = item.denials[0]
+        error = denial_error(decision)
+        if len(item.missing) > 1:  # say every right it lacks, so one refusal is enough to know
+            rights = ", ".join(str(m) for m in item.missing)
+            error = GraphCliError(
+                error.code,
+                f"{rights} are not permitted; {ACCESS_DENIED_HINT}",
+                details=error.details,
+            )
+        return self._record_denial(actor, decision, request, entry, error)
 
     # ---- views (object views stage 2) -----------------------------------
 
@@ -228,37 +314,64 @@ class ReadCatalogs(ReadAccess):
             "views", f"{slot.compiled_hash}+{digest}", entry.pin.artifact_hash, view, compute
         )
 
-    def _visible_views(
+    def _classified_views(
         self, actor: ActorContext, entry: GraphEntry, view: ReadView
-    ) -> tuple[ViewEntry, ...] | None:
-        """The views of the graph the actor may see, ``None`` when there are none (or the graph
-        has no catalog). A view is visible exactly when everything it names is: the model the
-        reader sees has its classes, relations, attributes and parameters, the functions a
-        ``rows`` section runs are visible to the reader and it may ``read.function``, and a set
-        view also needs ``read.find`` (it lists entities as ``find`` does); ``read.get`` is the
-        command's own action. A view that is not visible is a missing one everywhere."""
+    ) -> tuple[Classified[ViewEntry], ...]:
+        """The views of the graph the actor sees, with the rights it lacks (graph start plan
+        S4). A view is visible exactly when everything it names is: the model the reader sees
+        has its classes, relations, attributes and parameters, and the functions a ``rows``
+        section runs are visible to the reader (hidden otherwise). Of the views that remain, a
+        set view needs ``read.find`` (it lists entities as ``find`` does) and one that runs
+        functions needs ``read.function``; the missing right makes it not allowed, not hidden.
+        ``read.get`` is the command's own action. A view that is hidden is a missing one
+        everywhere."""
         found = self._published_views(entry)
         if found is None:
-            return None
+            return ()
         entries = found[0]
         if view.limited:
             hidden = self._hidden_views(entry, found, view)
             entries = tuple(e for e in entries if e.name not in hidden)
-        runnable: frozenset[str] = frozenset()
-        if any(e.functions for e in entries) and self._may(actor, entry, "read.function"):
-            visible = self._visible_functions(entry, view)
-            runnable = frozenset(f.name for f in visible or ())
-        may_find = (
-            self._may(actor, entry, "read.find") if any(not e.entity for e in entries) else False
+        if any(e.functions for e in entries):
+            fits = frozenset(f.name for f in self._visible_functions(entry, view) or ())
+            entries = tuple(e for e in entries if fits.issuperset(e.functions))
+        find = (
+            self._probe(actor, entry, "read.find") if any(not e.entity for e in entries) else None
         )
-        entries = tuple(
-            e for e in entries if runnable.issuperset(e.functions) and (e.entity or may_find)
+        run = (
+            self._probe(actor, entry, "read.function")
+            if any(e.functions for e in entries)
+            else None
         )
-        return entries or None
+        classified: list[Classified[ViewEntry]] = []
+        for e in entries:
+            denials = [
+                d
+                for d, needed in ((find, not e.entity), (run, bool(e.functions)))
+                if d is not None and needed and d.effect != "allow"
+            ]
+            classified.append(Classified(e, tuple(denials)))
+        return tuple(classified)
+
+    def _visible_views(
+        self, actor: ActorContext, entry: GraphEntry, view: ReadView
+    ) -> tuple[ViewEntry, ...] | None:
+        """The views of the graph the actor may use (the allowed half of ``_classified_views``),
+        ``None`` when there are none (or the graph has no catalog)."""
+        return allowed_entries(self._classified_views(actor, entry, view)) or None
+
+    def classified_views(
+        self, actor: ActorContext, entry: GraphEntry
+    ) -> tuple[Classified[ViewEntry], ...]:
+        """Every view the actor sees, with the rights it lacks; nothing for a graph the actor
+        may not see (``read.list``). Records nothing."""
+        if not self.visible(actor, entry):
+            return ()
+        return self._classified_views(actor, entry, self.read_view(actor, entry))
 
     def views(self, actor: ActorContext, entry: GraphEntry) -> tuple[ViewEntry, ...] | None:
-        """The graph's published views as the actor may see them: ``None`` when there are none
-        to see, so a listing shows nothing and records nothing."""
+        """The graph's published views as the actor may use them: ``None`` when there are none
+        to use, so a listing shows nothing and records nothing."""
         return self._visible_views(actor, entry, self.read_view(actor, entry))
 
     def _stale_view(

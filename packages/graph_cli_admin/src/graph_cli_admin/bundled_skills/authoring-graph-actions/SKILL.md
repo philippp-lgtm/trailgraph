@@ -95,8 +95,9 @@ a function of the graph (`action.name_taken`).
    names.
 9. **`featured`**: `true` lists the action in the graph skill that every
    agent reads first. At most 8 are listed, so feature only the few that
-   save the most detours; the rest is found by search and on the module
-   pages.
+   save the most detours; the rest is found by `graph start` (counts),
+   search and the module pages. It is the only switch of an action that
+   touches the graph skill: the skill shows nothing else of the catalog.
 
 A complete file that compiles against the example company ontology:
 
@@ -161,8 +162,23 @@ featured: true
    expands to. If search does not find it, sharpen `summary` and
    `use_when`; try the neighbouring action with the request that should
    not fit and read the refusal of its precondition.
-5. Agents see a changed list in the generated graph skill after `graph
-   skills install` or `graph self update`.
+5. Nothing is left to do for the agents when the action is not
+   `featured`: `graph describe` and `graph start` read the catalog when they
+   are called, and installed graph skills stay current. Featuring or
+   unfeaturing an action (or publishing the first, or removing the last, of
+   the graph) makes the installed skills stale; the next `graph start` of an
+   agent refreshes them.
+
+## Who sees an action
+
+A caller finds an action only when it sees everything the action names (types,
+relations, attributes, enums, the module); for a caller with read limits that
+misses one it does not exist (hidden). A caller that sees all of it but may
+not make a write the action needs finds it marked `allowed: false` with the
+first right it misses, and `graph do` answers `access.denied`. So `summary` and
+`use_when` reach every caller who sees the names: write them in terms that
+hold for every such caller. The graph skill lists only the featured actions
+the installing reader may run.
 
 ## Release refusals
 

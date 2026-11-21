@@ -50,6 +50,7 @@ DESCRIPTION: Final = (
     " user asks what is known about something, wants knowledge recorded or changed in a"
     " graph, or wants to explore how things relate. Do not use for creating graphs, changing"
     " ontologies or schemas, migrations, archiving, or editing store files directly."
+    " Run `graph start` once per session before loading this or any graph skill."
 )
 
 # What to do per error category; an inventory with another category is refused.
@@ -97,13 +98,15 @@ against it and audited. The CLI is on `PATH`.
   If a call is refused, run it again in that form before you give up.
 - Reads never change anything. `graph skills`, `self update` and `connect`
   install agent skills such as this one, and the program: run them only
-  when the user asks. `graph skills check` and `--check` only read.
+  when the user asks (`graph start` refreshes skills only); `skills check` and `--check` only read.
 
 ## Workflow
 
-1. Pick a graph: `graph graphs --json` lists the graphs you may use. Select
-   one with `--graph <graph>` on every command. A project may preset a
-   default; use it unless the user names another graph.
+1. Start: `graph start --json` once per session, before any other call: it
+   refreshes stale skills (load them again) and lists the graphs you may use,
+   what your token may use of each (`not_allowed`: seen, not yours) and how to
+   search. Select a graph with `--graph <graph>` on every command; a project
+   may preset one, use it unless the user names another.
 2. Learn the model: `graph describe types --json`, then
    `graph describe type <type> --json`: fields with datatype, enum `values`,
    `limits` and `role`; relations with their `qualifiers` (values on the edge);
@@ -114,7 +117,7 @@ against it and audited. The CLI is on `PATH`.
    term you can only name, `graph describe search <value> --json`
    (types, relations, fields, values; not data); never dump the whole schema.
    For a question, look for a function first (`graph describe search <value>
-   --kind function` or the graph skill's list) and run it with
+   --kind function` or the graph skill's featured ones) and run it with
    `graph run <function> --param ...` (a `ref` parameter takes an id: look
    names up with `graph lookup <value> --for <function>.<param>`); write a
    `query` when none fits. An empty value in a function's answer means
@@ -140,7 +143,7 @@ against it and audited. The CLI is on `PATH`.
    abbreviations and synonyms into `alt_label` fields, misspellings into
    `hidden_label` fields.
 6. For a change, look for an action first (`graph describe search <value>
-   --kind action`, the graph skill's list, `graph get <id> --affordances`):
+   --kind action`, the graph skill's featured ones, `graph get <id> --affordances`):
    `graph do <action> --dry-run`, read what it will change, then run it
    without. None fits: preview `create`, `apply`, `supersede`, `retract`,
    `transition` with `--dry-run --json`; one `update`, `link` or `unlink`
@@ -196,8 +199,9 @@ lists `require_reason`. Details: [references/history.md](references/history.md).
   `max_batch`), all you may write (`writes`: verbs, attributes, relations per
   type) and, if limited to some types, those you see (`reads`). Check it first.
   A field you cannot see is unknown to you; `markings` lists the ones you hold.
-- A graph you may not use does not exist for you: `graph graphs` does not
-  list it, and selecting it gives `graph.not_found`.
+- A graph you may not use does not exist for you (`graph.not_found`). A function,
+  action or view you may see but not use is marked `allowed: false` with
+  `missing`; running it gives `access.denied`: tell the user, never work around it.
 - On `access.denied`, stop and tell the user what was refused
   (`error.details`). Access is set by the maintainer of the installation.
   Never edit the project's pointer file, a policy or the data directory to
@@ -1184,11 +1188,13 @@ SKILL_GUIDANCE: Final = (
     "## When an installed skill is outdated",
     "",
     "- `skills.outdated`: this skill, or the skill of the graph, was installed for an older"
-    " program or an older state of the graph, so the write was refused. Stop and tell the"
-    " user the command in `hint`, which refreshes the installed skills; never change skill"
-    " files yourself. After the refresh, read the skills again before repeating the write.",
+    " program or an older state of the graph, so the write was refused. Run `graph start`"
+    " (the `hint`): it refreshes the installed skills and never the program. Read the"
+    " refreshed skills again before you repeat the write; never change skill files yourself."
+    " If `graph start` reports a different program build, tell the user the command it"
+    " names (`graph self update`).",
     "- `skills.stale` (a warning on a read): the same, but the answer is right. Finish the"
-    " read and tell the user.",
+    " read, then run `graph start`.",
     "",
 )
 

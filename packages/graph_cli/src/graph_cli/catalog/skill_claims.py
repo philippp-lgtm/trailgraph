@@ -5,7 +5,11 @@ An agent works from the skills installed for it. Each copy's marker
 inventory hash of the program that rendered it, a graph skill the hash of
 the graph's published slot and, for a template, the ontology release of its
 model and, for a reader with type read limits, a digest of the types it sees (the template is
-rendered per reader, so a policy change that moves the set makes the copy stale).
+rendered per reader, so a policy change that moves the set makes the copy stale) and, for a
+template, a digest of what its render shows of the published catalogs (``featured``: the featured
+function and action lines and whether the graph has functions, actions and views; a publish that
+changes neither leaves the copy fresh, one that does makes it stale; a copy installed before the
+digest was recorded has none and is not judged on it).
 ``read_claims`` reads them from the project scope (``<pointer dir>/.claude/skills``) and the
 user scope; both count, because which copy an agent loads depends on the agent. Without an
 installed skill nothing is claimed and nothing is checked.
@@ -60,6 +64,7 @@ class SkillClaim:
     graph: str | None = None  # the graph id of a graph skill; None for skill 1
     model: tuple[str, str] | None = None  # (bundle, version) a template was rendered with
     visible: str | None = None  # ``ReadView.digest`` of a limited reader; else None
+    featured: str | None = None  # ``kernel.skill_featured`` digest; None: not recorded
 
 
 def read_claims(dirs: Sequence[tuple[Scope, Path]]) -> tuple[SkillClaim, ...]:
@@ -108,10 +113,14 @@ def _claim(scope: Scope, path: Path) -> SkillClaim | None:
     if seen is not None and not _is_hash(seen):
         return None
     visible = None if seen is None else str(seen)
+    shown = source.get("featured")
+    if shown is not None and not _is_hash(shown):
+        return None
+    featured = None if shown is None else str(shown)
     if model is None:
-        return SkillClaim(scope, str(digest), str(graph_id), None, visible)
+        return SkillClaim(scope, str(digest), str(graph_id), None, visible, featured)
     pair = _model(model)
-    return SkillClaim(scope, str(digest), str(graph_id), pair, visible) if pair else None
+    return SkillClaim(scope, str(digest), str(graph_id), pair, visible, featured) if pair else None
 
 
 def _model(value: object) -> tuple[str, str] | None:
@@ -137,7 +146,8 @@ def _is_token(value: object) -> bool:
 def claims_header(claims: Sequence[SkillClaim]) -> str | None:
     """``Graph-Cli-Skills``: one item per graph claim, ``graph=<id>;hash=<hash>``, for a
     template ``;bundle=<bundle>;version=<version>``, for a limited reader
-    ``;visible=<digest>``, then ``;scope=<scope>``; items separated by ``, ``. ``None``
+    ``;visible=<digest>``, for a copy that recorded it ``;featured=<digest>``, then
+    ``;scope=<scope>``; items separated by ``, ``. ``None``
     without a graph claim."""
     items = []
     for claim in claims:
@@ -148,6 +158,8 @@ def claims_header(claims: Sequence[SkillClaim]) -> str | None:
             parts += [f"bundle={claim.model[0]}", f"version={claim.model[1]}"]
         if claim.visible is not None:
             parts.append(f"visible={claim.visible}")
+        if claim.featured is not None:
+            parts.append(f"featured={claim.featured}")
         items.append(";".join([*parts, f"scope={claim.scope}"]))
     return ", ".join(items[:MAX_CLAIMS]) or None
 
@@ -171,8 +183,11 @@ def parse_claims_header(value: str | None) -> tuple[SkillClaim, ...]:
         seen = params.get("visible")
         if seen is not None and not _is_hash(seen):
             continue
+        shown = params.get("featured")
+        if shown is not None and not _is_hash(shown):
+            continue
         claim = SkillClaim(
-            "project" if scope == "project" else "user", str(digest), graph, model, seen
+            "project" if scope == "project" else "user", str(digest), graph, model, seen, shown
         )
         if claim not in found:
             found.append(claim)
@@ -193,6 +208,9 @@ class SkillGate:
     # The digest of what the caller sees in a graph (``ReadView.digest``), ``None`` without a
     # read limit
     visible: Callable[[GraphEntry], str | None] = lambda entry: None
+    # The digest of what a render shows of the graph's published catalogs
+    # (``Catalog.skill_featured``); ``None`` when the catalogs cannot be read
+    featured: Callable[[GraphEntry], str | None] = lambda entry: None
 
     def check(self, catalog: Catalog, entry: GraphEntry) -> None:
         claims = [c for c in self.claims() if c.graph == str(entry.id)]
@@ -206,24 +224,44 @@ class SkillGate:
             return  # unpublished: an installed copy is unavailable, not stale
         # Only a template is rendered per reader; a static skill is the same for everyone
         seen = self.visible(entry) if slot.kind == GENERATED else None
-        stale = [s for c in claims if (s := graph_stale(c, entry, slot, seen)) is not None]
+        # computed only for a copy that recorded a digest: it is the hot path
+        judged = slot.kind == GENERATED and any(c.featured is not None for c in claims)
+        shown = _featured_of(self, entry) if judged else None
+        stale = [s for c in claims if (s := graph_stale(c, entry, slot, seen, shown)) is not None]
         report(stale, write=self.write, warnings=self.warnings, project_dir=self.project_dir)
 
 
+def _featured_of(gate: SkillGate, entry: GraphEntry) -> str | None:
+    try:
+        return gate.featured(entry)
+    except GraphCliError:
+        return None  # a damaged catalog slot is for the maintainer; the freshness check goes on
+
+
 def graph_stale(
-    claim: SkillClaim, entry: GraphEntry, slot: SkillSlot, visible: str | None = None
+    claim: SkillClaim,
+    entry: GraphEntry,
+    slot: SkillSlot,
+    visible: str | None = None,
+    featured: str | None = None,
 ) -> dict[str, JsonValue] | None:
     """The stale entry of a graph claim; ``None`` when the copy is what the graph has now.
     ``visible`` is the digest of what the caller sees (``ReadView.digest``; ``None``: no read
-    limit); a copy rendered for another view is stale."""
+    limit); a copy rendered for another view is stale. ``featured`` is the digest of what a render
+    shows of the catalogs now (``None``: unknown); a copy that recorded another one is stale, a
+    copy that recorded none is not judged on it."""
     model = (entry.pin.bundle, entry.pin.version) if slot.kind == GENERATED else None
-    if claim.hash == slot.hash and claim.model == model and claim.visible == visible:
+    moved = claim.featured is not None and featured is not None and claim.featured != featured
+    if claim.hash == slot.hash and claim.model == model and claim.visible == visible and not moved:
         return None
     installed: dict[str, JsonValue] = {"hash": claim.hash, "model": _model_json(claim.model)}
     current: dict[str, JsonValue] = {"hash": slot.hash, "model": _model_json(model)}
     if claim.visible is not None or visible is not None:  # only for limited readers
         installed["visible"] = claim.visible
         current["visible"] = visible
+    if moved:  # only when the catalogs are (one of) the reasons
+        installed["featured"] = claim.featured
+        current["featured"] = featured
     return {
         "skill": graph_skill_name(entry.name),
         "kind": "graph",
@@ -262,7 +300,7 @@ def report(
         return
     scope = str(stale[0]["scope"])
     details: dict[str, JsonValue] = {"skills": [dict(s) for s in stale], "scope": scope}
-    words = ["graph", "self", "update"]
+    words = ["graph", "start"]  # refreshes the skills; a different program build: self update
     if scope == "project" and project_dir is not None:
         details["dir"] = str(project_dir)
         words += ["--dir", shlex.quote(str(project_dir))]

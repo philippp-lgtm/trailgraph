@@ -19,10 +19,13 @@ Order, best first (``rank``): by how the text matches
      questions or requests, parameter names or, for a view, section titles, field ``use_when``;
      or the local name, inverse label or summary of a type or relation it touches, field
      ``touches``),
+then, among hits of the same tier, the ones the caller may use before those it may not (a
+function, action or view it sees but lacks a right for: ``allowed: false`` and ``missing``),
 then shorter names (CURIEs for a CURIE match), then the kind (type, relation, attribute,
 enum value, state, function, action, view) and the CURIE.
-A hit names the field and the way it matched. The ``curie`` of a function, action or view
-hit is its name.
+An entry the caller may not use matches on what it is for (``use_when``, parameter names) only,
+not on its example texts, section titles or touched terms. A hit names the field and the way it
+matched. The ``curie`` of a function, action or view hit is its name.
 The CURIE of an attribute, enum value or state is
 its owner's CURIE, a dot and its name (``ppl:Person.email``); ``of`` names the owner.
 """
@@ -44,6 +47,7 @@ from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.plan import DEFAULT_LIMIT, check_paging
 from graph_cli.query.search import MIN_KEY_CHARS
+from graph_cli.services.catalog_access import Denied, Missing
 from graph_cli.services.describe import ModuleIndex, model_envelope
 
 SEARCH_TERM_KINDS: Final = (
@@ -70,6 +74,7 @@ class _Term:
     description: str | None
     deprecated: bool
     deeper: tuple[tuple[str, str], ...] = ()  # (field, text) pairs that only match in tier 5
+    missing: tuple[Missing, ...] = ()  # the rights the caller lacks to use a function, action, view
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,16 +166,20 @@ def _touches(
 
 
 def _function_terms(
-    functions: Sequence[FunctionEntry], model: CompiledModel, index: ModuleIndex
+    functions: Sequence[FunctionEntry],
+    model: CompiledModel,
+    index: ModuleIndex,
+    missing: tuple[Missing, ...] = (),
 ) -> list[_Term]:
     """A function reads as its name and summary; what it is for and the terms its query
     touches (the ontology enriches the function's own text) match in tier 5."""
     found: list[_Term] = []
     for f in functions:
         deeper = [("use_when", f.defn.use_when)]
-        deeper += [("use_when", e.question) for e in f.defn.examples]
         deeper += [("use_when", p.name) for p in f.defn.params]
-        deeper += _touches(f.types, f.relations, model)
+        if not missing:  # the examples and the touched terms are read only by who may use it
+            deeper += [("use_when", e.question) for e in f.defn.examples]
+            deeper += _touches(f.types, f.relations, model)
         found.append(
             _Term(
                 "function",
@@ -182,22 +191,27 @@ def _function_terms(
                 None,
                 f.deprecated,
                 tuple(deeper),
+                missing,
             )
         )
     return found
 
 
 def _action_terms(
-    actions: Sequence[ActionEntry], model: CompiledModel, index: ModuleIndex
+    actions: Sequence[ActionEntry],
+    model: CompiledModel,
+    index: ModuleIndex,
+    missing: tuple[Missing, ...] = (),
 ) -> list[_Term]:
     """An action reads like a function: name and summary, then what it is for (``use_when``,
     example requests, parameter names) and the terms its ops touch in tier 5."""
     found: list[_Term] = []
     for a in actions:
         deeper = [("use_when", a.defn.use_when)]
-        deeper += [("use_when", e.request) for e in a.defn.examples]
         deeper += [("use_when", p.name) for p in a.defn.params]
-        deeper += _touches(a.types, a.relations, model)
+        if not missing:
+            deeper += [("use_when", e.request) for e in a.defn.examples]
+            deeper += _touches(a.types, a.relations, model)
         found.append(
             _Term(
                 "action",
@@ -209,21 +223,25 @@ def _action_terms(
                 None,
                 a.deprecated,
                 tuple(deeper),
+                missing,
             )
         )
     return found
 
 
-def _view_terms(views: Sequence[ViewEntry], model: CompiledModel) -> list[_Term]:
+def _view_terms(
+    views: Sequence[ViewEntry], model: CompiledModel, missing: tuple[Missing, ...] = ()
+) -> list[_Term]:
     """A view reads like a function: name and summary, then what it is for (``use_when``,
     example questions, parameter names, section titles) and the terms it touches in tier 5."""
     found: list[_Term] = []
     for v in views:
         deeper = [("use_when", v.defn.use_when)]
-        deeper += [("use_when", e.question) for e in v.defn.examples]
         deeper += [("use_when", p.name) for p in v.defn.params]
-        deeper += [("use_when", s.title) for s in v.defn.sections if s.title]
-        deeper += _touches(v.types, v.relations, model)
+        if not missing:
+            deeper += [("use_when", e.question) for e in v.defn.examples]
+            deeper += [("use_when", s.title) for s in v.defn.sections if s.title]
+            deeper += _touches(v.types, v.relations, model)
         found.append(
             _Term(
                 "view",
@@ -235,6 +253,7 @@ def _view_terms(views: Sequence[ViewEntry], model: CompiledModel) -> list[_Term]
                 None,
                 v.deprecated,
                 tuple(deeper),
+                missing,
             )
         )
     return found
@@ -301,10 +320,14 @@ def search_model(
     functions: Sequence[FunctionEntry] | None = None,
     actions: Sequence[ActionEntry] | None = None,
     views: Sequence[ViewEntry] | None = None,
+    denied: Denied | None = None,
 ) -> tuple[dict[str, JsonValue], int]:
     """One page of the hits and the total number of hits. ``kinds`` (any of
     ``SEARCH_TERM_KINDS``; none means all) and ``module`` (id or prefix) narrow the search.
-    ``functions``, ``actions`` and ``views`` are the ones the caller may see (``None``: none)."""
+    ``functions``, ``actions`` and ``views`` are the ones the caller may use (``None``: none);
+    ``denied`` holds the ones it sees but may not use: they are found too, marked
+    ``allowed: false`` with what is ``missing``, and rank after the allowed hits of the same
+    tier."""
     check_paging(limit, offset)
     key = search_key(text)
     if len(key.replace(" ", "")) < MIN_KEY_CHARS:
@@ -323,13 +346,19 @@ def search_model(
     index = ModuleIndex(model)
     wanted = index.filter(module)
     query = _Query(key, key.replace(" ", ""), tuple(key.split()), ":" in text)
-    hits: list[tuple[tuple[int, int, int, str], _Term, str, str]] = []
+    hits: list[tuple[tuple[int, bool, int, int, str], _Term, str, str]] = []
     terms = [
         *_terms(model, index),
         *_function_terms(functions or (), model, index),
         *_action_terms(actions or (), model, index),
         *_view_terms(views or (), model),
     ]
+    for c in (denied or Denied()).functions:
+        terms += _function_terms([c.entry], model, index, c.missing)
+    for a in (denied or Denied()).actions:
+        terms += _action_terms([a.entry], model, index, a.missing)
+    for v in (denied or Denied()).views:
+        terms += _view_terms([v.entry], model, v.missing)
     for term in terms:
         if (kinds and term.kind not in kinds) or (wanted and term.module != wanted):
             continue
@@ -339,6 +368,7 @@ def search_model(
             shown = search_key(term.curie) if field == "curie" else _name_key(term.name)
             rank = (
                 tier,
+                bool(term.missing),
                 len(shown.replace(" ", "")),
                 SEARCH_TERM_KINDS.index(term.kind),
                 term.curie,
@@ -354,6 +384,11 @@ def search_model(
             "summary": term.summary,
             "deprecated": term.deprecated,
             "match": {"field": field, "how": how},
+            **(
+                {"allowed": False, "missing": [m.to_json() for m in term.missing]}
+                if term.missing
+                else {}
+            ),
         }
         for _, term, field, how in hits[offset : offset + limit]
     ]

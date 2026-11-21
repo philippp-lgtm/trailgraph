@@ -62,7 +62,11 @@ def action_catalog() -> dict[str, Any]:
 def test_the_start_block_carries_the_working_rules() -> None:
     text = skill(compiled_model("inventory"))
     first = text.split("## Is it available here?\n\n", 1)[1]
-    assert first.startswith("Load the `graph-cli` skill as well before your first `graph` command")
+    assert first.startswith(
+        "If you have not yet in this session: `graph start --json` (it refreshes"
+    )
+    assert "\n\nLoad the `graph-cli` skill as well before your first `graph` command" in first
+    assert "by `graph start` or `graph graphs --json`" in first
     for rule in (
         "plain command that starts with `graph` and passes `--json`",
         "`error.hint` is the command to run next",

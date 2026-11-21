@@ -28,8 +28,11 @@ linking and reading files; fixed text) and `references/history.md`
 (earlier revisions and states; fixed text). The renderer reads nothing but
 that document. Its write step sends an agent
 to a named action first (`graph describe search <value> --kind action` or the graph skill's
-list, then `graph do <action> --dry-run`, then without) and to the primitives only when none
-fits. The frontmatter `metadata` carries the
+featured ones, then `graph do <action> --dry-run`, then without) and to the primitives only when none
+fits. Its description ends with the sentence "Run `graph start` once per session before
+loading this or any graph skill", the first step of its workflow is `graph start`
+([Starting a session](cli_graph.md#starting-a-session)), and its error guidance names
+`graph start` for `skills.outdated` and `skills.stale`. The frontmatter `metadata` carries the
 inventory hash and program version. How to regenerate it and what the
 tests check: [`CONTRIBUTING.md`](../CONTRIBUTING.md#generated-files).
 
@@ -57,6 +60,19 @@ function and action catalogs. Which blocks there are, what each renders and
 how to use them in a template is the catalog of the [`authoring-graph-skills`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-skills/SKILL.md#the-template)
 admin skill, the one home of the authoring rules. Here is what holds for
 all of them. Each block may be used once; an unknown block name is refused.
+The renderer appends the sentence "Run `graph start` first and load graph-cli with it." to the
+description of a generated skill that does not mention `graph start` yet, so an agent that
+chooses the skill by its description is sent to the first call of a session. The description
+may have 1,024 characters; when the sentence would pass that, it is left out (the render is
+never refused for it) and `graph-admin` warns at render, publish and push
+(`admin.skill_over_budget`, naming the length of the description): shorten the description
+or write the sentence into it. A description wrapped over several lines as a plain or
+quoted scalar is left as written too (the sentence is not added and `graph-admin` warns the
+same way: write the description on one line or the sentence into it); folded and
+literal block scalars take it as one more line. A `static` skill is installed as it is, so it
+gets nothing.
+The `start` block opens with "If you have not yet in this session: `graph start --json`".
+
 Every generated skill also gets `references/model.md` (every type of the
 model, imported ones included, with all fields, lifecycles, relations and
 rules), so a template may not contain a file of that name. A stamp after
@@ -79,30 +95,29 @@ generated skill reads the model module by module instead of in one piece:
   every type with its module and page. Fields, lifecycles and rules stay
   with `graph describe type`.
 
-A graph with published functions ([Functions](cli_graph.md#functions)) gets
-more, generated from its compiled catalog (deprecated functions are left
-out everywhere); a graph without any gets none of this:
+A graph with published functions ([Functions](cli_graph.md#functions)) or actions
+([Actions](cli_graph.md#actions)) gets a little generated text from its compiled
+catalogs, and no list or count of them (deprecated entries are left out):
 
-- the `modules` block gets a `Functions` column with the number of active
-  functions of each module;
-- every module page gets a `Functions` section: a table of name, parameters
-  (the signature of `graph describe functions`) and summary, and how to run
-  one;
-- a single-module graph, which has no module pages, gets
-  `references/functions.md` with the same table. A template may not contain
-  that file either.
+- the `functions` and `actions` blocks list the entries the maintainer marked
+  `featured` (at most 12 functions and 8 actions, by module then name, a signature
+  and a summary each) and the commands to run, list, search and describe the rest;
+- the `modules` block and every module page name `graph describe module <module>`
+  for the functions and actions of a module, in one line each, when the graph has
+  any;
+- nothing else: no count, no per-module column or section, no
+  `references/functions.md` or `references/actions.md` (both names stay reserved:
+  a template may not contain them). Lists and counts come from the tool at the
+  point of use ([`graph start`](cli_graph.md#starting-a-session) and the
+  `describe` commands).
 
-A graph with published actions ([Actions](cli_graph.md#actions)) gets the
-same, next to the functions (deprecated actions are left out as well):
+So a function, action or view that is published, changed, deprecated or removed
+without being featured leaves every rendered file as it was, and installed copies
+stay `fresh`. Featuring or unfeaturing one, or the first or last entry of a kind,
+changes the render and makes them `stale` (see [Stale skills](#stale-skills)).
 
-- the `modules` block gets an `Actions` column after `Functions`;
-- every module page gets an `Actions` section: a table of name, parameters
-  and summary, and the dry-run rule;
-- a single-module graph gets `references/actions.md`. The name is reserved
-  in every template, so a template may not contain that file either.
-
-Only the actions the installing reader may run are listed (the `describe`
-commands apply the same rule, [Access control](access_control.md#actions)),
+Only the featured actions the installing reader may run are listed (an action it may
+not run is counted by `graph start` as not allowed, [Access control](access_control.md#actions)),
 so a reader who may run none gets the skill of a graph without actions.
 `graph-admin` renders and publishes with the whole catalog, so the preview
 and the name check know every action.
@@ -119,8 +134,8 @@ and what exceeding them does are in the [skill](../packages/graph_cli_admin/src/
 
 A generated graph skill is rendered for the reader who installs or checks it.
 For a reader with [read limits](access_control.md#read-limits) the model blocks
-and pages (`modules`, `types`, `relations`, the references), the functions and
-the actions are rendered from what that reader sees: no hidden type, relation,
+and pages (`modules`, `types`, `relations`, the references), the featured functions and
+the featured actions are rendered from what that reader sees: no hidden type, relation,
 field, function or action is named, and a module with nothing left is gone. A
 reader without limits gets the whole skill. The claim of an installed
 copy records which set of types and which fields it was rendered for when the
@@ -129,6 +144,17 @@ a [marking](access_control.md#markings) grant) or a release that marks another
 field makes the copy `stale` (see [Stale skills](#stale-skills)) and `graph
 skills install` renders it again. A marking change on a type the reader does
 not see leaves the claim alone.
+
+The featured functions are listed only to a reader who may `read.function`: a reader
+without it gets one line saying that functions are not for this token, and no name
+(when it sees at least one function: a reader whose read limits hide them all gets the
+skill of a graph without functions, with or without the right). The
+digest of what the render shows of the catalogs (see [Stale skills](#stale-skills)) is the
+stored one of the whole catalog for a reader without read limits, with every marking and with
+`read.function`. For any other reader it is computed from exactly the documents its render
+uses, so a featured entry it cannot see changes nothing for its copy (it stays `fresh`, and
+no digest of hidden content appears in a warning), a featured entry it sees makes it stale,
+and a change of its rights that changes the render does too.
 
 A field that carries [markings](access_control.md#markings) is listed only for
 a reader who holds all of them, and then with a short mark naming them (`marked
@@ -273,17 +299,33 @@ first checks the installed copies an agent may load: those in
 program's, a graph skill when the graph published another skill since or,
 for a generated one, when the graph's ontology pin moved or, for a reader with
 read limits or without some marking, when the set of types or fields the reader
-sees changed. A new function
-catalog changes the render of a generated skill, so `graph skills check`
-reports the installed copy as `stale` and `graph skills install` refreshes
-it; the commands above do not notice a catalog-only change.
+sees changed. A copy of a generated skill also records what its render showed of the catalogs: a
+digest of the featured function and action lines and of whether the graph has functions,
+actions and views (`source.featured` of the marker, `featured=` in the claims header).
+The digest of the published catalogs is derived when a catalog is published and stored
+in its `slot.json`; so a catalog change that is not about a featured entry (and not the
+first or last entry of a kind) leaves every copy `fresh`, and one that is makes it
+`stale` on the next command, `skills.stale` for a read and `skills.outdated` for a write.
+A copy installed before the digest was recorded has none and is not judged on it by
+the commands; `graph skills check` reports it `stale` (it also compares what the marker
+says the copy was rendered from, not the program version) and `graph start` refreshes it.
+For a reader without read limits (and with `read.function`) the digest covers the whole
+published catalog, so a featured action that reader may not run still moves it (its copy is then
+refreshed to the same files). It judges freshness only and is not access
+control: nothing checks the stored value against the catalog it came from, and a claim
+may carry any digest or none.
 
 - A write (`--dry-run` included) is refused with `skills.outdated` (exit 1);
-  the hint is `graph self update` (with `--dir` for a project's copy),
-  which refreshes the copies.
+  the hint is `graph start` (with `--dir` for a project's copy), which refreshes
+  the copies; `graph self update` is for a program that is not the server's build. In the
+  remote mode against a server of another build the first `graph start` only reports the
+  copies and names `graph self update` (two steps: the update installs the build and renders
+  the copies again).
 - A read runs and warns `skills.stale`, naming the same command.
-- Meta commands (`whoami`, `describe commands`, `skills ...`) are never
-  checked: they are how a stale copy is found and refreshed.
+- Meta commands (`whoami`, `describe commands`, `start`, `skills ...`) are never
+  checked: they are how a stale copy is found and refreshed. `graph start` refreshes the
+  stale copies of the scopes that have a skill of this program (as `graph self update`,
+  without replacing the program) and reports each; `graph start --check` only reports.
 - Without an installed skill nothing is checked (a person at a shell).
 
 The details list each stale copy (`skill`, `kind`, `scope`, what it was

@@ -2693,6 +2693,15 @@
                     "additionalProperties": {
                       "type": "integer"
                     }
+                  },
+                  "description_chars": {
+                    "type": "integer"
+                  },
+                  "description_gap": {
+                    "type": "string"
+                  },
+                  "start_sentence": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -5149,6 +5158,32 @@
               "errors"
             ]
           },
+          "sessions": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer"
+              },
+              "first_start": {
+                "type": "integer"
+              },
+              "first_start_share": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "count",
+              "first_start",
+              "first_start_share"
+            ]
+          },
           "graphs": {
             "type": "array",
             "items": {
@@ -5495,6 +5530,7 @@
           "access_log",
           "skipped_lines",
           "without_graph",
+          "sessions",
           "graphs"
         ]
       },

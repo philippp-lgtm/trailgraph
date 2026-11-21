@@ -31,6 +31,7 @@ from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry, KineticSlo
 from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite, Snapshot
 from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import EnvInfo, OntologyPin, RequestMeta, TxRecord
+from graph_cli.kernel.skill_featured import catalog_digest, kind_digest
 from graph_cli.ontology_layer.model import AttributeDef, CompiledModel
 from graph_cli.services.files import FileService, Origins
 from graph_cli.services.read import ReadService
@@ -151,6 +152,15 @@ class MemoryCatalog:
     def read_views(self, graph: GraphId, *, sources: bool = False) -> KineticSlot | None:
         slot = self.views.get(graph)
         return replace(slot, files={}) if slot is not None and not sources else slot
+
+    def skill_featured(self, graph: GraphId) -> str:
+        return catalog_digest(
+            kind_digest(
+                "functions", slot.compiled if (slot := self.functions.get(graph)) else None
+            ),
+            kind_digest("actions", slot.compiled if (slot := self.actions.get(graph)) else None),
+            kind_digest("views", slot.compiled if (slot := self.views.get(graph)) else None),
+        )
 
     def store_for(self, graph: GraphId) -> tuple[GraphStoreRead, GraphStoreWrite]:
         store = self.stores[graph]

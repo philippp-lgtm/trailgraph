@@ -349,8 +349,11 @@ def test_the_skill_of_a_reader_of_items_names_nothing_hidden() -> None:
         text = data.decode()
         for name in HIDDEN_NAMES:
             assert name not in text, (path, name)
-    everything = "".join(data.decode() for data in rendered.values())
-    assert "items_by_condition" in everything and "retire_item" in everything
+    # what this reader may use is there as the blocks, not as names: no featured entry is left for
+    # it (the featured ones name locations), and the skill lists no entry that is not featured
+    skill = rendered[SKILL_FILE].decode()
+    assert "Named functions:" in skill and "Named actions:" in skill
+    assert "items_by_condition" not in skill and "retire_item" not in skill
     for path, data in rendered.items():
         assert_golden(GOLDENS / "skills" / "inventory_limited" / path, data)
 

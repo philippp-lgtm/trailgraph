@@ -424,6 +424,12 @@ def check(
             statuses.append(SkillStatus(name, kind, "unavailable", {"reason": "unknown"}))
         elif found.integrity == "legacy" or dict(found.files) != dict(skill.files):
             statuses.append(SkillStatus(name, kind, "stale"))
+        elif found.marker is not None and dict(found.marker.source) != dict(skill.marker.source):
+            # what it was rendered from moved without moving its files (for example the featured
+            # digest of a reader's hidden part, or a marker from before it was recorded): the
+            # freshness check of every command says stale, so this does too. Not the whole
+            # marker: it names the program version, which does not make a copy stale.
+            statuses.append(SkillStatus(name, kind, "stale"))
         else:
             statuses.append(SkillStatus(name, kind, "fresh"))
     return statuses

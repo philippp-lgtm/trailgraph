@@ -1,37 +1,37 @@
-"""The ``functions`` and ``actions`` blocks and the pages that list the catalogs.
+"""The ``functions`` and ``actions`` blocks.
 
 - ``functions``: up to ``FEATURED_LIMIT`` of the graph's named functions, the ones the
   maintainer marked ``featured`` (by module, then name), one line each (``name(signature)``:
-  summary), and the commands to list a module's functions and to search them. Without
-  published functions it is one line saying so.
+  summary), and the commands to run, list and search them. Without published functions it is one
+  line saying so.
 - ``actions``: up to ``ACTIONS_FEATURED_LIMIT`` of the actions the reader may run, the ones the
   maintainer marked ``featured`` (by module, then name), one line each (``name(signature)``:
   summary), the commands to list a module's actions and to search them, and the rule to dry
   run first. Without published actions it is one line saying so.
 
-The compiled function catalog (``graph_cli.functions/1``, the key ``functions`` of the model
-documents) is one more input document; the renderer reads only its public shape and never
-imports ``graph_cli.kinetic``. A graph without active functions renders exactly as before.
-With some, the ``modules`` block and the module pages (module ``modules``) get a ``Functions``
-column and section, and a single-module graph the page ``references/functions.md``
-(deprecated functions are left out everywhere).
+No count, list per module or file leaves the catalogs into the skill: a function, action or
+view that is published, changed or removed does not change the render unless it is (or stops
+being) featured; lists and counts come from the tool at the point of use (``graph start``,
+``graph describe``). What the render takes from the catalogs is the featured lines and whether
+the graph has functions, actions and views at all, which is what the ``featured`` digest of the
+claim covers (``kernel.skill_featured``). ``references/functions.md`` and
+``references/actions.md`` are no longer generated; their names stay reserved for templates.
 
-The compiled action catalog (``graph_cli.action_catalog/1``, the key ``actions``) is one more
-input document, present only when the graph has actions the reader may see; it is rendered
-the same way: an ``Actions`` column and section in the ``modules`` block and the module
-pages, and ``references/actions.md`` for a single-module graph. A graph without active
-actions renders exactly as before.
+The compiled function catalog (``graph_cli.functions/1``, the key ``functions`` of the model
+documents) and the compiled action catalog (``graph_cli.action_catalog/1``, the key ``actions``,
+present only when the graph has actions the reader may see) are input documents; the renderer
+reads only their public shape and never imports ``graph_cli.kinetic``. A graph without active
+functions or actions has no such lines.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonObject
 from graph_cli.kernel.json_access import as_object, opt_str, req_list, req_str
 from graph_cli.skills.graph_skill.model import Model
-from graph_cli.skills.graph_skill.pieces import code, md_table, plain
+from graph_cli.skills.graph_skill.pieces import code, plain
 
 FEATURED_LIMIT: Final = 12  # functions listed in ``SKILL.md``, however many a graph has
 ACTIONS_FEATURED_LIMIT: Final = 8  # actions listed in ``SKILL.md``, however many a graph has
@@ -62,12 +62,17 @@ def _function_line(function: JsonObject) -> str:
 
 def render_functions(doc: Model) -> list[str]:
     """Level 0: a few featured functions and how to find the rest (K12)."""
+    if doc.functions_withheld:
+        return [
+            "This token may not run named functions in this graph (`read.function`): do not"
+            " look for one or write a query instead; tell the user what you cannot do."
+        ]
     if not doc.functions:
         return ["This graph has no published functions."]
     name = doc.name
     featured = [f for f in doc.functions if f.get("featured") is True][:FEATURED_LIMIT]
     lines = [
-        f"{len(doc.functions)} named functions; for a question use one before you write a query:"
+        "Named functions: for a question use one before you write a query:"
         f" `graph run <function> --param <name>=<value> --graph {name} --json`.",
     ]
     if featured:
@@ -79,51 +84,6 @@ def render_functions(doc: Model) -> list[str]:
         f" `graph describe function <function> --graph {name}`.",
     ]
     return lines
-
-
-def _function_table(functions: Sequence[JsonObject]) -> list[str]:
-    return md_table(
-        ["Function", "Parameters", "Summary"],
-        [
-            [code(req_str(f, "name")), _signature(f) or "none", plain(opt_str(f, "summary"))]
-            for f in functions
-        ],
-    )
-
-
-def _function_hint(doc: Model) -> list[str]:
-    return [
-        "",
-        f"Run one with `graph run <function> --param <name>=<value> --graph {doc.name} --json`;"
-        f" `graph describe function <function> --graph {doc.name}` gives its columns and when to"
-        " use it.",
-    ]
-
-
-def functions_file(doc: Model, stamp: str) -> str:
-    """``references/functions.md`` of a single-module graph."""
-    lines = [
-        stamp,
-        "",
-        f"# Functions of graph `{doc.name}`",
-        "",
-        f"Ontology `{doc.bundle}` {doc.version}. The live source is `graph describe functions"
-        f" --graph {doc.name} --json`; it wins when they differ.",
-        "",
-        *_function_table(doc.functions),
-        *_function_hint(doc),
-    ]
-    return "\n".join(lines) + "\n"
-
-
-def module_functions(doc: Model, module_id: str) -> list[str]:
-    """The ``Functions`` section of a module page (none for a graph without functions)."""
-    if not doc.functions:
-        return []
-    own = [f for f in doc.functions if opt_str(f, "module") == module_id]
-    if not own:
-        return ["", "## Functions", "", "None."]
-    return ["", "## Functions", "", *_function_table(own), *_function_hint(doc)]
 
 
 def _action_summary(action: JsonObject) -> str:
@@ -144,7 +104,7 @@ def render_actions(doc: Model) -> list[str]:
     name = doc.name
     featured = [a for a in doc.actions if a.get("featured") is True][:ACTIONS_FEATURED_LIMIT]
     lines = [
-        f"{len(doc.actions)} named actions; for a change use one before you write with the"
+        "Named actions: for a change use one before you write with the"
         f" primitives. Dry run first: `graph do <action> --param <name>=<value> --graph {name}"
         " --dry-run`, read what it will change, then run it without `--dry-run`.",
     ]
@@ -159,46 +119,3 @@ def render_actions(doc: Model) -> list[str]:
         " each applies and what blocks it.",
     ]
     return lines
-
-
-def _action_table(actions: Sequence[JsonObject]) -> list[str]:
-    return md_table(
-        ["Action", "Parameters", "Summary"],
-        [[code(req_str(a, "name")), _signature(a) or "none", _action_summary(a)] for a in actions],
-    )
-
-
-def _action_hint(doc: Model) -> list[str]:
-    return [
-        "",
-        f"Dry run first: `graph do <action> --param <name>=<value> --graph {doc.name}"
-        " --dry-run`, read what it will change, then run it without `--dry-run`;"
-        f" `graph describe action <action> --graph {doc.name}` gives its preconditions and when"
-        " to use it.",
-    ]
-
-
-def actions_file(doc: Model, stamp: str) -> str:
-    """``references/actions.md`` of a single-module graph."""
-    lines = [
-        stamp,
-        "",
-        f"# Actions of graph `{doc.name}`",
-        "",
-        f"Ontology `{doc.bundle}` {doc.version}. The live source is `graph describe actions"
-        f" --graph {doc.name} --json`; it wins when they differ.",
-        "",
-        *_action_table(doc.actions),
-        *_action_hint(doc),
-    ]
-    return "\n".join(lines) + "\n"
-
-
-def module_actions(doc: Model, module_id: str) -> list[str]:
-    """The ``Actions`` section of a module page (none for a graph without actions)."""
-    if not doc.actions:
-        return []
-    own = [a for a in doc.actions if opt_str(a, "module") == module_id]
-    if not own:
-        return ["", "## Actions", "", "None."]
-    return ["", "## Actions", "", *_action_table(own), *_action_hint(doc)]

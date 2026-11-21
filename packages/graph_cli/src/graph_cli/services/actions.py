@@ -29,6 +29,7 @@ from graph_cli.kinetic.action_entries import find_action
 from graph_cli.kinetic.entries import seen_replacement
 from graph_cli.kinetic.expand import check_reason
 from graph_cli.kinetic.params import bind_cli, json_value
+from graph_cli.services.catalog_access import allowed_entries
 from graph_cli.services.models import ModelCache
 from graph_cli.services.read import ReadService
 from graph_cli.services.refs import entity_params
@@ -78,8 +79,18 @@ class ActionService:
             request = RequestMeta.of("do", {"graph": entry.name})
             raise self._reader.refuse_hidden(actor, entry, entry.name, request)
         published = self._reader.published_actions(entry)
-        visible = () if published is None else self._reader.visible_actions(actor, entry, published)
-        action = find_action(visible, name)
+        classified = (
+            () if published is None else self._reader.classified_actions(actor, entry, published)
+        )
+        visible = allowed_entries(classified)
+        # an action the caller sees but may not run is a recorded denial, not a missing one
+        for item in classified:
+            if item.entry.name == name and not item.allowed:
+                request = RequestMeta.of("do", {"graph": entry.name, "action": name})
+                raise self._reader.refuse_not_allowed(actor, entry, item, request)
+        # a name the caller sees but may not run was refused above: what is found here is allowed,
+        # and the suggestions of a name that is none are over everything the caller sees
+        action = find_action([c.entry for c in classified], name)
         assert published is not None
         model = self._models.load(entry)
         problem = self._reader.action_problem(entry, published, model, name)

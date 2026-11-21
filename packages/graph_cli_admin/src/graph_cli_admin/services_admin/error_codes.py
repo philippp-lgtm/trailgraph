@@ -113,7 +113,12 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ),
     ErrorSpec("admin.verify_not_recorded", _C.WARNING, False, "The verification was not audited."),
     ErrorSpec("admin.alias_prefix_taken", _C.WARNING, False, "A new type gets no alias prefix."),
-    ErrorSpec("admin.skill_over_budget", _C.WARNING, False, "A graph skill is over its budget."),
+    ErrorSpec(
+        "admin.skill_over_budget",
+        _C.WARNING,
+        False,
+        "A graph skill is over its budget, or its description leaves no room for graph start.",
+    ),
     ErrorSpec(
         "admin.module_bump_insufficient",
         _C.WARNING,

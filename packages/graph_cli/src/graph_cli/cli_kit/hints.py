@@ -203,6 +203,16 @@ def _update(details: Mapping[str, JsonValue], program: str) -> str | None:
     return " ".join(words)
 
 
+def _start(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Refresh the installed skills (not the program): ``graph start``, with ``--dir`` for a
+    project's copies. A different program build is for ``graph self update`` (``_update``)."""
+    words = [program, "start"]
+    target = details.get("dir")
+    if isinstance(target, str):
+        words += ["--dir", shlex.quote(target)]
+    return " ".join(words)
+
+
 def _manual_install(details: Mapping[str, JsonValue], program: str) -> str | None:
     """A program ``update`` cannot replace: the install command it named, if any."""
     command = details.get("command")
@@ -417,7 +427,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "skills.source_missing": _publish,
     "skills.source_invalid": None,
     "skills.check_failed": _refresh,
-    "skills.outdated": _update,
+    "skills.outdated": _start,
     "file.unreadable": None,
     "file.too_large": None,
     "file.module_missing": None,

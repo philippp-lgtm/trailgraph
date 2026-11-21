@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph",
-  "program_version": "0.28.0",
+  "program_version": "0.29.0",
   "surface": "app",
   "global_options": [
     {
@@ -540,6 +540,13 @@
           "summary": "Also list deprecated actions."
         },
         {
+          "name": "--include-not-allowed",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also list what you see but may not use, marked allowed: false with what is missing."
+        },
+        {
           "name": "--graph",
           "type": "graph_ref",
           "required": false,
@@ -792,6 +799,13 @@
           "summary": "Also list deprecated functions."
         },
         {
+          "name": "--include-not-allowed",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also list what you see but may not use, marked allowed: false with what is missing."
+        },
+        {
           "name": "--graph",
           "type": "graph_ref",
           "required": false,
@@ -925,6 +939,13 @@
       ],
       "options": [
         {
+          "name": "--include-not-allowed",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also list what you see but may not use, marked allowed: false with what is missing."
+        },
+        {
           "name": "--graph",
           "type": "graph_ref",
           "required": false,
@@ -940,6 +961,10 @@
         {
           "command": "graph describe module <module> --json",
           "summary": "The module as graph_cli.model/1."
+        },
+        {
+          "command": "graph describe module <module> --include-not-allowed",
+          "summary": "Also the functions, actions and views you see but may not use."
         }
       ],
       "errors": [
@@ -1523,6 +1548,13 @@
           "required": false,
           "repeatable": false,
           "summary": "Also list deprecated views."
+        },
+        {
+          "name": "--include-not-allowed",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also list what you see but may not use, marked allowed: false with what is missing."
         },
         {
           "name": "--graph",
@@ -3660,6 +3692,84 @@
       ],
       "limits": {},
       "remote": "client"
+    },
+    {
+      "path": [
+        "start"
+      ],
+      "kind": "meta",
+      "surface": "meta",
+      "action": null,
+      "summary": "First call of a session: what is current, the graphs you reach, what you may use.",
+      "args": [],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--check",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only report what is stale; refresh nothing."
+        },
+        {
+          "name": "--dir",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Project directory whose skills to refresh; default: the working one."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph start",
+          "summary": "Program and skills (stale copies refreshed), graphs, counts."
+        },
+        {
+          "command": "graph start --json",
+          "summary": "The same as graph_cli.start/1."
+        },
+        {
+          "command": "graph start --graph <graph>",
+          "summary": "One graph, with its modules."
+        },
+        {
+          "command": "graph start --check",
+          "summary": "Only report what is stale; change nothing."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "hooked"
     },
     {
       "path": [

@@ -114,13 +114,16 @@ class ReadAccess(ReadState):
             view,
         )
 
-    def _may(self, actor: ActorContext, entry: GraphEntry, action: str) -> bool:
-        """Whether the policy lets ``actor`` do ``action`` on the graph: a probe, nothing is
-        decided on the record."""
+    def _probe(self, actor: ActorContext, entry: GraphEntry, action: str) -> Decision:
+        """What the policy decides for ``actor`` doing ``action`` on the graph: a probe, nothing
+        is decided on the record."""
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
-            decision = authorize(actor, action, f"graph:{entry.id}", VISIBLE, policy)
-        return decision.effect == "allow"
+            return authorize(actor, action, f"graph:{entry.id}", VISIBLE, policy)
+
+    def _may(self, actor: ActorContext, entry: GraphEntry, action: str) -> bool:
+        """Whether the policy lets ``actor`` do ``action`` on the graph (``_probe``)."""
+        return self._probe(actor, entry, action).effect == "allow"
 
     def refuse_hidden(
         self, actor: ActorContext, entry: GraphEntry, ref: str, request: RequestMeta

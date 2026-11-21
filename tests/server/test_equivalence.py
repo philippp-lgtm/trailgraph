@@ -352,6 +352,7 @@ def test_local_and_remote_answers_are_equal(
         ("skills", "check"),
         ("self", "update"),  # runs skills install and check; run_skills
         ("connect",),  # sets up a client from a code: tests/cli/test_app_connect.py
+        ("start",),  # the graphs part is equal, the client part differs: test_start_remote.py
     }
     for mine, theirs in zip(normalized(actual), normalized(expected), strict=True):
         assert mine == theirs, differences(mine, theirs)
@@ -565,4 +566,4 @@ def test_installed_skills_are_judged_the_same(isolated_env: dict[str, str], tmp_
     stale = [w for _, (_, _, _, warnings) in expected for w in warnings]
     assert {w["code"] for w in stale} == {"skills.stale"}
     refused = [hint for _, (_, code, hint, _) in expected if code == "skills.outdated"]
-    assert refused == ["graph self update --dir <project>"] * 3
+    assert refused == ["graph start --dir <project>"] * 3
