@@ -384,10 +384,12 @@ skills are refreshed by `graph-admin workspace sync` or `skills install`).
 
 A client sends the graph skills installed for its agent in
 `Graph-Cli-Skills`: one item per installed copy, separated by `, `, each
-`graph=<graph id>;hash=<slot hash>[;bundle=<bundle>;version=<version>];scope=<project|user>`
-(the bundle and version of a generated skill's model). The server judges
+`graph=<graph id>;hash=<slot hash>[;bundle=<bundle>;version=<version>][;visible=<digest>][;featured=<digest>];scope=<project|user>`
+(the bundle and version of a generated skill's model, the digest of what a limited reader sees,
+the digest of what the render shows of the catalogs: the featured lines and whether the graph has
+functions, actions and views). The server judges
 the item of the graph a command selects against the graph's published
-skill and pin: a write is refused with `skills.outdated` (422), a read
+skill, pin and catalogs: a write is refused with `skills.outdated` (422), a read
 warns `skills.stale` ([Stale skills](skills.md#stale-skills)). A malformed
 item is ignored, and a client without installed skills sends no header:
 like the build check, this keeps agents consistent and is no access

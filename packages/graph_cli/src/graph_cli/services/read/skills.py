@@ -65,6 +65,13 @@ class ReadSkills(ReadCatalogs):
         the digest of the visible types, as before markings existed."""
         return self.read_view(actor, entry).digest
 
+    def skill_featured(self, entry: GraphEntry) -> str:
+        """The digest of what a generated skill shows of the graph's published catalogs
+        (``kernel.skill_featured``), recorded in the claim of an installed copy so a change of
+        the featured entries or of what the graph has makes it stale. Of the whole catalog, not
+        of this reader's part; derived, no access control."""
+        return self._catalog.skill_featured(entry.id)
+
     def _skill_documents(
         self,
         actor: ActorContext,

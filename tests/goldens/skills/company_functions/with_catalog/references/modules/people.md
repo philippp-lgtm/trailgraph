@@ -31,10 +31,4 @@ None.
 
 None.
 
-## Functions
-
-| Function | Parameters | Summary |
-|---|---|---|
-| `people_by_email_text` | text: string | People whose work email contains a text. |
-
-Run one with `graph run <function> --param <name>=<value> --graph example_graph --json`; `graph describe function <function> --graph example_graph` gives its columns and when to use it.
+Its functions and actions: `graph describe module people --graph example_graph`.

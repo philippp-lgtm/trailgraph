@@ -49,11 +49,4 @@ Ontology `company` 1.1.0. The live source is `graph describe module organization
 |---|---|---|
 | `org.team_in_department` | error | A team is part of exactly one department. |
 
-## Actions
-
-| Action | Parameters | Summary |
-|---|---|---|
-| `assign_position` | person: ref ppl:Person, position: ref org:Position, since: date | Record that a person takes over a position nobody holds, from a date. |
-| `hand_over_position` | position: ref org:Position, person: ref ppl:Person, since?: date | Replace the current holder of a position by another person, from a date. |
-
-Dry run first: `graph do <action> --param <name>=<value> --graph example_graph --dry-run`, read what it will change, then run it without `--dry-run`; `graph describe action <action> --graph example_graph` gives its preconditions and when to use it.
+Its functions and actions: `graph describe module organization --graph example_graph`.

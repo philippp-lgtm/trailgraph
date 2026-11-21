@@ -43,11 +43,4 @@ None.
 |---|---|---|
 | `org.team_in_department` | error | A team is part of exactly one department. |
 
-## Functions
-
-| Function | Parameters | Summary |
-|---|---|---|
-| `members_of_unit` | unit: ref org:OrgUnit | People holding a position in a unit or in any unit below it. |
-| `vacant_positions` | unit: ref org:OrgUnit | Positions in a unit or below it that nobody holds. |
-
-Run one with `graph run <function> --param <name>=<value> --graph example_graph --json`; `graph describe function <function> --graph example_graph` gives its columns and when to use it.
+Its functions and actions: `graph describe module organization --graph example_graph`.

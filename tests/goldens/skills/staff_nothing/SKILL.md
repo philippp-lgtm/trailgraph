@@ -29,15 +29,16 @@ The graph stores files: `graph file add <file> --graph example_graph --json` sto
 
 ## What is in it
 
-| Module | Prefix | What it holds | Types | Functions | Actions | Links to other modules |
-|---|---|---|---|---|---|---|
-| `staff` | `stf` | Employees, contractors, crews, badges and personnel files. | 6 | 1 | 1 | none |
+| Module | Prefix | What it holds | Types | Links to other modules |
+|---|---|---|---|---|
+| `staff` | `stf` | Employees, contractors, crews, badges and personnel files. | 6 | none |
 
 Built-in modules, shared by every graph: `core`, `files`.
 
 - Before you work in a module, read it: `graph describe module <module> --graph example_graph` lists its types, its relations, its links to and from other modules (with the other module named) and its rules. Read its text; `--json` is more than twice the size.
 - To find a term whose module you do not know: `graph describe search <text> --graph example_graph --json` (types, relations, fields, enum values and states).
 - For the fields, states and relations of one type: `graph describe type <type> --graph example_graph --json`.
+- The functions and actions of a module are listed by the same command, not here: `graph describe module <module> --graph example_graph`.
 
 | Type | What it is | Fields | States |
 |---|---|---|---|

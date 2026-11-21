@@ -45,10 +45,4 @@ Ontology `company` 1.1.0. The live source is `graph describe module people --gra
 | `leg.left_employee_has_no_employer` | warning | An employee who has left is employed by no legal entity. |
 | `org.left_employee_holds_no_position` | error | An employee who has left holds no position. |
 
-## Actions
-
-| Action | Parameters | Summary |
-|---|---|---|
-| `offboard_employee` | employee: ref ppl:Employee | Record that an employee has left; remove their positions and employer first. Needs `--reason`. |
-
-Dry run first: `graph do <action> --param <name>=<value> --graph example_graph --dry-run`, read what it will change, then run it without `--dry-run`; `graph describe action <action> --graph example_graph` gives its preconditions and when to use it.
+Its functions and actions: `graph describe module people --graph example_graph`.

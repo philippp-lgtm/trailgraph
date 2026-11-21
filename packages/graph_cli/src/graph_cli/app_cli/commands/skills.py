@@ -137,13 +137,14 @@ def graph_skill(ctx: AppContext, entry: GraphEntry, warnings: list[WarningRecord
     warning = sources.behind_ontology(entry, slot)
     if warning is not None:
         warnings.append(warning)
-    model, inventory, names, digest = None, None, None, None
+    model, inventory, names, digest, featured = None, None, None, None, None
     if slot.kind == GENERATED:
         model, model_warnings = ctx.reader.skill_model(ctx.actor, entry, request)
         warnings += model_warnings
         inventory = app_inventory()
         names = ctx.reader.skill_names_model(ctx.actor, entry, request)
         digest = ctx.reader.skill_digest(ctx.actor, entry)
+        featured = ctx.reader.skill_featured(entry)
     skill, found = sources.graph_skill(
         entry,
         slot,
@@ -152,6 +153,7 @@ def graph_skill(ctx: AppContext, entry: GraphEntry, warnings: list[WarningRecord
         inventory,
         names,
         digest,
+        featured,
     )
     warnings += found
     return skill

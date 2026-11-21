@@ -79,27 +79,26 @@ generated skill reads the model module by module instead of in one piece:
   every type with its module and page. Fields, lifecycles and rules stay
   with `graph describe type`.
 
-A graph with published functions ([Functions](cli_graph.md#functions)) gets
-more, generated from its compiled catalog (deprecated functions are left
-out everywhere); a graph without any gets none of this:
+A graph with published functions ([Functions](cli_graph.md#functions)) or actions
+([Actions](cli_graph.md#actions)) gets a little generated text from its compiled
+catalogs, and no list or count of them (deprecated entries are left out):
 
-- the `modules` block gets a `Functions` column with the number of active
-  functions of each module;
-- every module page gets a `Functions` section: a table of name, parameters
-  (the signature of `graph describe functions`) and summary, and how to run
-  one;
-- a single-module graph, which has no module pages, gets
-  `references/functions.md` with the same table. A template may not contain
-  that file either.
+- the `functions` and `actions` blocks list the entries the maintainer marked
+  `featured` (at most 12 functions and 8 actions, by module then name, a signature
+  and a summary each) and the commands to run, list, search and describe the rest;
+- the `modules` block and every module page name `graph describe module <module>`
+  for the functions and actions of a module, in one line each, when the graph has
+  any;
+- nothing else: no count, no per-module column or section, no
+  `references/functions.md` or `references/actions.md` (both names stay reserved:
+  a template may not contain them). Lists and counts come from the tool at the
+  point of use ([`graph start`](cli_graph.md#starting-a-session) and the
+  `describe` commands).
 
-A graph with published actions ([Actions](cli_graph.md#actions)) gets the
-same, next to the functions (deprecated actions are left out as well):
-
-- the `modules` block gets an `Actions` column after `Functions`;
-- every module page gets an `Actions` section: a table of name, parameters
-  and summary, and the dry-run rule;
-- a single-module graph gets `references/actions.md`. The name is reserved
-  in every template, so a template may not contain that file either.
+So a function, action or view that is published, changed, deprecated or removed
+without being featured leaves every rendered file as it was, and installed copies
+stay `fresh`. Featuring or unfeaturing one, or the first or last entry of a kind,
+changes the render and makes them `stale` (see [Stale skills](#stale-skills)).
 
 Only the actions the installing reader may run are listed (the `describe`
 commands apply the same rule, [Access control](access_control.md#actions)),
@@ -119,8 +118,8 @@ and what exceeding them does are in the [skill](../packages/graph_cli_admin/src/
 
 A generated graph skill is rendered for the reader who installs or checks it.
 For a reader with [read limits](access_control.md#read-limits) the model blocks
-and pages (`modules`, `types`, `relations`, the references), the functions and
-the actions are rendered from what that reader sees: no hidden type, relation,
+and pages (`modules`, `types`, `relations`, the references), the featured functions and
+the featured actions are rendered from what that reader sees: no hidden type, relation,
 field, function or action is named, and a module with nothing left is gone. A
 reader without limits gets the whole skill. The claim of an installed
 copy records which set of types and which fields it was rendered for when the
@@ -273,10 +272,20 @@ first checks the installed copies an agent may load: those in
 program's, a graph skill when the graph published another skill since or,
 for a generated one, when the graph's ontology pin moved or, for a reader with
 read limits or without some marking, when the set of types or fields the reader
-sees changed. A new function
-catalog changes the render of a generated skill, so `graph skills check`
-reports the installed copy as `stale` and `graph skills install` refreshes
-it; the commands above do not notice a catalog-only change.
+sees changed. A copy of a generated skill also records what its render showed of the catalogs: a
+digest of the featured function and action lines and of whether the graph has functions,
+actions and views (`source.featured` of the marker, `featured=` in the claims header).
+The digest of the published catalogs is derived when a catalog is published and stored
+in its `slot.json`; so a catalog change that is not about a featured entry (and not the
+first or last entry of a kind) leaves every copy `fresh`, and one that is makes it
+`stale` on the next command, `skills.stale` for a read and `skills.outdated` for a write.
+A copy installed before the digest was recorded has none and is not judged on it by
+the commands; `graph skills check` reports it `stale` (it also compares what the marker
+says the copy was rendered from, not the program version) and `graph start` refreshes it.
+The digest covers the whole published catalog, not what one reader may see, so a featured
+action the reader may not run still moves it. It judges freshness only and is not access
+control: nothing checks the stored value against the catalog it came from, and a claim
+may carry any digest or none.
 
 - A write (`--dry-run` included) is refused with `skills.outdated` (exit 1);
   the hint is `graph self update` (with `--dir` for a project's copy),

@@ -32,26 +32,27 @@ Working with `graph`:
 
 ## Subject areas
 
-| Module | Prefix | What it holds | Types | Actions | Links to other modules |
-|---|---|---|---|---|---|
-| `company` | `co` | The company as a whole, the main module that brings its subject areas together and carries the release of the graph; it holds no terms of its own. | 0 | 0 | none |
-| `legal` | `leg` | The legal entities of the group and who owns whom, and which entity employs people or runs units; not the internal structure of the company (organization) or the people (people). | 2 | 0 | `organization` (0 out, 1 in), `people` (1 out, 1 in) |
-| `operations` | `ops` | How work gets done, the processes, the instructions and policies that govern them, the trainings roles need and the tasks people carry out; not the structure of the company (organization) or the people (people). | 5 | 1 | `organization` (4 out, 0 in), `people` (1 out, 1 in) |
-| `organization` | `org` | The structure of the company, its units, positions, roles and cost centers, and who holds a position; not the people themselves (people) or the work that is done (operations). | 6 | 2 | `legal` (1 out, 0 in), `operations` (0 out, 4 in), `people` (0 out, 1 in) |
-| `people` | `ppl` | The people the company works with, employees and externals, and the identities they use in systems; not their positions or units (organization) or their work (operations). | 4 | 1 | `legal` (1 out, 1 in), `operations` (1 out, 1 in), `organization` (1 out, 0 in) |
+| Module | Prefix | What it holds | Types | Links to other modules |
+|---|---|---|---|---|
+| `company` | `co` | The company as a whole, the main module that brings its subject areas together and carries the release of the graph; it holds no terms of its own. | 0 | none |
+| `legal` | `leg` | The legal entities of the group and who owns whom, and which entity employs people or runs units; not the internal structure of the company (organization) or the people (people). | 2 | `organization` (0 out, 1 in), `people` (1 out, 1 in) |
+| `operations` | `ops` | How work gets done, the processes, the instructions and policies that govern them, the trainings roles need and the tasks people carry out; not the structure of the company (organization) or the people (people). | 5 | `organization` (4 out, 0 in), `people` (1 out, 1 in) |
+| `organization` | `org` | The structure of the company, its units, positions, roles and cost centers, and who holds a position; not the people themselves (people) or the work that is done (operations). | 6 | `legal` (1 out, 0 in), `operations` (0 out, 4 in), `people` (0 out, 1 in) |
+| `people` | `ppl` | The people the company works with, employees and externals, and the identities they use in systems; not their positions or units (organization) or their work (operations). | 4 | `legal` (1 out, 1 in), `operations` (1 out, 1 in), `organization` (1 out, 0 in) |
 
 Built-in modules, shared by every graph: `core`.
 
 - Before you work in a module, read it: `graph describe module <module> --graph example_graph` lists its types, its relations, its links to and from other modules (with the other module named) and its rules. Read its text; `--json` is more than twice the size.
 - To find a term whose module you do not know: `graph describe search <text> --graph example_graph --json` (types, relations, fields, enum values and states).
 - For the fields, states and relations of one type: `graph describe type <type> --graph example_graph --json`.
+- The functions and actions of a module are listed by the same command, not here: `graph describe module <module> --graph example_graph`.
 - The same module views as text, and an index of every type with its module: [references/model.md](references/model.md) and the pages `references/modules/<module>.md`.
 
 ## Changes
 
 Prefer a named action over the single commands when one fits.
 
-4 named actions; for a change use one before you write with the primitives. Dry run first: `graph do <action> --param <name>=<value> --graph example_graph --dry-run`, read what it will change, then run it without `--dry-run`.
+Named actions: for a change use one before you write with the primitives. Dry run first: `graph do <action> --param <name>=<value> --graph example_graph --dry-run`, read what it will change, then run it without `--dry-run`.
 
 - `assign_position(person: ref ppl:Person, position: ref org:Position, since: date)`: Record that a person takes over a position nobody holds, from a date.
 - `hand_over_position(position: ref org:Position, person: ref ppl:Person, since?: date)`: Replace the current holder of a position by another person, from a date.

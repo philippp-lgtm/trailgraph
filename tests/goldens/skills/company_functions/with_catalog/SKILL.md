@@ -33,23 +33,24 @@ Working with `graph`:
 
 ## Subject areas
 
-| Module | Prefix | What it holds | Types | Functions | Links to other modules |
-|---|---|---|---|---|---|
-| `company` | `co` | The company as a whole, the main module that brings its subject areas together; it holds no terms of its own. | 0 | 0 | none |
-| `operations` | `ops` | How work gets done, the processes, the guidelines that govern them and the training positions need; not who is in the structure. | 3 | 3 | `organization` (2 out, 0 in), `people` (0 out, 1 in) |
-| `organization` | `org` | The structure of the company, its units, the positions in them and what they cost; not the people or the work done. | 5 | 2 | `operations` (0 out, 2 in), `people` (0 out, 1 in) |
-| `people` | `ppl` | The people the company knows, who they are and how to reach them; not their positions or units. | 1 | 1 | `operations` (1 out, 0 in), `organization` (1 out, 0 in) |
+| Module | Prefix | What it holds | Types | Links to other modules |
+|---|---|---|---|---|
+| `company` | `co` | The company as a whole, the main module that brings its subject areas together; it holds no terms of its own. | 0 | none |
+| `operations` | `ops` | How work gets done, the processes, the guidelines that govern them and the training positions need; not who is in the structure. | 3 | `organization` (2 out, 0 in), `people` (0 out, 1 in) |
+| `organization` | `org` | The structure of the company, its units, the positions in them and what they cost; not the people or the work done. | 5 | `operations` (0 out, 2 in), `people` (0 out, 1 in) |
+| `people` | `ppl` | The people the company knows, who they are and how to reach them; not their positions or units. | 1 | `operations` (1 out, 0 in), `organization` (1 out, 0 in) |
 
 Built-in modules, shared by every graph: `core`.
 
 - Before you work in a module, read it: `graph describe module <module> --graph example_graph` lists its types, its relations, its links to and from other modules (with the other module named) and its rules. Read its text; `--json` is more than twice the size.
 - To find a term whose module you do not know: `graph describe search <text> --graph example_graph --json` (types, relations, fields, enum values and states).
 - For the fields, states and relations of one type: `graph describe type <type> --graph example_graph --json`.
+- The functions and actions of a module are listed by the same command, not here: `graph describe module <module> --graph example_graph`.
 - The same module views as text, and an index of every type with its module: [references/model.md](references/model.md) and the pages `references/modules/<module>.md`.
 
 ## Functions
 
-6 named functions; for a question use one before you write a query: `graph run <function> --param <name>=<value> --graph example_graph --json`.
+Named functions: for a question use one before you write a query: `graph run <function> --param <name>=<value> --graph example_graph --json`.
 
 - `missing_required_trainings(unit: ref org:OrgUnit)`: Trainings that holders of positions in a unit have not completed yet.
 - `members_of_unit(unit: ref org:OrgUnit)`: People holding a position in a unit or in any unit below it.

@@ -156,9 +156,11 @@ def test_the_skill_is_rendered_per_token_and_carries_the_digest_of_the_visible_s
     text_b = b"".join(base64.b64decode(c) for c in full["files"].values()).decode()
     assert [name for name in HIDDEN if name in text_a] == []
     assert "items_in_location" in text_b  # (neither token writes: no action is listed)
-    assert "items_by_condition" in text_a
+    assert "Named functions:" in text_a and "items_by_condition" not in text_a  # not featured
     assert limited["source"]["visible"].startswith("sha256:")
     assert "visible" not in full["source"]
+    # what the render shows of the catalogs is the same for both: the digest covers the whole one
+    assert limited["source"]["featured"] == full["source"]["featured"]
 
 
 def read_with(server: ServerApp, token: str, claim: str) -> Any:

@@ -31,25 +31,26 @@ Working with `graph`:
 
 ## Subject areas
 
-| Module | Prefix | What it holds | Types | Functions | Actions | Links to other modules |
-|---|---|---|---|---|---|---|
-| `inventory` | `inv` | Physical items, where they are stored and how they are grouped. | 1 | 2 | 1 | none |
+| Module | Prefix | What it holds | Types | Links to other modules |
+|---|---|---|---|---|
+| `inventory` | `inv` | Physical items, where they are stored and how they are grouped. | 1 | none |
 
 Built-in modules, shared by every graph: `core`.
 
 - Before you work in a module, read it: `graph describe module <module> --graph example_graph` lists its types, its relations, its links to and from other modules (with the other module named) and its rules. Read its text; `--json` is more than twice the size.
 - To find a term whose module you do not know: `graph describe search <text> --graph example_graph --json` (types, relations, fields, enum values and states).
 - For the fields, states and relations of one type: `graph describe type <type> --graph example_graph --json`.
+- The functions and actions of a module are listed by the same command, not here: `graph describe module <module> --graph example_graph`.
 
 ## Functions
 
-2 named functions; for a question use one before you write a query: `graph run <function> --param <name>=<value> --graph example_graph --json`.
+Named functions: for a question use one before you write a query: `graph run <function> --param <name>=<value> --graph example_graph --json`.
 
 More: `graph describe functions --module <module> --graph example_graph`; find one: `graph describe search <text> --kind function --graph example_graph --json`; columns and use: `graph describe function <function> --graph example_graph`.
 
 ## Changes
 
-1 named actions; for a change use one before you write with the primitives. Dry run first: `graph do <action> --param <name>=<value> --graph example_graph --dry-run`, read what it will change, then run it without `--dry-run`.
+Named actions: for a change use one before you write with the primitives. Dry run first: `graph do <action> --param <name>=<value> --graph example_graph --dry-run`, read what it will change, then run it without `--dry-run`.
 
 More: `graph describe actions --module <module> --graph example_graph`; find one: `graph describe search <text> --kind action --graph example_graph --json`; preconditions and use: `graph describe action <action> --graph example_graph`. For an entity you already have, `graph get <id> --affordances --graph example_graph` lists the actions that fit it, whether each applies and what blocks it.
 

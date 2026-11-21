@@ -605,6 +605,39 @@ def test_installed_graph_skills_are_judged_from_the_header(
     assert [w["code"] for w in read.json["warnings"]] == ["skills.stale"]
 
 
+def test_the_featured_digest_of_a_claim_is_judged_by_the_server(
+    run_cli: CliRunner, served: tuple[ServerApp, io.StringIO], installation: dict[str, Any]
+) -> None:
+    """Graph start plan S6: a template's claim carries what its render shows of the catalogs;
+    the server compares it with its own catalogs. A claim that recorded none (an older copy) is
+    not judged on it."""
+    app, _ = served
+    template = FIXTURES / "skills" / "inventory_actions" / "graph-example-graph"
+    for kind in ("skill", "actions"):
+        folder = template if kind == "skill" else FIXTURES / "actions" / "inventory" / "valid"
+        published = admin(run_cli, "graph", kind, "publish", "example_graph", str(folder))
+        assert published.code == 0, published.envelope
+    token = installation["tokens"]["ci"]
+    pointer = {"graphs": ["example_graph"], "default": "example_graph"}
+    rendered = call(app, "POST", "/v1/graphs/example_graph/skill", token=token, body={})
+    assert rendered.status == 200, rendered.json
+    source = rendered.json["data"]["skill"]["source"]
+    graph, digest, model = source["graph"]["id"], source["hash"], source["model"]
+    claim = f"graph={graph};hash={digest};bundle={model['bundle']};version={model['version']}"
+
+    def find(item: str) -> Any:
+        body = {"args": {"--type": ["inv:Location"]}, "pointer": pointer}
+        headers = {"Graph-Cli-Skills": item}
+        return call(app, "POST", "/v1/commands/find", token=token, body=body, headers=headers)
+
+    assert find(f"{claim};featured={source['featured']};scope=user").json["warnings"] == []
+    moved = find(f"{claim};featured=sha256:{'0' * 64};scope=user")
+    assert [w["code"] for w in moved.json["warnings"]] == ["skills.stale"]
+    (entry,) = moved.json["warnings"][0]["details"]["skills"]
+    assert entry["current"]["featured"] == source["featured"]
+    assert find(f"{claim};scope=user").json["warnings"] == []  # no digest recorded: not judged
+
+
 # ---- HTTP conventions (B14.22 G7-G10) -----------------------------------------------
 
 POINTER = {"graphs": ["example_graph"], "default": "example_graph"}

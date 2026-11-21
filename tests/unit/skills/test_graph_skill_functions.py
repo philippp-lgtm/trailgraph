@@ -1,7 +1,8 @@
-"""Generated graph skills with a function catalog (plan K12): the ``functions`` block, the
-``Functions`` column of the modules table, the ``Functions`` section of module pages and
-``references/functions.md`` of a single-module graph; names checks (K12) and the unchanged
-output of a graph without functions."""
+"""Generated graph skills with a function catalog (plan K12): the ``functions`` block with its
+featured lines, one pointer to ``graph describe module`` instead of per-module counts, columns,
+sections and a functions page (graph start plan S5: a publish that is not about a featured
+function changes nothing in the render); names checks (K12) and the unchanged output of a graph
+without functions."""
 
 import re
 from typing import Any
@@ -67,16 +68,38 @@ def test_an_empty_or_deprecated_only_catalog_renders_like_none() -> None:
 
 
 def test_a_graph_without_functions_renders_as_before() -> None:
-    """The functions input changes nothing for the template of an existing graph."""
-    assert render(None, COMPANY_TEMPLATE) == render(None, COMPANY_TEMPLATE)
-    with_catalog = render(catalog(), COMPANY_TEMPLATE)
+    """The functions input changes nothing for the template of an existing graph without them."""
     without = render(None, COMPANY_TEMPLATE)
     assert "Functions" not in text(without, SKILL_FILE)
-    assert "## Functions" not in "".join(
+    assert "Its functions and actions" not in "".join(
         text(without, p) for p in without if p.startswith(MODULES_DIR)
     )
     assert FUNCTIONS_FILE not in without
-    assert "| Functions |" in text(with_catalog, SKILL_FILE)  # the column, with a catalog
+    with_catalog = render(catalog(), COMPANY_TEMPLATE)
+    assert "| Functions |" not in text(with_catalog, SKILL_FILE)  # no column, even with a catalog
+    assert "are listed by the same command, not here" in text(with_catalog, SKILL_FILE)
+
+
+def test_a_publish_that_is_not_about_a_featured_function_changes_nothing() -> None:
+    """The point of S5: new, changed, deprecated and removed functions that are not featured
+    leave every rendered file as it was; featuring one (or unfeaturing) does change it."""
+    base = render(catalog())
+    changed = catalog()
+    plain = [i for i, f in enumerate(changed["functions"]) if f.get("featured") is not True]
+    assert plain, "the fixture has a function that is not featured"
+    changed["functions"][plain[0]] = {**changed["functions"][plain[0]], "summary": "Other text."}
+    changed["functions"].append({**changed["functions"][plain[0]], "name": "one_more_function"})
+    changed["functions"].append(
+        {**changed["functions"][plain[0]], "name": "gone_function", "status": "deprecated"}
+    )
+    changed["functions"].append({**changed["functions"][plain[0]], "module": "legal"})
+    assert render(changed) == base
+    removed = catalog()
+    removed["functions"] = [f for f in removed["functions"] if f.get("featured") is True]
+    assert render(removed) == base
+    featured = catalog()
+    featured["functions"][plain[0]] = {**featured["functions"][plain[0]], "featured": True}
+    assert render(featured) != base
 
 
 def test_the_block_lists_the_featured_functions_by_module_then_name() -> None:
@@ -104,24 +127,27 @@ def test_the_block_lists_at_most_twelve() -> None:
     assert listed == [f"{i:02d}" for i in range(FEATURED_LIMIT)]
 
 
-def test_the_modules_table_counts_active_functions() -> None:
+def test_the_modules_table_has_no_function_column_and_points_to_the_module_view() -> None:
     skill = text(render(catalog()), SKILL_FILE)
-    rows = {
-        cells[1].strip(" `"): cells[5].strip()
-        for cells in (line.split("|") for line in skill.splitlines() if line.startswith("| `"))
-    }
-    assert rows == {"company": "0", "operations": "3", "organization": "2", "people": "1"}
-    assert "| Module | Prefix | What it holds | Types | Functions |" in skill
+    assert "| Module | Prefix | What it holds | Types | Links to other modules |" in skill
+    assert "Functions" not in skill.split("| Module |", 1)[1].split("\n", 1)[0]
+    assert (
+        "are listed by the same command, not here: `graph describe module <module>"
+        " --graph example_graph`."
+    ) in skill
 
 
-def test_every_module_page_gets_a_functions_section() -> None:
+def test_every_module_page_has_one_pointer_instead_of_a_functions_section() -> None:
     files = render(catalog())
     assert FUNCTIONS_FILE not in files  # a modular graph has pages instead
-    page = text(files, f"{MODULES_DIR}organization.md")
-    section = page.split("## Functions", 1)[1]
-    assert "| `members_of_unit` | unit: ref org:OrgUnit |" in section
-    assert "graph run <function> --param <name>=<value> --graph example_graph --json" in section
-    assert text(files, f"{MODULES_DIR}company.md").endswith("## Functions\n\nNone.\n")
+    for path in (p for p in files if p.startswith(MODULES_DIR)):
+        page = text(files, path)
+        module = path.removeprefix(MODULES_DIR).removesuffix(".md")
+        assert "## Functions" not in page and "members_of_unit" not in page
+        assert page.endswith(
+            f"\nIts functions and actions: `graph describe module {module}"
+            " --graph example_graph`.\n"
+        )
 
 
 def single_module_catalog() -> dict[str, Any]:
@@ -141,16 +167,14 @@ def single_module_catalog() -> dict[str, Any]:
     return {"schema": "graph_cli.functions/1", "functions": [entry]}
 
 
-def test_a_single_module_graph_gets_a_functions_page() -> None:
+def test_a_single_module_graph_gets_no_functions_page() -> None:
     model = compiled_model("inventory")
     files = read_tree(TEMPLATE)[0]
     documents, graph = render_inputs(model, functions=single_module_catalog())
     template, _ = parse_template(files)
     assert template is not None
     rendered = render_graph_skill(template, documents, graph)
-    assert sorted(rendered) == [SKILL_FILE, FUNCTIONS_FILE, MODEL_FILE]
-    page = rendered[FUNCTIONS_FILE]
-    assert "| `recent_items` | days?: integer, category: list of enum inv:Category |" in page
+    assert sorted(rendered) == [SKILL_FILE, MODEL_FILE]  # the page is no longer generated
     assert (
         "- `recent_items(days?: integer, category: list of enum inv:Category)`:"
         in (rendered[SKILL_FILE])

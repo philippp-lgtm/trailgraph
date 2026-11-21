@@ -188,6 +188,17 @@ def test_the_user_scope_never_gets_the_graph_skills_of_the_project_it_runs_in(
         ("project", "graph-example-graph", "refreshed"),
     }
     assert sorted(p.name for p in skills.iterdir()) == ["graph-cli"]
+    # a graph skill the user scope has is refreshed there, and nothing else is added
+    mine = app(run_cli, "skills", "install", "--scope", "user", "--graph", "example_graph")
+    assert mine.code == 0, mine.envelope
+    changed = tmp_skill(project.parent, "user")
+    (changed / "SKILL.md").write_text((changed / "SKILL.md").read_text() + "\nuser note\n")
+    publish(run_cli, "example_graph", "skill", changed)
+    refreshed = start(run_cli, project)
+    assert ("user", "graph-example-graph", "refreshed") in {
+        (s["scope"], s["skill"], s["state"]) for s in refreshed.data["skills"]
+    }
+    assert sorted(p.name for p in skills.iterdir()) == ["graph-cli", "graph-example-graph"]
 
 
 def test_a_copy_edited_by_hand_is_reported_and_left_alone(

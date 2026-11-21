@@ -30,19 +30,20 @@ Working with `graph`:
 
 ## Subject areas
 
-| Module | Prefix | What it holds | Types | Actions | Links to other modules |
-|---|---|---|---|---|---|
-| `inventory` | `inv` | Physical items, where they are stored and how they are grouped. | 3 | 2 | none |
+| Module | Prefix | What it holds | Types | Links to other modules |
+|---|---|---|---|---|
+| `inventory` | `inv` | Physical items, where they are stored and how they are grouped. | 3 | none |
 
 Built-in modules, shared by every graph: `core`.
 
 - Before you work in a module, read it: `graph describe module <module> --graph example_graph` lists its types, its relations, its links to and from other modules (with the other module named) and its rules. Read its text; `--json` is more than twice the size.
 - To find a term whose module you do not know: `graph describe search <text> --graph example_graph --json` (types, relations, fields, enum values and states).
 - For the fields, states and relations of one type: `graph describe type <type> --graph example_graph --json`.
+- The functions and actions of a module are listed by the same command, not here: `graph describe module <module> --graph example_graph`.
 
 ## Changes
 
-2 named actions; for a change use one before you write with the primitives. Dry run first: `graph do <action> --param <name>=<value> --graph example_graph --dry-run`, read what it will change, then run it without `--dry-run`.
+Named actions: for a change use one before you write with the primitives. Dry run first: `graph do <action> --param <name>=<value> --graph example_graph --dry-run`, read what it will change, then run it without `--dry-run`.
 
 - `move_item(item: ref inv:Item, location: ref inv:Location)`: Store an item in another location.
 

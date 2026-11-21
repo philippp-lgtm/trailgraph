@@ -239,37 +239,30 @@ def test_skill_md_does_not_grow_with_the_actions() -> None:
     model = synthetic_model(5, 10)
     small = with_block(model, actions=action_catalog(5, 10))
     large = with_block(model, actions=action_catalog(5, 19))
-    assert len(small) == len(large)  # the same eight featured, counts of equal width
-    assert b"action_04_018" not in large  # not featured: on the module page only
+    assert len(small) == len(large)  # the same eight featured
+    assert b"action_04_018" not in large  # not featured: only the tool lists it
 
 
 def test_skill_md_does_not_grow_with_the_functions() -> None:
     model = synthetic_model(5, 10)
     small = with_block(model, catalog(5, 10))
     large = with_block(model, catalog(5, 19))
-    assert len(small) == len(large)  # the same twelve featured, counts of equal width
-    assert b"function_04_018" not in large  # not featured: on the module page only
+    assert len(small) == len(large)  # the same twelve featured
+    assert b"function_04_018" not in large  # not featured: only the tool lists it
 
 
-def test_the_reference_tree_of_a_thousand_actions_fits() -> None:
-    """1,000 actions (20 modules x 50) on the pages of a model of 20 modules, as for functions.
-    Both catalogs at their limit together do not fit the tree limit (about 400 KB of 256 KB);
-    a graph in that range needs a reference page below the module pages."""
-    files = rendered(synthetic_model(20, 3), actions=action_catalog(20, 50))
-    total = sum(len(text.encode()) for text in files.values())
+def test_the_reference_tree_does_not_grow_with_a_thousand_functions_and_actions() -> None:
+    """1,000 functions and 1,000 actions (20 modules x 50 each) add nothing to the files of a
+    skill but the featured lines of ``SKILL.md`` and the pointers: no page, column or count
+    keeps them (graph start plan S5), so the tree is the size of the one of a graph with the
+    featured entries alone."""
+    model = synthetic_model(20, 3)
+    big = rendered(model, catalog(20, 50), action_catalog(20, 50))
+    small = rendered(model, catalog(20, 1, featured=0), action_catalog(20, 1, featured=0))
+    assert sorted(big) == sorted(small)  # the same files: no functions or actions page
+    total = sum(len(text.encode()) for text in big.values())
     assert total <= MAX_TOTAL_BYTES, f"{total} bytes of {MAX_TOTAL_BYTES}"
-    assert files["references/modules/area_07.md"].count("| `action_07_") == 50
-
-
-def test_the_reference_tree_of_a_thousand_functions_fits() -> None:
-    """1,000 functions with the longest summary (20 modules x 50) on the pages of a model of
-    20 modules with 3 types each. A function costs about 180 bytes on its page, so a thousand
-    take about 70 percent of the tree limit; the model pages share the rest."""
-    files = rendered(synthetic_model(20, 3), catalog(20, 50))
-    total = sum(len(text.encode()) for text in files.values())
-    assert total <= MAX_TOTAL_BYTES, f"{total} bytes of {MAX_TOTAL_BYTES}"
-    page = files["references/modules/area_07.md"]
-    assert page.count("| `function_07_") == 50
+    assert "action_07_" not in "".join(big.values()) and "function_07_" not in "".join(big.values())
 
 
 # ---- measure: every graph, and the curated text ---------------------------------------------

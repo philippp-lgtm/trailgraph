@@ -11,7 +11,8 @@ Refused (rule ``template``): an unknown block name (a newer publisher, or a
 typo), a block used twice, a line that starts like a marker but is not one,
 markers outside ``SKILL.md`` and a curated ``references/model.md``,
 ``references/functions.md``, ``references/actions.md`` or file below ``references/modules/``,
-which a generated skill gets from the model and the function and action catalogs.
+which a generated skill gets from the model (``references/functions.md`` and
+``references/actions.md`` are no longer generated; the names stay reserved).
 """
 
 from __future__ import annotations
@@ -36,8 +37,8 @@ BLOCKS: Final = (
     "actions",
 )
 MODEL_FILE: Final = "references/model.md"
-FUNCTIONS_FILE: Final = "references/functions.md"  # generated for a single-module graph
-ACTIONS_FILE: Final = "references/actions.md"  # generated for a single-module graph
+FUNCTIONS_FILE: Final = "references/functions.md"  # reserved, no longer generated
+ACTIONS_FILE: Final = "references/actions.md"  # reserved, no longer generated
 MODULES_DIR: Final = "references/modules/"  # one generated page per module of a modular graph
 MARKER_RE: Final = re.compile(r"^<!-- graph_cli:block ([a-z_]+) -->$")
 MARKER_START: Final = "<!-- graph_cli:"

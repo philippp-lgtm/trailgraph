@@ -47,10 +47,4 @@ Ontology `company` 1.1.0. The live source is `graph describe module operations -
 | `ops.policy_in_force_has_date` | error | A policy in force states from when it is binding. |
 | `ops.process_documented` | warning | Every process has at least one instruction. |
 
-## Actions
-
-| Action | Parameters | Summary |
-|---|---|---|
-| `create_task` | title: string, due?: date, assignee: ref ppl:Person | Open a task for a person, optionally with a due date. |
-
-Dry run first: `graph do <action> --param <name>=<value> --graph example_graph --dry-run`, read what it will change, then run it without `--dry-run`; `graph describe action <action> --graph example_graph` gives its preconditions and when to use it.
+Its functions and actions: `graph describe module operations --graph example_graph`.

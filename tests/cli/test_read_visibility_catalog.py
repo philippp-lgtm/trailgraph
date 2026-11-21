@@ -364,7 +364,10 @@ def test_the_skill_of_a_limited_caller_names_no_hidden_term(
         for name in HIDDEN:
             assert name not in data.decode(), (path, name)
     everything = b"".join(files.values()).decode()
-    assert "items_by_condition" in everything and "retire_item" in everything
+    # the blocks stay (the caller may use functions and actions); no entry that is not featured
+    # is listed, and the featured ones name a hidden term
+    assert "Named functions:" in everything and "Named actions:" in everything
+    assert "items_by_condition" not in everything and "retire_item" not in everything
     assert marker_source(project)["visible"].startswith("sha256:")
 
 

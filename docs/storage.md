@@ -295,8 +295,10 @@ in the graph directory.
   `skill/source.json` (`kind`, tree `hash`, `published_against`) with
   `skill/files/<hash>/`, and `functions/slot.json`
   (`graph_cli.function_slot/1`: the `hash` of the function sources,
-  `compiled_hash` and `published_against`, the ontology pin at publish
-  time) with `functions/files/<hash>/<name>.yaml` (the authored sources,
+  `compiled_hash`, `published_against`, the ontology pin at publish
+  time, and `featured`, the digest of what a graph skill shows of the catalog, derived at publish
+  so the freshness check reads no compiled catalog; a slot without it is computed once per
+  process) with `functions/files/<hash>/<name>.yaml` (the authored sources,
   read only by `graph-admin`) and `functions/compiled/<compiled hash>.json`
   (the catalog `graph_cli.functions/1`, the only part the app reads). A
   reader checks the hashes on read; a damaged functions slot is

@@ -365,7 +365,11 @@ def test_the_functions_publish_run_and_appear_in_the_skill(
     assert rendered.code == 0, rendered.envelope
     assert rendered.data["problems"] == []
     text = (out / "graph-company" / "SKILL.md").read_text()
-    assert "6 named functions" in text and "`reporting_chain(position: ref org:Position)`" in text
+    assert (
+        "Named functions:" in text
+        and "6 named functions" not in text
+        and "`reporting_chain(position: ref org:Position)`" in text
+    )
 
 
 def test_the_actions_publish_run_and_appear_in_the_skill(
@@ -416,7 +420,11 @@ def test_the_actions_publish_run_and_appear_in_the_skill(
     assert rendered.code == 0, rendered.envelope
     assert rendered.data["problems"] == []
     text = (out / "graph-company" / "SKILL.md").read_text()
-    assert "3 named actions" in text and "`offboard_employee(employee: ref ppl:Employee)`" in text
+    assert (
+        "Named actions:" in text
+        and "3 named actions" not in text
+        and "`offboard_employee(employee: ref ppl:Employee)`" in text
+    )
 
 
 def test_the_views_publish_and_answer_what_the_reads_they_replace_answer(

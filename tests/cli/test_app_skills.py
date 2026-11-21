@@ -764,11 +764,12 @@ def test_an_unknown_block_makes_the_skill_unavailable(
     assert (project / ".claude" / "skills" / "graph-example-graph" / "SKILL.md").is_file()
 
 
-def test_a_new_function_catalog_makes_the_generated_copy_stale(
+def test_a_first_function_catalog_with_featured_functions_makes_the_generated_copy_stale(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:
-    """The functions of a graph skill are rendered at install, so publishing functions
-    changes the render: ``check`` reports the copy as stale and install refreshes it."""
+    """The featured functions of a graph skill are rendered at install, so publishing the first
+    functions (some featured) changes the render: ``check`` reports the copy as stale and
+    install refreshes it. No column and no page lists the functions."""
     from support.functions import VALID
 
     template = FIXTURES / "skills" / "company_functions" / "graph-example-graph"
@@ -800,9 +801,9 @@ def test_a_new_function_catalog_makes_the_generated_copy_stale(
     assert statuses(stale) == {"graph-cli": "fresh", "graph-example-graph": "stale"}
     assert install(run_cli, *args).code == 0
     assert "`members_of_unit(unit: ref org:OrgUnit)`" in (skill / "SKILL.md").read_text()
-    assert "| Functions |" in (skill / "SKILL.md").read_text()
+    assert "| Functions |" not in (skill / "SKILL.md").read_text()
     page = (skill / "references" / "modules" / "organization.md").read_text()
-    assert "## Functions" in page and "| `members_of_unit` |" in page
+    assert "## Functions" not in page and "members_of_unit" not in page
     assert statuses(check(run_cli, project)) == {
         "graph-cli": "fresh",
         "graph-example-graph": "fresh",

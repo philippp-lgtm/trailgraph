@@ -23,16 +23,16 @@ from graph_cli.skills.tree import SKILL_FILE
 # size; the blocks of a modular graph grow with the modules only, those of a single-module
 # graph with its types (past the budget, split the model into modules). A graph with
 # functions may use ``L0_FUNCTIONS`` more for the ``functions`` block (``FEATURED_LIMIT``
-# lines of a name, a signature and a 100-character summary, two lines of pointers) and the
-# ``Functions`` column;
+# lines of a name, a signature and a 100-character summary, two lines of pointers);
 # a graph with actions another ``L0_ACTIONS`` for the ``actions`` block (``ACTIONS_FEATURED_LIMIT``
-# lines, the pointers and the dry-run rule) and the ``Actions`` column. ``L0_BUDGET``, the most
+# lines, the pointers and the dry-run rule). No count, column or list per module of either is in
+# the skill any more (``graph start`` and ``describe`` give them). ``L0_BUDGET``, the most
 # for any graph, is held by a test for 50 modules of 20 functions and 10 actions each.
 # ``graph-admin`` warns at render, publish and push when a skill exceeds the budget of its
 # graph (``measure``); it refuses nothing.
 L0_BASE: Final = 20_000
-L0_FUNCTIONS: Final = 2_500
-L0_ACTIONS: Final = 2_000
+L0_FUNCTIONS: Final = 2_400
+L0_ACTIONS: Final = 1_950
 L0_BUDGET: Final = L0_BASE + L0_FUNCTIONS + L0_ACTIONS
 # The curated text of ``SKILL.md`` (outside the frontmatter and the block markers): when to
 # use the graph and the rules no schema says. Workflow detail and more recipes go into

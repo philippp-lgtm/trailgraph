@@ -303,6 +303,14 @@ def publish_skill(run_cli: CliRunner, tmp_path: Path) -> None:
     folder = tmp_path / "skill" / "graph-example-graph"
     shutil.rmtree(folder.parent, ignore_errors=True)
     shutil.copytree(SKILL, folder)
+    # the blocks that list the featured entries: all of this graph's are featured, so a name a
+    # caller must not see would show in them
+    skill = folder / "SKILL.md"
+    skill.write_text(
+        skill.read_text()
+        + "\n## Functions\n\n<!-- graph_cli:block functions -->\n"
+        + "\n## Changes\n\n<!-- graph_cli:block actions -->\n"
+    )
     published = admin(run_cli, "graph", "skill", "publish", "example_graph", str(folder))
     assert published.code == 0, published.envelope
 

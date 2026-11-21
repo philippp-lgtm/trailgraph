@@ -508,6 +508,7 @@ class AppServices:
         pointer: PointerFile | None,
         warnings: list[WarningRecord],
         visible: Callable[[GraphEntry], str | None],
+        featured: Callable[[GraphEntry], str | None],
     ) -> SkillGate | None:
         if kind not in ("read", "write"):
             return None
@@ -519,10 +520,13 @@ class AppServices:
                 warnings,
                 pointer.path.parent if pointer is not None else None,
                 visible,
+                featured,
             )
         shown = request.pointer.path if request.pointer is not None else None
         project = shown.parent if shown is not None and shown.name == POINTER_NAME else None
-        return SkillGate(lambda: request.claims, kind == "write", warnings, project, visible)
+        return SkillGate(
+            lambda: request.claims, kind == "write", warnings, project, visible, featured
+        )
 
     def _build(
         self, command: str, kind: str | None, command_warnings: list[WarningRecord]
@@ -598,7 +602,11 @@ class AppServices:
             graph_env=self.env.get(GRAPH_ENV) or None if request is None else request.graph_env,
             command=command,
             gate=self._gate(
-                kind, pointer, command_warnings, lambda entry: reader.skill_digest(actor, entry)
+                kind,
+                pointer,
+                command_warnings,
+                lambda entry: reader.skill_digest(actor, entry),
+                reader.skill_featured,
             ),
         )
         unknown = project_warning(actor, policy.current(None))  # fails closed on a bad policy

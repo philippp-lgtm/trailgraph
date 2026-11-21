@@ -28,14 +28,14 @@ generated from the graph's model:
 | Block | Renders |
 | --- | --- |
 | `start` | to load the `graph-cli` skill first; how to tell the graph is available here and which name to pass as `--graph`; the graph language; the rules of working with `graph` that hold from the first call, so the skill works even when an agent loads it alone; one clause that the graph has views (`graph describe views`) when it has some the reader can call. Do not repeat them in the curated text |
-| `modules` | for a graph with several modules: one row per subject area (module, prefix, summary, size, links to other modules) and the commands to read one module; replaces `types` and `relations` |
+| `modules` | for a graph with several modules: one row per subject area (module, prefix, summary, number of types, links to other modules), the commands to read one module and, when the graph has functions or actions, one line that `graph describe module` lists a module's functions and actions; replaces `types` and `relations` |
 | `types` | one row per entity type: name, alias example, summary, supertypes, fields (enum values inline, `required`, `many`, `unique`, write-once, defaults, their name roles), states and transitions |
 | `relations` | relations from or to those types, each with its `graph query` pattern, cardinality, characteristics and qualifiers (inverse labels, which no command takes, only in `references/model.md`) |
 | `constraints` | transition guards and rules with severity (write-once fields too when the template has no `types`) |
 | `names` | the alias format and which fields `graph lookup` matches; next to `types` a pointer to the name roles marked there; on a modular graph one example and pointers, not every type. Tells agents to use a candidate only on exactly one exact match, else to ask |
 | `model` | a pointer to `references/model.md`, the full model, written for every generated skill |
-| `functions` | the graph's named functions: their number, at most 12 of them (the ones marked `featured: true` in their file, by module then name) with signature and summary, and the commands to run, list and search them (further functions are not listed and nothing warns about them); one line saying so when there are none |
-| `actions` | the graph's named write actions: their number, at most 8 of them (the ones marked `featured: true` in their file, by module then name, that the reader may run: an action is left out when a write it needs is not allowed to the actor that installs or renders the skill) as `name(signature)` with summary (`?` marks an optional parameter, "Needs `--reason`" an action with `reason: required`), the rule to dry run first (`graph do <action> --param <name>=<value> --dry-run`) and the commands to list, search and describe them; one line saying so when there are none |
+| `functions` | the graph's named functions: at most 12 of them (the ones marked `featured: true` in their file, by module then name) with signature and summary, and the commands to run, list and search them (further functions are not listed and nothing warns about them); one line saying so when there are none |
+| `actions` | the graph's named write actions: at most 8 of them (the ones marked `featured: true` in their file, by module then name, that the reader may run: an action is left out when a write it needs is not allowed to the actor that installs or renders the skill) as `name(signature)` with summary (`?` marks an optional parameter, "Needs `--reason`" an action with `reason: required`), the rule to dry run first (`graph do <action> --param <name>=<value> --dry-run`) and the commands to list, search and describe them; one line saying so when there are none |
 
 Each block at most once. Put `functions` where agents decide how to answer
 a question, after the model and before the recipes, and `actions` next to
@@ -48,19 +48,16 @@ action. Without any marker the skill is `static`: it is
 installed as it is and goes stale with every ontology release, so use
 markers. Never write a file `references/model.md` yourself.
 
-A graph with published functions also gets generated text without any
-block: the `modules` block gets a `Functions` column (the number of active
-functions per module), every module page a `Functions` section, and a
-single-module graph a file `references/functions.md`. Never write a file of
-that name yourself; it is refused like `references/model.md`. A graph
-without functions renders as it did before.
-
-Published actions add the same kind of generated text: an `Actions` column
-in the `modules` block, an `Actions` section on every module page and, for
-a single-module graph, `references/actions.md` (never write that file
-yourself; it is reserved in every template). They appear only when the
-graph has actions the installing reader may run, so a graph without actions
-renders exactly as before.
+No count, list or page of functions, actions or views is generated into the
+skill: a module page ends with one line pointing to `graph describe module`,
+and `references/functions.md` and `references/actions.md` are not written any
+more (both names stay reserved: a file of that name in a template is refused,
+like `references/model.md`). So publishing, changing, deprecating or removing
+a function, action or view that is not `featured` leaves every installed
+skill as current as it was; only a change to a featured entry (or the first
+or last function, action or view of the graph) makes installed copies stale.
+The skill lists only the featured entries; everything else is found with
+`graph start` and `graph describe search`.
 
 ### Modular graphs
 
@@ -147,8 +144,8 @@ The blocks already say what the model says. Write what it cannot:
    for a longer recipe list. More go into `references/recipes.md`, linked
    from `SKILL.md`.
 4. **Keep it short.** Every generated skill has a budget: `SKILL.md` after
-   rendering at most 20,000 bytes (2,500 more with published functions,
-   2,000 more with actions), and the curated text of `SKILL.md` at most
+   rendering at most 20,000 bytes (2,400 more with published functions,
+   1,950 more with actions), and the curated text of `SKILL.md` at most
    6,000 bytes. `SKILL.md` is read in full every time the skill loads, so
    keep there only what holds for every request: when to use the graph,
    its scope, and the rules no schema says. Rules for one recurring job

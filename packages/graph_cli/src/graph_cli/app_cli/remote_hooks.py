@@ -340,7 +340,9 @@ def start_hook(
 ) -> Result:
     """The graphs and what the token may use come from the server; the program and the skills
     are judged and refreshed here (``--check`` and ``--dir`` stay on this side). The text is
-    rendered here from the merged answer."""
+    rendered here from the merged answer. ``--check`` and a program that differs from the
+    server's build share one path (``holds_back``: the skills are only reported), so a change
+    to one is made for both."""
     from graph_cli.app_cli.commands.start import client_part, holds_back, render
 
     sent = {key: value for key, value in args.items() if key == "--graph"}
