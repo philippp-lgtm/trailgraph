@@ -944,10 +944,9 @@ A function, action or view is one of three things for a caller (the rules are in
 Lists and counts say what you may use. A list adds `not_allowed`, the number of entries you see but
 may not use, when there are any, and `--include-not-allowed` (on `describe functions`, `actions`,
 `views` and `module`) lists them after the others. `describe search` and `describe function|action|view
-NAME` show such an entry marked `allowed: false` with `missing`, the rights you lack
-(`{"action": "write.create", "resource": "type:ex:Task"}`; the resource is `graph`, a type, or an
-attribute or relation below a type; for an action it holds the first denied write of each unmet need,
-not necessarily every right you lack). A search ranks it after the allowed hits of the same rank and
+NAME` show such an entry marked `allowed: false` with `missing`, the rights you lack (a list of
+`{action, resource}`; what it holds is in
+[Access control](access_control.md#functions-actions-and-views-you-may-not-use)). A search ranks it after the allowed hits of the same rank and
 matches it on its name, summary, `use_when` and parameter names only. The description gives what the
 entry is for and how it is called (summary, `use_when`, signature, parameters without default values),
 not its query, operations, conditions, sections, examples, touched terms, needs or hash. An entry you

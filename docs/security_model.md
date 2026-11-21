@@ -197,7 +197,9 @@ are accepted and known:
   caller sees but needs a right it lacks is listed as not allowed, with its name, summary, `use_when`,
   parameters and the right that is missing; the maintainer's query, operations, conditions, sections
   and literals stay out, and anything that names a hidden term stays absent. So a caller learns
-  that a reviewed function, action or view exists, never what it does or touches
+  that a reviewed function, action or view exists and what it is for, never its operations,
+  conditions or literals; `missing` names the right and the visible type, attribute or relation
+  it is needed on
   ([Functions, actions and views you may not use](access_control.md#functions-actions-and-views-you-may-not-use)).
 - **Activity shows, data does not.** The envelope's `seq` counts every
   transaction of the graph, hidden ones included. A revision whose only change

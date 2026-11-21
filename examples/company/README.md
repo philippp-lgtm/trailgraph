@@ -115,7 +115,7 @@ graph is named `company`.
   after a failure: it creates the graph only when it is missing and releases 1.1.0 only while
   the graph is still at 1.0.0. If `graph apply` answers `access.denied`, the policy has no
   scope for the project ([Access control](../../docs/access_control.md)); if it answers
-  `skills.outdated`, run `graph self update`. The live view of a server runs where the data
+  `skills.outdated`, run `graph start`. The live view of a server runs where the data
   is ([Container](../../docs/server.md#container)).
 
 ## Explore it
