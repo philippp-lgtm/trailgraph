@@ -13,6 +13,7 @@ classification never depend on the caller's rights; what is hidden never occurs 
 not allowed.
 """
 
+import inspect
 import itertools
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -183,21 +184,214 @@ def test_a_caller_with_every_right_may_use_everything(env: ServiceEnv) -> None:
         assert all(c.allowed for c in found[kind])
 
 
-def test_the_allowed_half_is_the_listing(env: ServiceEnv) -> None:
-    """``functions``, ``actions`` and ``views`` list exactly what is allowed, for every
-    policy of the matrix: one implementation of what a caller may use."""
-    for policy in MATRIX:
+EMPLOYEE_LINKS = "level: read, writes: {ppl:Employee: {link: [leg:employed_by]}}"
+
+# What the listings returned at da83a4a (before the classification), by running that code once on
+# these policies: the independent oracle for the allowed half.
+OLD_LISTINGS = {
+    # full
+    (Policy()): {
+        "functions": [
+            "employer_of",
+            "members_of_unit",
+            "missing_required_trainings",
+            "policies_for_unit",
+            "reporting_chain",
+            "training_completions",
+            "vacant_positions",
+        ],
+        "actions": ["assign_position", "create_task", "hand_over_position", "offboard_employee"],
+        "views": [
+            "legacy_unit_overview",
+            "members_report",
+            "org_catalog",
+            "position_overview",
+            "tasks_by_state",
+            "unit_overview",
+        ],
+    },
+    # no_function
+    (Policy(deny=("read.function",))): {
+        "functions": [],
+        "actions": ["assign_position", "create_task", "hand_over_position", "offboard_employee"],
+        "views": ["position_overview", "tasks_by_state"],
+    },
+    # no_find
+    (Policy(deny=("read.find",))): {
+        "functions": [
+            "employer_of",
+            "members_of_unit",
+            "missing_required_trainings",
+            "policies_for_unit",
+            "reporting_chain",
+            "training_completions",
+            "vacant_positions",
+        ],
+        "actions": ["assign_position", "create_task", "hand_over_position", "offboard_employee"],
+        "views": ["legacy_unit_overview", "position_overview", "unit_overview"],
+    },
+    # both
+    (Policy(deny=("read.function", "read.find"))): {
+        "functions": [],
+        "actions": ["assign_position", "create_task", "hand_over_position", "offboard_employee"],
+        "views": ["position_overview"],
+    },
+    # ro_task
+    (Policy(types=(("ops:Task", "read"),))): {
+        "functions": [
+            "employer_of",
+            "members_of_unit",
+            "missing_required_trainings",
+            "policies_for_unit",
+            "reporting_chain",
+            "training_completions",
+            "vacant_positions",
+        ],
+        "actions": ["assign_position", "hand_over_position", "offboard_employee"],
+        "views": [
+            "legacy_unit_overview",
+            "members_report",
+            "org_catalog",
+            "position_overview",
+            "tasks_by_state",
+            "unit_overview",
+        ],
+    },
+    # links
+    (Policy(grant=EMPLOYEE_LINKS)): {
+        "functions": [
+            "employer_of",
+            "members_of_unit",
+            "missing_required_trainings",
+            "policies_for_unit",
+            "reporting_chain",
+            "training_completions",
+            "vacant_positions",
+        ],
+        "actions": [],
+        "views": [
+            "legacy_unit_overview",
+            "members_report",
+            "org_catalog",
+            "position_overview",
+            "tasks_by_state",
+            "unit_overview",
+        ],
+    },
+    # read_only
+    (Policy(grant="level: read")): {
+        "functions": [
+            "employer_of",
+            "members_of_unit",
+            "missing_required_trainings",
+            "policies_for_unit",
+            "reporting_chain",
+            "training_completions",
+            "vacant_positions",
+        ],
+        "actions": [],
+        "views": [
+            "legacy_unit_overview",
+            "members_report",
+            "org_catalog",
+            "position_overview",
+            "tasks_by_state",
+            "unit_overview",
+        ],
+    },
+    # obligations
+    (Policy(obligations=True)): {
+        "functions": [
+            "employer_of",
+            "members_of_unit",
+            "missing_required_trainings",
+            "policies_for_unit",
+            "reporting_chain",
+            "training_completions",
+            "vacant_positions",
+        ],
+        "actions": ["assign_position", "create_task", "hand_over_position", "offboard_employee"],
+        "views": [
+            "legacy_unit_overview",
+            "members_report",
+            "org_catalog",
+            "position_overview",
+            "tasks_by_state",
+            "unit_overview",
+        ],
+    },
+    # hide_task
+    (Policy(types=(("ops:Task", "none"),))): {
+        "functions": [
+            "employer_of",
+            "members_of_unit",
+            "missing_required_trainings",
+            "policies_for_unit",
+            "reporting_chain",
+            "training_completions",
+            "vacant_positions",
+        ],
+        "actions": ["assign_position", "hand_over_position", "offboard_employee"],
+        "views": [
+            "legacy_unit_overview",
+            "members_report",
+            "org_catalog",
+            "position_overview",
+            "unit_overview",
+        ],
+    },
+    # hide_position_no_fn
+    (Policy(types=(("org:Position", "none"),), deny=("read.function",))): {
+        "functions": [],
+        "actions": ["create_task"],
+        "views": ["tasks_by_state"],
+    },
+}
+
+
+def test_the_allowed_half_is_what_the_listings_returned_before(env: ServiceEnv) -> None:
+    """``functions``, ``actions`` and ``views`` list what they listed before the classification
+    existed, and that is exactly the allowed half of it (``OLD_LISTINGS`` was taken from the code
+    of da83a4a, not from the classification)."""
+    for policy, expected in OLD_LISTINGS.items():
         read = reader(env, policy)
         found = classified(env, read)
-        assert [e.name for e in read.functions(env.actor, env.entry) or ()] == [
-            e.name for e in allowed_entries(found["functions"])
-        ]
-        assert [e.name for e in read.actions(env.actor, env.entry) or ()] == [
-            e.name for e in allowed_entries(found["actions"])
-        ]
-        assert [e.name for e in read.views(env.actor, env.entry) or ()] == [
-            e.name for e in allowed_entries(found["views"])
-        ]
+        listed = {
+            "functions": read.functions(env.actor, env.entry),
+            "actions": read.actions(env.actor, env.entry),
+            "views": read.views(env.actor, env.entry),
+        }
+        for kind, names in expected.items():
+            assert [e.name for e in listed[kind] or ()] == names, (policy, kind)
+            assert [e.name for e in allowed_entries(found[kind])] == names, (policy, kind)
+
+
+def test_a_graph_the_caller_may_not_see_has_no_classification(env: ServiceEnv) -> None:
+    """A classification that also yields not-allowed entries is a list of names: it is empty
+    for a graph the caller may not see (``read.list`` denied), as are the allowed listings'
+    callers' answers before them."""
+    read = env.make_reader(Fixed(Policy(deny=("read.list", "read.function")).compiled(env)))
+    found = classified(env, read)
+    assert all(found[kind] == () for kind in KINDS)
+    visible = classified(env, reader(env, Policy(deny=("read.function",))))
+    assert visible["functions"] != ()
+
+
+def test_the_classification_of_actions_cannot_leave_the_read_view_out(
+    env: ServiceEnv,
+) -> None:
+    """``limits=False`` (the skill's full view of the actor's rights) is only reachable through
+    the allowed-only ``visible_actions``: a classification built without the read view could
+    name a hidden type in ``missing``."""
+    assert "limits" not in inspect.signature(ReadService.classified_actions).parameters
+    hide = Policy(grant="level: read", types=(("ops:Task", "none"),))
+    read = reader(env, hide)
+    published = read.published_actions(env.entry)
+    assert published is not None
+    shown = read.classified_actions(env.actor, env.entry, published)
+    assert "create_task" not in {c.entry.name for c in shown}
+    assert_hidden_absent([c.missing_json() for c in shown], {"ops:Task", "create_task"})
+    assert read.visible_actions(env.actor, env.entry, published, limits=False) == ()  # no write
 
 
 # ---- functions and views: read.function and read.find ------------------------------------
@@ -243,9 +437,6 @@ def test_a_read_only_type_makes_the_action_that_writes_it_not_allowed(env: Servi
     assert set(verdicts(found["actions"])) == ACTIONS
     # the type is still readable: the set view over it stays allowed
     assert verdicts(found["views"])["tasks_by_state"] == ()
-
-
-EMPLOYEE_LINKS = "level: read, writes: {ppl:Employee: {link: [leg:employed_by]}}"
 
 
 def test_a_write_allow_list_names_the_first_denied_right_of_each_unmet_need(
@@ -465,3 +656,5 @@ def test_hidden_by_a_marking_stays_hidden_when_the_rights_are_missing_too(
         [(c.entry.detail_json(), c.missing_json()) for c in plain["actions"]],
         {"set_email", "set_salary", "set_grade", "set_phone_badged"},
     )
+    # no right names an attribute the reader lacks the marking for
+    assert_hidden_absent([c.missing_json() for c in plain["actions"]], marked.HIDDEN_NAMES)

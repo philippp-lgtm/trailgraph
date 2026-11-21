@@ -47,7 +47,9 @@ class ReadCatalogs(ReadAccess):
         """Every function the actor sees, with the rights it lacks (graph start plan S4): a
         function that fits the actor's read view is allowed, or not allowed for want of
         ``read.function``; one that names something the actor cannot see is not in the answer.
-        Records nothing."""
+        Nothing for a graph the actor may not see (``read.list``). Records nothing."""
+        if not self.visible(actor, entry):
+            return ()
         missing = self._function_missing(actor, entry)
         view = self.read_view(actor, entry)
         return tuple(Classified(e, missing) for e in self._visible_functions(entry, view) or ())
@@ -160,18 +162,31 @@ class ReadCatalogs(ReadAccess):
         limits: bool = True,
     ) -> tuple[ActionEntry, ...]:
         """The actions the actor may run (actions plan A6, write allow lists plan W9): the
-        allowed half of ``classified_actions``. Records nothing, like ``functions``."""
-        return allowed_entries(self.classified_actions(actor, entry, catalog, limits=limits))
+        allowed half of the classification. ``limits=False`` leaves the actor's read view out
+        (the full model's view of its rights, for the skill render): only this allowed-only
+        method can do that, because what the full view classes as not allowed may name terms the
+        actor cannot see. Records nothing, like ``functions``."""
+        return allowed_entries(self._classify_actions(actor, entry, catalog, limits=limits))
 
     def classified_actions(
+        self, actor: ActorContext, entry: GraphEntry, catalog: ActionCatalog
+    ) -> tuple[Classified[ActionEntry], ...]:
+        """Every action the actor sees, with the rights it lacks (graph start plan S4); nothing
+        for a graph the actor may not see (``read.list``). Always judged by the actor's read
+        view, so no entry names a hidden term. See ``_classify_actions``."""
+        if not self.visible(actor, entry):
+            return ()
+        return self._classify_actions(actor, entry, catalog, limits=True)
+
+    def _classify_actions(
         self,
         actor: ActorContext,
         entry: GraphEntry,
         catalog: ActionCatalog,
         *,
-        limits: bool = True,
+        limits: bool,
     ) -> tuple[Classified[ActionEntry], ...]:
-        """Every action the actor sees, with the rights it lacks (graph start plan S4).
+        """The classification of the actions of ``catalog`` (graph start plan S4).
 
         An action is allowed when, for each need, some concrete type allows it, with all the
         attributes and relations the action writes there where the policy has term rules for
@@ -180,7 +195,9 @@ class ReadCatalogs(ReadAccess):
         is one it sees, and no term the action names is missing from its model view (type read
         limits plan V7, ``services.visible_catalog``); with an attribute view, an attribute
         the action writes is met only where the actor sees it (field visibility plan F6);
-        ``limits=False`` leaves that out (the full model's view of the actor's rights).
+        ``limits=False`` leaves that out (the full model's view of the actor's rights): its
+        not-allowed entries may then name hidden terms and are never shown, only the allowed
+        ones are used.
 
         An action that fails that view is hidden, and so is one with an unmet need no
         decision was made for (every option lies outside what the actor sees): such a need has
@@ -317,7 +334,10 @@ class ReadCatalogs(ReadAccess):
     def classified_views(
         self, actor: ActorContext, entry: GraphEntry
     ) -> tuple[Classified[ViewEntry], ...]:
-        """Every view the actor sees, with the rights it lacks. Records nothing."""
+        """Every view the actor sees, with the rights it lacks; nothing for a graph the actor
+        may not see (``read.list``). Records nothing."""
+        if not self.visible(actor, entry):
+            return ()
         return self._classified_views(actor, entry, self.read_view(actor, entry))
 
     def views(self, actor: ActorContext, entry: GraphEntry) -> tuple[ViewEntry, ...] | None:
