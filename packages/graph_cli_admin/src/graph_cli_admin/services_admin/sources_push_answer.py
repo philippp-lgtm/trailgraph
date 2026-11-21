@@ -17,7 +17,7 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import WarningRecord
 from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot, SkillSlot
 from graph_cli.kinetic.format import FILE_SUFFIX
-from graph_cli_admin.services_admin import authored_views, marking_warnings, skill
+from graph_cli_admin.services_admin import authored_views, functions, marking_warnings, skill
 from graph_cli_admin.services_admin.sources import base_document
 from graph_cli_admin.services_admin.sources_push_state import Catalogs, Locked
 
@@ -158,10 +158,14 @@ def _kind_answer(
 def push_warnings(
     locked: Locked, catalogs: Catalogs, checked: skill.Checked | None, after: GraphEntry
 ) -> tuple[WarningRecord, ...]:
-    """The warnings of the push: the release's, then the pushed actions', views' and skill's.
-    Computed after the writes and the new base: a warning check that raises fails the command
-    late, with the push done."""
+    """The warnings of the push: the release's, then the pushed functions', actions', views' and
+    skill's. Computed after the writes and the new base: a warning check that raises fails the
+    command late, with the push done."""
     warnings = locked.planned.warnings if locked.planned is not None else ()
+    if catalogs.functions is not None:
+        warnings += functions.single_ref_warnings(
+            after, locked.model(), catalogs.functions, final_slots(locked, catalogs, None).views
+        )
     if (
         catalogs.actions is not None
     ):  # the published catalog was not looked at: judge the pushed one

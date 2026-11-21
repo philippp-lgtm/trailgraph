@@ -17,6 +17,7 @@ from graph_cli.kinetic.compile import (
     MAX_QUERY_CHARS,
     check_catalog,
     compile_catalog,
+    single_refs,
 )
 from graph_cli.kinetic.format import CATALOG_SCHEMA, Problem
 from graph_cli.query.cypher import render
@@ -482,3 +483,63 @@ def test_check_catalog_refuses_other_documents() -> None:
 def test_the_catalog_survives_a_json_round_trip() -> None:
     document = catalog()
     assert check_catalog(json.loads(json.dumps(document)), MODEL) == []
+
+
+# Single-value refs that a list would serve (admin.function_single_ref)
+
+
+def refs_of(
+    sources: dict[str, str], exempt: frozenset[str] = frozenset()
+) -> list[tuple[str, str, str]]:
+    document, problems = compile_catalog(sources, MODEL)
+    assert problems == []
+    return single_refs(document, MODEL, exempt)
+
+
+def test_single_refs_name_each_active_function_with_a_one_value_ref() -> None:
+    found = refs_of(valid_sources())
+    names = {function for function, _, _ in found}
+    assert ("members_of_unit", "unit", "org:OrgUnit") in found
+    assert found == sorted(found)  # catalog order is by name
+    assert "unit_members" not in names  # deprecated
+    assert "training_completions" not in names  # no ref
+
+
+def test_single_refs_skip_the_exempt_functions() -> None:
+    found = refs_of(valid_sources(), frozenset({"members_of_unit"}))
+    assert "members_of_unit" not in {function for function, _, _ in found}
+
+
+@pytest.mark.parametrize(
+    ("query", "flagged"),
+    [
+        ("MATCH (u:OrgUnit) WHERE u.id = $p RETURN u.name AS name", True),
+        ("MATCH (u:OrgUnit) WHERE $p = u.id RETURN u.name AS name", True),
+        ("MATCH (u:OrgUnit {id: $p}) RETURN u.name AS name", True),
+        ("MATCH (u:OrgUnit) WHERE u.alias = $p OR u.id = $p RETURN u.name AS name", True),
+        ("MATCH (u:OrgUnit) WHERE u.id <> $p RETURN u.name AS name", False),
+        ("MATCH (u:OrgUnit) WHERE u.id = $p RETURN $p AS name", False),
+        ("MATCH (u:OrgUnit) WHERE u.id = $p OR u.alias <> $p RETURN u.name AS name", False),
+        ("MATCH (u:OrgUnit) RETURN $p AS name", False),
+    ],
+)
+def test_single_refs_only_for_parameters_compared_with_equals(query: str, flagged: bool) -> None:
+    found = refs_of(minimal(query, p=UNIT))
+    assert found == ([("probe", "p", "org:OrgUnit")] if flagged else [])
+
+
+def test_single_refs_ignore_lists_and_other_types() -> None:
+    assert (
+        refs_of(
+            minimal(
+                "MATCH (u:OrgUnit) WHERE u.id IN $p RETURN u.id AS name", p=UNIT + "; many: true"
+            )
+        )
+        == []
+    )
+    assert (
+        refs_of(
+            minimal("MATCH (u:OrgUnit) WHERE u.name = $p RETURN u.id AS name", p="type: string")
+        )
+        == []
+    )

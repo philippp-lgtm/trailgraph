@@ -133,6 +133,12 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ),
     ErrorSpec("admin.views_affected", _C.WARNING, False, "A release would break published views."),
     ErrorSpec(
+        "admin.function_single_ref",
+        _C.WARNING,
+        False,
+        "Functions take one reference per run where a list would serve.",
+    ),
+    ErrorSpec(
         "admin.policy_renamed_term",
         _C.REFUSED,
         False,

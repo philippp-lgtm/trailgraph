@@ -192,7 +192,11 @@ def publish_functions(
     published = functions.publish(
         ctx, graph_ref=ref, source=Path(source).resolve(), reason=reason, dry_run=dry_run
     )
-    return Result(data=published.data, graph=graphs.envelope_graph(published.entry, published.seq))
+    return Result(
+        data=published.data,
+        graph=graphs.envelope_graph(published.entry, published.seq),
+        warnings=published.warnings,
+    )
 
 
 def show_functions(state: CommandState, ref: str, data_root: str | None) -> Result:

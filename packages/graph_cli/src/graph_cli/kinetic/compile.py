@@ -23,6 +23,7 @@ invariant, K5).
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from typing import Final
 
@@ -49,7 +50,7 @@ from graph_cli.query.cypher.ast import (
     Query,
     RelPattern,
 )
-from graph_cli.query.cypher.compare import comparisons
+from graph_cli.query.cypher.compare import Comparison, comparisons
 from graph_cli.query.cypher.parser import parse
 from graph_cli.query.cypher.resolve import SYSTEM_BASES, FieldUse, ResolvedQuery, VarInfo, resolve
 from graph_cli.query.cypher.values import Value
@@ -166,6 +167,47 @@ def resolve_stored(text: str, defn: FunctionDef, model: CompiledModel) -> Resolv
     parsed = parse(text)
     paging = frozenset(use.name for use in parameters(parsed) if use.paging)
     return _resolve_with_placeholders(parsed, defn, model, paging)
+
+
+def single_refs(
+    document: JsonObject, model: CompiledModel, exempt: frozenset[str] = frozenset()
+) -> list[tuple[str, str, str]]:
+    """The single-value ``ref`` parameters of the active functions of a compiled catalog that a
+    list would serve as well: ``(function, parameter, class)`` in catalog order.
+
+    A parameter qualifies when it is a ``ref`` without ``many`` and every use of it in the
+    stored query is an ``=`` comparison with a field (or an inline map entry): the function
+    can then take a list and use ``IN``, and answers several entities in one run. A parameter
+    that is also returned, ordered against or compared otherwise is left alone. Functions in
+    ``exempt`` (those a view runs, which hands them one entity) and deprecated functions are
+    skipped, and so is a function whose stored query does not resolve against ``model``
+    (checking the catalog reports that).
+    """
+    found: list[tuple[str, str, str]] = []
+    for item in req_list(document, "functions"):
+        entry = as_object(item, "functions")
+        defn = FunctionDef.from_json(entry, req_str(entry, "source_query"))
+        refs = [p for p in defn.params if p.type == "ref" and not p.many]
+        if defn.status != "active" or defn.name in exempt or not refs:
+            continue
+        try:
+            resolved = resolve_stored(req_str(entry, "query"), defn, model)
+        except GraphCliError:
+            continue
+        compared: dict[str, list[Comparison]] = {}
+        for use in comparisons(resolved.query):
+            if isinstance(use.value, Parameter):
+                compared.setdefault(use.value.name, []).append(use)
+        occurrences = Counter(use.name for use in parameters(resolved.query))
+        for param in refs:
+            mine = compared.get(param.name, [])
+            if (
+                mine
+                and len(mine) == occurrences[param.name]
+                and all(c.shape == "value" and c.op == "=" for c in mine)
+            ):
+                found.append((defn.name, param.name, param.of_class or ""))
+    return found
 
 
 def _check_stored(defn: FunctionDef, text: str, model: CompiledModel) -> Problem | None:
