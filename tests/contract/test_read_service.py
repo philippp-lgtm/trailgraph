@@ -562,6 +562,25 @@ def test_reads_signal_the_ids_they_return(svc: ServiceEnv, roles: Roles) -> None
     ]
 
 
+def test_a_number_param_meeting_text_is_bound_as_written_and_a_number_literal_warns(
+    svc: ServiceEnv,
+) -> None:
+    reader = svc.make_reader()
+    view = open_view(svc, reader)
+    text = "MATCH (n) WHERE n.alias = $n RETURN n.alias AS alias"
+    spec = QuerySpec({"n": 2}, explain=True, texts={"n": "2"})
+    data, _, _, warnings = reader.query(view, reader.parse_query(text), spec)
+    assert data["plan"]["parameters"] == {"n": "2"}  # type: ignore[index, call-overload]
+    assert warnings == ()
+    data, *_ = reader.query(view, reader.parse_query(text), QuerySpec({"n": 2}, explain=True))
+    assert data["plan"]["parameters"] == {"n": 2}  # type: ignore[index, call-overload]
+    literal = reader.parse_query("MATCH (n) WHERE n.alias = 2 RETURN n.alias AS alias")
+    *_, found = reader.query(view, literal, QuerySpec(explain=True))
+    (warning,) = found
+    assert warning.code == "query.number_for_text"
+    assert warning.details == {"variable": "n", "field": "alias", "literal": 2}
+
+
 def test_signals_name_command_actor_and_walked_edges(svc: ServiceEnv, roles: Roles) -> None:
     activity = RecordingActivity()
     reader = svc.make_reader(activity=activity)

@@ -241,3 +241,71 @@ def test_describe_schema_feeds_queries(run_cli: CliRunner, root: Path, roles: Ro
     assert len(str(compact.data)) < len(str(schema.data))
     text = run_cli("graph", "describe", "schema", "--compact", env=ENV)
     assert text.returncode == 0 and text.stdout.startswith("Relationships:\n")
+
+
+def location_codes(run_cli: CliRunner, isolated_env: dict[str, str]) -> None:
+    """A graph whose locations have the codes 2.1 and 2.10: text that looks like numbers."""
+    init(run_cli, isolated_env)
+    create_graph(run_cli, "example_graph", "inventory")
+    for name, code in (("First", "2.1"), ("Second", "2.10"), ("Third", "7")):
+        made = app(
+            run_cli,
+            "create",
+            "inv:Location",
+            "--set",
+            f"name={name}",
+            "--set",
+            f"code={code}",
+            env=ENV,
+        )
+        assert made.code == 0, made.envelope
+
+
+def test_a_number_param_meeting_text_fields_is_bound_as_the_text_written(
+    run_cli: CliRunner, isolated_env: dict[str, str]
+) -> None:
+    location_codes(run_cli, isolated_env)
+    text = "MATCH (l:Location) WHERE l.code = $n RETURN l.name AS name"
+    for given, names in (("2.10", ["Second"]), ("2.1", ["First"]), ("7", ["Third"])):
+        found = app(run_cli, "query", text, "--param", f"n={given}", env=ENV)
+        assert found.code == 0, found.envelope
+        assert [i["name"] for i in found.data["items"]] == names
+        assert not found.envelope.get("warnings")
+    quoted = app(run_cli, "query", text, "--param", 'n="2.1"', env=ENV)
+    assert [i["name"] for i in quoted.data["items"]] == ["First"]
+    listed = "MATCH (l:Location) WHERE l.code IN $n RETURN l.name AS name ORDER BY name"
+    found = app(run_cli, "query", listed, "--param", "n=[2.1, 7]", env=ENV)
+    assert [i["name"] for i in found.data["items"]] == ["First", "Third"]
+    explained = app(run_cli, "query", text, "--param", "n=2.10", "--explain", env=ENV)
+    assert explained.data["plan"]["parameters"] == {"n": "2.10"}
+
+
+def test_a_number_param_that_is_also_used_as_a_number_stays_a_number(
+    run_cli: CliRunner, isolated_env: dict[str, str]
+) -> None:
+    location_codes(run_cli, isolated_env)
+    text = "MATCH (l:Location) WHERE l.code = $n RETURN l.name AS name, $n + 1 AS next"
+    found = app(run_cli, "query", text, "--param", "n=7", env=ENV)
+    assert found.code == 0, found.envelope
+    assert found.data["items"] == []
+    explained = app(run_cli, "query", text, "--param", "n=7", "--explain", env=ENV)
+    assert explained.data["plan"]["parameters"] == {"n": 7}  # the number, not the text "7"
+
+
+def test_a_number_literal_compared_with_a_text_field_warns(
+    run_cli: CliRunner, isolated_env: dict[str, str]
+) -> None:
+    location_codes(run_cli, isolated_env)
+    found = app(
+        run_cli, "query", "MATCH (l:Location) WHERE l.code = 7 RETURN l.name AS name", env=ENV
+    )
+    assert found.code == 0, found.envelope
+    assert found.data["items"] == []
+    (warning,) = [w for w in found.envelope["warnings"] if w["code"] == "query.number_for_text"]
+    assert warning["details"] == {"variable": "l", "field": "code", "literal": 7}
+    assert "l.code" in warning["message"] and "7" in warning["message"]
+    quoted = app(
+        run_cli, "query", "MATCH (l:Location) WHERE l.code = '7' RETURN l.name AS name", env=ENV
+    )
+    assert [i["name"] for i in quoted.data["items"]] == ["Third"]
+    assert not quoted.envelope.get("warnings")

@@ -378,9 +378,10 @@ grouping. For one type with field filters, one hop or a name, `find`,
 - Pass the query as one single-quoted argument. When quoting gets hard,
   write it to a file in the working directory and pass `--file <file>`.
   Bind values with `--param id=<id>` and use `$id` in the query. A value
-  that parses as JSON is bound as JSON: `--param n=2.1` is the number 2.1,
-  which never equals the text `"2.1"`. Quote such text (`--param 'n="2.1"'`)
-  or write it into the query as a string.
+  that parses as JSON is bound as JSON, but a number compared only with
+  text fields is bound as the text you wrote (`--param n=2.10` matches
+  `"2.10"`). A number written in the query stays a number: quote it for a
+  text field.
 - `--explain --json` shows how the query was understood (types, fields,
   parameters) and runs nothing. Use it when a result looks wrong.
 - The query is read-only. Write with `apply` or the write commands.

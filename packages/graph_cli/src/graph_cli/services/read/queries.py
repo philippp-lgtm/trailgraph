@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -35,6 +36,19 @@ class QuerySpec:
     limit: int = DEFAULT_LIMIT
     offset: int = 0
     budget: int | None = None  # None: the engine's default (``execute.DEFAULT_BUDGET``)
+    # Parameters given as a number (or a list of numbers) mapped to the text as written;
+    # ``text_bindings`` binds them as text where they meet only text fields.
+    texts: Mapping[str, str] = field(default_factory=dict)
+
+
+def _number_for_text(variable: str | None, name: str, literal: JsonValue) -> WarningRecord:
+    shown = json.dumps(literal)
+    return WarningRecord(
+        "query.number_for_text",
+        f"{variable}.{name} holds text, but the query compares it with the number {shown}, "
+        "which never equals text; write the value as a quoted string",
+        {"variable": variable, "field": name, "literal": literal},
+    )
 
 
 class ReadQueries(ReadCatalogs):
@@ -47,22 +61,35 @@ class ReadQueries(ReadCatalogs):
 
     def query(
         self, view: GraphRead, query: CypherQuery, spec: QuerySpec
-    ) -> tuple[dict[str, JsonValue], Page | None, tuple[Cover, ...]]:
+    ) -> tuple[dict[str, JsonValue], Page | None, tuple[Cover, ...], tuple[WarningRecord, ...]]:
         """A parsed query resolved against the graph's model and, unless ``explain``,
         run over its snapshot; the rows are paged like ``find``. The third item is the
         functions the caller may run that cover the query, best first (usage shapes U2,
-        U5); the shape and the first three are noted for the access log."""
+        U5); the shape and the first three are noted for the access log. The fourth is
+        ``query.number_for_text`` for each number the query compares with a text field.
+
+        A ``--param`` number that meets only text fields is bound as the text written
+        (``spec.texts``, ``text_params``): the query is resolved again with it, so
+        ``--explain`` shows the bound text."""
         from graph_cli.query.cypher.resolve import resolve
+        from graph_cli.query.cypher.text_params import number_for_text, text_bindings
 
         with self.timings.phase("resolve"):
             resolved = resolve(query, view.model, spec.parameters)
+            rebound = text_bindings(resolved, spec.texts)
+            if rebound:
+                resolved = resolve(query, view.model, {**spec.parameters, **rebound})
+            warnings = tuple(
+                _number_for_text(variable, name, literal)
+                for variable, name, literal in number_for_text(resolved)
+            )
         found = self._note_shape(view, resolved)
         if spec.explain:
-            return {"plan": resolved.explain()}, None, found
+            return {"plan": resolved.explain()}, None, found, warnings
         data, page = self._rows(
             view, resolved, spec.include_inactive, spec.budget, spec.limit, spec.offset
         )
-        return data, page, found
+        return data, page, found, warnings
 
     def _note_shape(self, view: GraphRead, resolved: ResolvedQuery) -> tuple[Cover, ...]:
         """Note the query's shape for the access log and find the functions that cover it,

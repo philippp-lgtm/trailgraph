@@ -27,7 +27,7 @@ from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.langtag import tagged_parts
-from graph_cli.query.cypher.values import Value, parameter_value
+from graph_cli.query.cypher.values import Value, is_number_text, parameter_value
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT, check_paging, split_assignment
 from graph_cli.services.read import QuerySpec
 
@@ -67,14 +67,19 @@ def query_text(text: str | None, file: str | None) -> str:
         raise _usage(argument, "the query is not UTF-8 text") from None
 
 
-def _parameters(texts: tuple[str, ...]) -> dict[str, Value]:
+def _parameters(texts: tuple[str, ...]) -> tuple[dict[str, Value], dict[str, str]]:
+    """The values as given (JSON when it parses) and, for a number or a list of numbers,
+    the text as written: the query may bind it as text (``text_params``)."""
     found: dict[str, Value] = {}
+    written: dict[str, str] = {}
     for text in texts:
         name, value = split_assignment(text, "--param")
         if name in found:
             raise _usage("--param", f"{name!r} is given twice", text)
         found[name] = parameter_value(value)
-    return found
+        if is_number_text(value):
+            written[name] = value
+    return found, written
 
 
 def _usage(argument: str, message: str, actual: JsonValue = None) -> GraphCliError:
@@ -158,7 +163,7 @@ def query(
     point = as_of_flag(as_of)
     check_paging(limit, offset)
     source = query_text(text, file)
-    parameters = _parameters(param)
+    parameters, written = _parameters(param)
     reader = context(state).reader
     parsed = reader.parse_query(source)
     args: dict[str, JsonValue] = {
@@ -170,8 +175,9 @@ def query(
         "offset": offset,
     }
     view = open_graph(state, graph, "read.query", "query", args, point)
-    spec = QuerySpec(parameters, include_inactive, explain, limit, offset)
-    data, page, covers = reader.query(view, parsed, spec)
+    spec = QuerySpec(parameters, include_inactive, explain, limit, offset, texts=written)
+    data, page, covers, warnings = reader.query(view, parsed, spec)
+    state.warnings += warnings
     cover_hints = _cover_hints(covers, view.entry.name)
     if page is None:
         return Result(data=data, graph=view.envelope_graph(), hints=cover_hints)
