@@ -23,9 +23,8 @@ invariant, K5).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
-from typing import Final, Literal
+from collections.abc import Callable, Mapping, Sequence
+from typing import Final
 
 from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_document
 from graph_cli.kernel.errors import GraphCliError
@@ -43,18 +42,14 @@ from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.vocabulary import BUILTIN_MODULES, SYSTEM_FIELDS
 from graph_cli.query.cypher import parameters, render
 from graph_cli.query.cypher.ast import (
-    Binary,
-    Expr,
     HasLabels,
-    MapExpr,
     NodePattern,
     Parameter,
     PatternPart,
-    Property,
     Query,
     RelPattern,
-    Variable,
 )
+from graph_cli.query.cypher.compare import comparisons
 from graph_cli.query.cypher.parser import parse
 from graph_cli.query.cypher.resolve import SYSTEM_BASES, FieldUse, ResolvedQuery, VarInfo, resolve
 from graph_cli.query.cypher.values import Value
@@ -76,8 +71,6 @@ FITS: Final[dict[str, frozenset[str]]] = {
 }
 _TEXT_BASES: Final = frozenset({"string", "text", "iri"})
 REF_FIELDS: Final = frozenset({"id", "alias"})
-_COMPARISONS: Final = frozenset({"=", "<>", "<", "<=", ">", ">="})
-_TEXT_OPS: Final = frozenset({"starts_with", "ends_with", "contains"})
 
 
 def compile_catalog(
@@ -191,17 +184,6 @@ def _check_stored(defn: FunctionDef, text: str, model: CompiledModel) -> Problem
 
 def _normalized(resolved: ResolvedQuery) -> str:
     return "\n".join(render.clause(c) for c in resolved.query.clauses)
-
-
-@dataclass(frozen=True, slots=True)
-class _Compare:
-    """A parameter compared with a field: ``field = $p`` and the other forms."""
-
-    parameter: Parameter
-    variable: str | None
-    field: str
-    shape: Literal["value", "in_param", "in_field", "text"]
-    node: NodePattern | None  # the pattern node the field belongs to, for an anonymous one
 
 
 class _Compile:
@@ -401,8 +383,10 @@ class _Compile:
 
     def type_fit(self, resolved: ResolvedQuery) -> None:
         fields = {(f.variable, f.field): f for f in resolved.fields}
-        for use in _comparisons(resolved.query):
-            param = self.declared.get(use.parameter.name)
+        for use in comparisons(resolved.query):
+            if not isinstance(use.value, Parameter):
+                continue
+            param = self.declared.get(use.value.name)
             if param is None:
                 continue
             used = fields.get((use.variable, use.field)) if use.variable is not None else None
@@ -420,8 +404,8 @@ class _Compile:
                     parameter=param.name,
                     field=use.field,
                     datatypes=list(used.datatypes),
-                    line=use.parameter.pos.line,
-                    column=use.parameter.pos.column,
+                    line=use.value.pos.line,
+                    column=use.value.pos.column,
                 )
 
     def misfit(self, param: ParamDef, shape: str, used: FieldUse) -> str | None:
@@ -646,48 +630,3 @@ def _end_types(node: NodePattern, classes: frozenset[str] | None) -> list[JsonVa
 def _end_name(node: NodePattern, classes: frozenset[str] | None) -> str:
     names = _end_types(node, classes)
     return "|".join(str(n) for n in names) if names else "any type"
-
-
-def _comparisons(query: Query) -> Iterator[_Compare]:
-    for clause in query.clauses:
-        for e in clause_expressions(clause):
-            if isinstance(e, Binary):
-                yield from _binary(e)
-        for part in clause_patterns(clause):
-            for node in part.nodes:
-                yield from _property_map(node.variable, node.properties, node)
-            for rel in part.rels:
-                yield from _property_map(rel.variable, rel.properties, None)
-
-
-def _field_of(e: Expr) -> tuple[str, str] | None:
-    if isinstance(e, Property) and isinstance(e.subject, Variable):
-        return e.subject.name, e.key
-    return None
-
-
-def _binary(e: Binary) -> Iterator[_Compare]:
-    if e.op in _COMPARISONS:
-        for side, other in ((e.left, e.right), (e.right, e.left)):
-            target = _field_of(side)
-            if target is not None and isinstance(other, Parameter):
-                yield _Compare(other, *target, "value", None)
-    elif e.op == "in":
-        target = _field_of(e.left)
-        if target is not None and isinstance(e.right, Parameter):
-            yield _Compare(e.right, *target, "in_param", None)
-        target = _field_of(e.right)
-        if target is not None and isinstance(e.left, Parameter):
-            yield _Compare(e.left, *target, "in_field", None)
-    elif e.op in _TEXT_OPS:
-        target = _field_of(e.left)
-        if target is not None and isinstance(e.right, Parameter):
-            yield _Compare(e.right, *target, "text", None)
-
-
-def _property_map(
-    variable: str | None, properties: MapExpr | None, node: NodePattern | None
-) -> Iterator[_Compare]:
-    for key, value in () if properties is None else properties.entries:
-        if isinstance(value, Parameter):
-            yield _Compare(value, variable, key, "value", node)
