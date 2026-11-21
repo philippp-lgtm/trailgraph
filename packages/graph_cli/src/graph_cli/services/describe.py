@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Final, Protocol
 
 from graph_cli.kernel.canonical import JsonObject, JsonValue
+from graph_cli.kernel.json_access import as_list, as_object
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kinetic.action_entries import ActionEntry, find_action
 from graph_cli.kinetic.entries import FunctionEntry, find_entry, seen_replacement
@@ -478,6 +479,40 @@ def describe_module(
     return model_envelope(entry, model, module=body)
 
 
+# What a caller who sees an entry but may not use it is shown of its definition (graph start plan
+# S4): what the entry is for and how it is called. Nothing that can carry a literal of the
+# maintainer's (query text, ops, conditions, sections, example values, defaults) and nothing that
+# says how to get around the missing right (touched terms, the needed rights, the hash).
+OPEN_KEYS: Final = (
+    "name",
+    "module",
+    "summary",
+    "use_when",
+    "status",
+    "signature",
+    "replaced_by",
+    "reason",
+    "takes",
+    "default",
+)
+OPEN_PARAM_KEYS: Final = ("name", "type", "class", "enum", "many", "summary")
+
+
+def restricted_detail(detail: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    """``detail`` (a function, action or view as ``detail_json`` has it) cut to what a caller
+    may read of an entry it may not use: the keys of ``OPEN_KEYS``, and per parameter its name,
+    type, class or enum, ``many``, summary and whether it is required (no default value)."""
+    shown: dict[str, JsonValue] = {k: v for k, v in detail.items() if k in OPEN_KEYS}
+    params: list[JsonValue] = []
+    for value in as_list(detail.get("params", []), "params"):
+        param = as_object(value, "param")
+        item: dict[str, JsonValue] = {k: param[k] for k in OPEN_PARAM_KEYS if k in param}
+        item["required"] = param.get("default") is None and not param.get("optional", False)
+        params.append(item)
+    shown["params"] = params
+    return shown
+
+
 def _module_row(entry: _Catalogued, marks: dict[str, JsonValue]) -> dict[str, JsonValue]:
     """A function, action or view in the list of a module: name, summary, signature."""
     shown = entry.summary_json()
@@ -527,7 +562,7 @@ def describe_function(
     detail["replaced_by"] = seen_replacement(found.defn.replaced_by, functions)
     blocked = next((c for c in denied if c.entry is found), None)
     if blocked is not None:
-        detail.update(blocked.access_json())
+        detail = {**restricted_detail(detail), **blocked.access_json()}
     return model_envelope(entry, model, function=detail)
 
 
@@ -570,7 +605,7 @@ def describe_action(
     detail["replaced_by"] = seen_replacement(found.defn.replaced_by, actions)
     blocked = next((c for c in denied if c.entry is found), None)
     if blocked is not None:
-        detail.update(blocked.access_json())
+        detail = {**restricted_detail(detail), **blocked.access_json()}
     return model_envelope(entry, model, action=detail)
 
 
@@ -612,7 +647,7 @@ def describe_view(
     detail["replaced_by"] = seen_replacement(found.defn.replaced_by, views)
     blocked = next((c for c in denied if c.entry is found), None)
     if blocked is not None:
-        detail.update(blocked.access_json())
+        detail = {**restricted_detail(detail), **blocked.access_json()}
     return model_envelope(entry, model, view=detail)
 
 

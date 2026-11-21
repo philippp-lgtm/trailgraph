@@ -174,11 +174,13 @@ def test_a_denied_write_right_marks_the_action_not_allowed(
     assert "NOT ALLOWED for you; missing write.create on type:ops:Task" in text
     assert "Ask the maintainer for a role" in text
     assert "create_task" in [a["name"] for a in both.data["actions"]]
-    hits = app(run_cli, "describe", "search", "checklist", env=ENV).data["items"]
+    hits = app(run_cli, "describe", "search", "follow-up", env=ENV).data["items"]  # its use_when
     assert [(i["curie"], i["allowed"], i["missing"]) for i in hits] == [
         ("create_task", False, marked["missing"])
     ]
-    line = run_cli("graph", "describe", "search", "checklist", env=ENV).stdout
+    # what only its example says is not searchable: the example is for who may run the action
+    assert app(run_cli, "describe", "search", "checklist", env=ENV).data["items"] == []
+    line = run_cli("graph", "describe", "search", "follow-up", env=ENV).stdout
     assert line.rstrip().endswith("[not allowed: missing write.create on type:ops:Task]")
     modules = app(run_cli, "describe", "modules", env=ENV).data["modules"]
     operations = {m["id"]: m for m in modules}["operations"]
@@ -220,7 +222,7 @@ def test_a_caller_who_may_run_no_action_sees_them_all_not_allowed(
     missing = app(run_cli, "describe", "action", "assign_positions", env=EXPLORE)
     assert missing.error["code"] == "action.not_found"
     assert missing.error["details"]["did_you_mean"][0] == "assign_position"
-    hits = app(run_cli, "describe", "search", "checklist", env=EXPLORE).data["items"]
+    hits = app(run_cli, "describe", "search", "follow-up", env=EXPLORE).data["items"]
     assert [(i["curie"], i["allowed"]) for i in hits] == [("create_task", False)]
     modules = app(run_cli, "describe", "modules", env=EXPLORE).data["modules"]
     assert all(m["actions"] == 0 for m in modules if "actions" in m)

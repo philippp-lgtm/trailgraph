@@ -22,12 +22,10 @@ from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.action_rights import need_decisions
 from graph_cli.services.catalog_access import (
     Classified,
-    Denied,
     allowed_entries,
     first_denial,
-    not_allowed,
 )
-from graph_cli.services.read.access import ReadAccess, denial_error
+from graph_cli.services.read.access import ACCESS_DENIED_HINT, ReadAccess, denial_error
 from graph_cli.services.read.graph_read import ActionCatalog
 from graph_cli.services.visible_catalog import hidden_actions, hidden_functions, hidden_views
 
@@ -247,18 +245,6 @@ class ReadCatalogs(ReadAccess):
             "actions", catalog.compiled_hash, entry.pin.artifact_hash, view, compute
         )
 
-    def denied(self, actor: ActorContext, entry: GraphEntry) -> Denied:
-        """The functions, actions and views the actor sees but may not use (graph start plan S4);
-        what a listing counts and a search shows marked. Records nothing."""
-        published = self.published_actions(entry)
-        return Denied(
-            not_allowed(self.classified_functions(actor, entry)),
-            ()
-            if published is None
-            else not_allowed(self.classified_actions(actor, entry, published)),
-            not_allowed(self.classified_views(actor, entry)),
-        )
-
     def refuse_not_allowed(
         self,
         actor: ActorContext,
@@ -271,7 +257,15 @@ class ReadCatalogs(ReadAccess):
         raised as ``access.denied``, naming the missing right."""
         assert item.denials, "an allowed entry is never refused"
         decision = item.denials[0]
-        return self._record_denial(actor, decision, request, entry, denial_error(decision))
+        error = denial_error(decision)
+        if len(item.missing) > 1:  # say every right it lacks, so one refusal is enough to know
+            rights = ", ".join(str(m) for m in item.missing)
+            error = GraphCliError(
+                error.code,
+                f"{rights} are not permitted; {ACCESS_DENIED_HINT}",
+                details=error.details,
+            )
+        return self._record_denial(actor, decision, request, entry, error)
 
     # ---- views (object views stage 2) -----------------------------------
 

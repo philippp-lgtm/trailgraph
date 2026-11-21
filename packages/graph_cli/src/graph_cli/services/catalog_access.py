@@ -113,5 +113,15 @@ class Denied:
     actions: tuple[Classified[ActionEntry], ...] = ()
     views: tuple[Classified[ViewEntry], ...] = ()
 
+    @classmethod
+    def of(
+        cls,
+        functions: Sequence[Classified[FunctionEntry]],
+        actions: Sequence[Classified[ActionEntry]],
+        views: Sequence[Classified[ViewEntry]],
+    ) -> Denied:
+        """The not-allowed entries of the three classifications (allowed ones are left out)."""
+        return cls(not_allowed(functions), not_allowed(actions), not_allowed(views))
+
     def count(self) -> int:
         return len(self.functions) + len(self.actions) + len(self.views)

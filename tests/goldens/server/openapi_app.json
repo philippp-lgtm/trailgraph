@@ -510,9 +510,6 @@
                   }
                 ]
               },
-              "featured": {
-                "type": "boolean"
-              },
               "reason": {
                 "type": "string",
                 "enum": [
@@ -554,11 +551,14 @@
                     "many": {
                       "type": "boolean"
                     },
-                    "default": {},
                     "summary": {
                       "type": "string"
                     },
+                    "default": {},
                     "optional": {
+                      "type": "boolean"
+                    },
+                    "required": {
                       "type": "boolean"
                     }
                   },
@@ -568,10 +568,12 @@
                     "class",
                     "enum",
                     "many",
-                    "default",
                     "summary"
                   ]
                 }
+              },
+              "featured": {
+                "type": "boolean"
               },
               "preconditions": {
                 "type": "array",
@@ -728,15 +730,8 @@
               "status",
               "use_when",
               "replaced_by",
-              "featured",
               "reason",
-              "params",
-              "preconditions",
-              "examples",
-              "ops",
-              "touches",
-              "needs",
-              "hash"
+              "params"
             ]
           }
         },
@@ -988,9 +983,6 @@
                   }
                 ]
               },
-              "featured": {
-                "type": "boolean"
-              },
               "params": {
                 "type": "array",
                 "items": {
@@ -1025,9 +1017,15 @@
                     "many": {
                       "type": "boolean"
                     },
-                    "default": {},
                     "summary": {
                       "type": "string"
+                    },
+                    "default": {},
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "required": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -1036,10 +1034,12 @@
                     "class",
                     "enum",
                     "many",
-                    "default",
                     "summary"
                   ]
                 }
+              },
+              "featured": {
+                "type": "boolean"
               },
               "returns": {
                 "type": "array",
@@ -1173,13 +1173,7 @@
               "status",
               "use_when",
               "replaced_by",
-              "featured",
-              "params",
-              "returns",
-              "examples",
-              "touches",
-              "query",
-              "hash"
+              "params"
             ]
           }
         },
@@ -2821,9 +2815,15 @@
                     "many": {
                       "type": "boolean"
                     },
-                    "default": {},
                     "summary": {
                       "type": "string"
+                    },
+                    "default": {},
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "required": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -2832,7 +2832,6 @@
                     "class",
                     "enum",
                     "many",
-                    "default",
                     "summary"
                   ]
                 }
@@ -3006,14 +3005,7 @@
               "replaced_by",
               "takes",
               "default",
-              "params",
-              "max_bytes",
-              "page_bytes",
-              "sections",
-              "examples",
-              "touches",
-              "call",
-              "hash"
+              "params"
             ]
           }
         },

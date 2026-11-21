@@ -88,7 +88,9 @@ class ActionService:
             if item.entry.name == name and not item.allowed:
                 request = RequestMeta.of("do", {"graph": entry.name, "action": name})
                 raise self._reader.refuse_not_allowed(actor, entry, item, request)
-        action = find_action(visible, name)
+        # a name the caller sees but may not run was refused above: what is found here is allowed,
+        # and the suggestions of a name that is none are over everything the caller sees
+        action = find_action([c.entry for c in classified], name)
         assert published is not None
         model = self._models.load(entry)
         problem = self._reader.action_problem(entry, published, model, name)

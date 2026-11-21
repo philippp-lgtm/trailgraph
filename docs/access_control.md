@@ -754,8 +754,8 @@ What each command does with a not-allowed entry:
 | --- | --- |
 | `describe functions\|actions\|views` | lists the allowed entries; `not_allowed` is the number of the others (module and deprecation filters apply); `--include-not-allowed` lists them after the allowed ones, each with `allowed: false` and `missing` |
 | `describe modules`, `describe module M` | counts of the allowed entries per kind (`functions`, `actions`, `views`) and, per kind, the number not allowed in `not_allowed`; `describe module` lists them with `--include-not-allowed` |
-| `describe search` | finds them like allowed ones, marked `allowed: false` with `missing`, ranked after the allowed hits of the same tier |
-| `describe function\|action\|view NAME` | the whole description plus `allowed: false` and `missing` (`replaced_by` names only a replacement the caller may use) |
+| `describe search` | finds them like allowed ones, marked `allowed: false` with `missing`, ranked after the allowed hits of the same tier; they match on name, summary and what they are for (`use_when`, parameter names) only, not on example texts, section titles or touched terms |
+| `describe function\|action\|view NAME` | what the entry is for and how it is called, with `allowed: false` and `missing`: name, module, summary, `use_when`, signature, status and the parameters (name, type, class or enum, `many`, summary, `required`), `replaced_by` only when the caller may use the replacement. Not the query, the operations, conditions, sections, example texts or values, parameter defaults, touched terms, needed rights, hash or call command: a definition can carry literals of the maintainer's, and the right that is missing is the one that protects them |
 | `run`, `do`, `view --name` | `access.denied`, recorded as a denial (the first denying decision, so the audit event names the right), message naming the missing right and the hint to ask the maintainer for a role |
 
 `missing` is a list of `{action, resource}`; the resource is graph-relative (`graph`,

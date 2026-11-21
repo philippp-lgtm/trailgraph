@@ -23,8 +23,9 @@ then, among hits of the same tier, the ones the caller may use before those it m
 function, action or view it sees but lacks a right for: ``allowed: false`` and ``missing``),
 then shorter names (CURIEs for a CURIE match), then the kind (type, relation, attribute,
 enum value, state, function, action, view) and the CURIE.
-A hit names the field and the way it matched. The ``curie`` of a function, action or view
-hit is its name.
+An entry the caller may not use matches on what it is for (``use_when``, parameter names) only,
+not on its example texts, section titles or touched terms. A hit names the field and the way it
+matched. The ``curie`` of a function, action or view hit is its name.
 The CURIE of an attribute, enum value or state is
 its owner's CURIE, a dot and its name (``ppl:Person.email``); ``of`` names the owner.
 """
@@ -175,9 +176,10 @@ def _function_terms(
     found: list[_Term] = []
     for f in functions:
         deeper = [("use_when", f.defn.use_when)]
-        deeper += [("use_when", e.question) for e in f.defn.examples]
         deeper += [("use_when", p.name) for p in f.defn.params]
-        deeper += _touches(f.types, f.relations, model)
+        if not missing:  # the examples and the touched terms are read only by who may use it
+            deeper += [("use_when", e.question) for e in f.defn.examples]
+            deeper += _touches(f.types, f.relations, model)
         found.append(
             _Term(
                 "function",
@@ -206,9 +208,10 @@ def _action_terms(
     found: list[_Term] = []
     for a in actions:
         deeper = [("use_when", a.defn.use_when)]
-        deeper += [("use_when", e.request) for e in a.defn.examples]
         deeper += [("use_when", p.name) for p in a.defn.params]
-        deeper += _touches(a.types, a.relations, model)
+        if not missing:
+            deeper += [("use_when", e.request) for e in a.defn.examples]
+            deeper += _touches(a.types, a.relations, model)
         found.append(
             _Term(
                 "action",
@@ -234,10 +237,11 @@ def _view_terms(
     found: list[_Term] = []
     for v in views:
         deeper = [("use_when", v.defn.use_when)]
-        deeper += [("use_when", e.question) for e in v.defn.examples]
         deeper += [("use_when", p.name) for p in v.defn.params]
-        deeper += [("use_when", s.title) for s in v.defn.sections if s.title]
-        deeper += _touches(v.types, v.relations, model)
+        if not missing:
+            deeper += [("use_when", e.question) for e in v.defn.examples]
+            deeper += [("use_when", s.title) for s in v.defn.sections if s.title]
+            deeper += _touches(v.types, v.relations, model)
         found.append(
             _Term(
                 "view",

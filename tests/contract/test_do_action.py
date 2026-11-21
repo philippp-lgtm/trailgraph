@@ -292,7 +292,7 @@ def policy_with(*rules: dict[str, JsonValue], obligations: list[JsonValue] | Non
 def test_an_action_the_actor_may_not_run_is_a_recorded_denial(svc: ServiceEnv) -> None:
     """The policy denies the unlink of items: ``move_item`` needs it. The caller sees what the
     action names, so the call is ``access.denied`` naming the right (recorded like any denial),
-    while a name that is not an action is not found, with suggestions of allowed actions only."""
+    while a name that is not an action is not found, with suggestions of the actions it sees."""
     item, target = make_item(svc), make_location(svc)
     deny = {
         "id": "no_unlink_item",
@@ -315,7 +315,8 @@ def test_an_action_the_actor_may_not_run_is_a_recorded_denial(svc: ServiceEnv) -
     with pytest.raises(GraphCliError) as caught:
         do(service, svc, "moove_item", f"item={item}", f"location={target}")
     assert caught.value.code == "action.not_found"
-    assert "move_item" not in caught.value.details["did_you_mean"]  # type: ignore[operator]
+    # the suggestions are over what the caller sees, the one it may not run included
+    assert "move_item" in caught.value.details["did_you_mean"]  # type: ignore[operator]
     do(service, svc, "retire_item", f"item={item}", reason="scrapped")  # the allowed one runs
 
 

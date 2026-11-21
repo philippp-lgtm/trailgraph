@@ -18,7 +18,6 @@ from graph_cli.kinetic.view_format import ENTITY, RowsSection, placeholder_name
 from graph_cli.kinetic.view_page import decode_cursor, render_set
 from graph_cli.kinetic.view_rows import RowsResult
 from graph_cli.query.cypher.values import Value
-from graph_cli.services.catalog_access import allowed_entries
 from graph_cli.services.read.entities import ReadEntities, current_entity
 from graph_cli.services.read.graph_read import GraphRead
 from graph_cli.services.read.json_shapes import edges_in, entities_in, value_json
@@ -104,7 +103,9 @@ class ReadViews(ReadEntities, ReadQueries):
             if item.entry.name == name and not item.allowed:
                 request = RequestMeta.of(view.command, {"graph": view.entry.name, "name": name})
                 raise self.refuse_not_allowed(view.actor, view.entry, item, request)
-        return find_view(allowed_entries(classified) or None, name)
+        # an exact name that is not allowed was refused above: what is found here is allowed, and
+        # the suggestions of a name that is none are over everything the caller sees
+        return find_view([c.entry for c in classified], name)
 
     def _card(
         self,

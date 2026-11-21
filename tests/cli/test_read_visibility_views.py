@@ -358,11 +358,14 @@ def test_a_set_view_needs_read_find_and_an_entity_view_does_not(
     denied = app(run_cli, "view", "--name", "staff_catalog", env=explore)
     assert (denied.code, denied.error["code"]) == (3, "access.denied"), denied.envelope
     assert denied.error["details"]["action"] == "read.find"
-    for name in ("pay_roll", "names_rows"):
-        outcome = app(run_cli, "view", "--name", name, env=explore)
-        assert outcome.error["code"] in ("view.not_found", "access.denied"), name
+    # names_rows lists the names of colleagues, which this caller sees: not allowed, like
+    # staff_catalog; pay_roll names the marked salary the caller does not hold: hidden whatever
+    # the right
+    rows = app(run_cli, "view", "--name", "names_rows", env=explore)
+    assert (rows.code, rows.error["code"]) == (3, "access.denied"), rows.envelope
+    assert rows.error["details"]["action"] == "read.find"
     hidden = app(run_cli, "view", "--name", "pay_roll", env=explore)
-    assert hidden.error["code"] == "view.not_found"  # it names the salary
+    assert (hidden.code, hidden.error["code"]) == (1, "view.not_found")
     entity = ok(run_cli, "view", "CON-0001", "--name", "colleague_mail", env=explore)
     assert entity.data["view"]["name"] == "colleague_mail"
     assert ok(run_cli, "view", "CON-0001", env=explore).data["view"]["name"] == "colleague_overview"

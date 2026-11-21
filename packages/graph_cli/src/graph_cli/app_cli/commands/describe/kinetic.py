@@ -49,6 +49,21 @@ _FUNCTION_ITEM: Final = {
     "status": enum("active", "deprecated"),
 }
 _TOUCHED: Final = array(obj({"curie": STRING, "module": NULLABLE_STRING}))
+# A parameter as a caller who may use the entry sees it; one who may not gets the first six keys and
+# ``required`` (no default value, no example value): ``services.describe.restricted_detail``.
+_PARAM: Final = obj(
+    {
+        "name": STRING,
+        "type": STRING,
+        "class": NULLABLE_STRING,
+        "enum": NULLABLE_STRING,
+        "many": BOOLEAN,
+        "summary": STRING,
+    },
+    {"default": ANY, "optional": BOOLEAN, "required": BOOLEAN},
+)
+# What the definition of an entry that may not be used leaves out (it is optional here, and always
+# there for an entry that may be used).
 _FUNCTION: Final = model_document(
     {
         "function": obj(
@@ -56,27 +71,17 @@ _FUNCTION: Final = model_document(
                 **_FUNCTION_ITEM,
                 "use_when": STRING,
                 "replaced_by": NULLABLE_STRING,
+                "params": array(_PARAM),
+            },
+            {
                 "featured": BOOLEAN,
-                "params": array(
-                    obj(
-                        {
-                            "name": STRING,
-                            "type": STRING,
-                            "class": NULLABLE_STRING,
-                            "enum": NULLABLE_STRING,
-                            "many": BOOLEAN,
-                            "default": ANY,
-                            "summary": STRING,
-                        }
-                    )
-                ),
                 "returns": array(obj({"column": STRING, "summary": STRING})),
                 "examples": array(obj({"question": STRING, "params": obj(extra=ANY)})),
                 "touches": obj({"types": _TOUCHED, "relations": _TOUCHED}),
                 "query": STRING,
                 "hash": STRING,
+                **ACCESS_MARKS,
             },
-            ACCESS_MARKS,
         )
     }
 )
@@ -94,22 +99,11 @@ _ACTION: Final = model_document(
                 **_ACTION_ITEM,
                 "use_when": STRING,
                 "replaced_by": NULLABLE_STRING,
-                "featured": BOOLEAN,
                 "reason": enum("optional", "required"),
-                "params": array(
-                    obj(
-                        {
-                            "name": STRING,
-                            "type": STRING,
-                            "class": NULLABLE_STRING,
-                            "enum": NULLABLE_STRING,
-                            "many": BOOLEAN,
-                            "default": ANY,
-                            "summary": STRING,
-                        },
-                        {"optional": BOOLEAN},
-                    )
-                ),
+                "params": array(_PARAM),
+            },
+            {
+                "featured": BOOLEAN,
                 "preconditions": array(
                     obj({"id": STRING, "on": STRING, "summary": STRING, "expr": ANY})
                 ),
@@ -118,8 +112,8 @@ _ACTION: Final = model_document(
                 "touches": obj({"types": _TOUCHED, "relations": _TOUCHED}),
                 "needs": array(obj({"action": STRING, "type": STRING})),
                 "hash": STRING,
+                **ACCESS_MARKS,
             },
-            ACCESS_MARKS,
         )
     }
 )
@@ -141,19 +135,9 @@ _VIEW: Final = model_document(
                 "replaced_by": NULLABLE_STRING,
                 "takes": NULLABLE_STRING,  # null: a set view
                 "default": BOOLEAN,
-                "params": array(
-                    obj(
-                        {
-                            "name": STRING,
-                            "type": STRING,
-                            "class": NULLABLE_STRING,
-                            "enum": NULLABLE_STRING,
-                            "many": BOOLEAN,
-                            "default": ANY,
-                            "summary": STRING,
-                        }
-                    )
-                ),
+                "params": array(_PARAM),
+            },
+            {
                 "max_bytes": nullable(INTEGER),
                 "page_bytes": nullable(INTEGER),
                 "sections": array(obj({"kind": STRING, "id": STRING}, extra=ANY)),
@@ -168,8 +152,8 @@ _VIEW: Final = model_document(
                 ),
                 "call": STRING,
                 "hash": STRING,
+                **ACCESS_MARKS,
             },
-            ACCESS_MARKS,
         )
     }
 )
@@ -215,7 +199,7 @@ def _param_lines(item: JsonObject) -> list[str]:
     lines = []
     for value in req_list(item, "params"):
         p = as_object(value, "param")
-        default = "" if p["default"] is None else f" (default {json.dumps(p['default'])})"
+        default = "" if p.get("default") is None else f" (default {json.dumps(p['default'])})"
         kind = {"ref": f"ref {p['class']}", "enum": f"enum {p['enum']}"}.get(
             str(p["type"]), str(p["type"])
         )
@@ -235,6 +219,8 @@ def _function_text(data: JsonObject) -> str:
         lines.append(f"  Deprecated{replaced}")
     lines.append("Parameters:")
     lines.extend(_param_lines(f))
+    if f.get("allowed") is False:  # what it returns and runs is for who may run it
+        return "\n".join(lines) + "\n"
     lines.append("Returns:")
     for value in req_list(f, "returns"):
         r = as_object(value, "column")
@@ -308,6 +294,8 @@ def _action_text(data: JsonObject) -> str:
         lines.append("  Requires --reason")
     lines.append("Parameters:")
     lines.extend(_param_lines(a))
+    if a.get("allowed") is False:  # what it checks and writes is for who may run it
+        return "\n".join(lines) + "\n"
     lines.append("Preconditions:")
     for value in req_list(a, "preconditions"):
         c = as_object(value, "precondition")
@@ -450,6 +438,8 @@ def _view_text(data: JsonObject) -> str:
         lines.append(f"  Deprecated{replaced}")
     lines.append("Parameters:")
     lines.extend(_param_lines(v))
+    if v.get("allowed") is False:  # what it reads is for who may call it
+        return "\n".join(lines) + "\n"
     lines.append("Sections:")
     for value in req_list(v, "sections"):
         section = as_object(value, "section")
@@ -476,7 +466,8 @@ def describe_view(state: CommandState, name: str, graph: str | None) -> Result:
     allowed, denied = split_views(state, view)
     data = describe.describe_view(view.entry, view.model, allowed, name, denied)
     item = as_object(data["view"], "view")
-    data = {**data, "view": {**item, "call": _view_call(item, view.entry.name)}}
+    if item.get("allowed") is not False:  # how to call it is for who may
+        data = {**data, "view": {**item, "call": _view_call(item, view.entry.name)}}
     return Result(data=data, graph=view.envelope_graph(), text=_view_text(data))
 
 
