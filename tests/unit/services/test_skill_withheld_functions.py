@@ -8,6 +8,7 @@ Over the company example (the type limits and the grants of ``support.catalog_po
 the ``staff`` toy (a reader that lacks a marking is limited by it).
 """
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -18,8 +19,9 @@ from support.services import ServiceEnv
 
 from graph_cli.access_control.compiler import compile_policy
 from graph_cli.access_control.policy import policy_set
-from graph_cli.kernel.canonical import JsonObject
+from graph_cli.kernel.canonical import JsonObject, hash_value
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.kernel.skill_featured import kind_digest
 from graph_cli.services.read import ReadService
 
 REQUEST = RequestMeta("run", "sha256:" + "0" * 64)
@@ -80,6 +82,31 @@ def test_a_reader_that_sees_some_functions_without_the_right_is_told_they_are_wi
     one = reader(env, Policy(types=some)).skill_featured(env.actor, entry)
     two = reader(env, Policy(types=some, deny=NO_FUNCTIONS)).skill_featured(env.actor, entry)
     assert one != two
+
+
+def test_a_reader_that_sees_only_deprecated_functions_gets_the_same_skill_with_or_without_the_right(
+    env: ServiceEnv,
+) -> None:
+    """The render and the digest count active functions only, so a reader that sees no active
+    function is not told "withheld": its documents and digest are those of the reader with the
+    right (review of 56d20be)."""
+    slot = env.catalog.functions[env.entry.id]  # type: ignore[union-attr]
+    compiled = {
+        **slot.compiled,
+        "functions": [{**f, "status": "deprecated"} for f in slot.compiled["functions"]],  # type: ignore[union-attr]
+    }
+    env.catalog.functions[env.entry.id] = replace(  # type: ignore[union-attr]
+        slot, compiled=compiled, compiled_hash=hash_value(compiled)
+    )
+    for types in ((), (("org:Position", "none"),)):
+        allowed = reader(env, Policy(types=types))
+        denied = reader(env, Policy(types=types, deny=NO_FUNCTIONS))
+        shown = functions_of(documents(env, denied))
+        assert "withheld" not in (shown or {})
+        assert shown == functions_of(documents(env, allowed))  # views differ: they run functions
+        assert kind_digest("functions", shown) == kind_digest(
+            "functions", functions_of(documents(env, allowed))
+        )
 
 
 def test_a_reader_with_no_limit_and_no_right_is_withheld_too(env: ServiceEnv) -> None:

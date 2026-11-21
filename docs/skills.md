@@ -67,7 +67,8 @@ may have 1,024 characters; when the sentence would pass that, it is left out (th
 never refused for it) and `graph-admin` warns at render, publish and push
 (`admin.skill_over_budget`, naming the length of the description): shorten the description
 or write the sentence into it. A description wrapped over several lines as a plain or
-quoted scalar is left as written too (the sentence is not added; write it in); folded and
+quoted scalar is left as written too (the sentence is not added and `graph-admin` warns the
+same way: write the description on one line or the sentence into it); folded and
 literal block scalars take it as one more line. A `static` skill is installed as it is, so it
 gets nothing.
 The `start` block opens with "If you have not yet in this session: `graph start --json`".

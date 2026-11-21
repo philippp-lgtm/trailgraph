@@ -590,7 +590,12 @@ RENDER_OUTPUT: Final = obj(  # services_admin.skill.render; ``path`` as for pull
                     "curated_bytes": INTEGER,
                     "curated_budget": INTEGER,
                     "blocks": obj(extra=INTEGER),
-                }
+                },
+                {  # only when the renderer cannot add the graph start sentence to the description
+                    "description_chars": INTEGER,
+                    "description_gap": STRING,
+                    "start_sentence": STRING,
+                },
             )
         ),
     },

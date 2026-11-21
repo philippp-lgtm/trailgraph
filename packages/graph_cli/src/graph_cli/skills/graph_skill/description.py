@@ -4,8 +4,10 @@ An agent chooses a skill by its description, so the one place every graph skill 
 before it is loaded is the description. The renderer appends ``START_SENTENCE`` to a curated
 description that does not mention ``graph start`` yet, unless the result would be longer than the
 1,024 characters the Agent Skills format allows: then the description stays as the maintainer wrote
-it (a render is never refused for this) and ``graph-admin`` warns at render and publish
-(``Size.description_over``) so the maintainer shortens it or writes the sentence in.
+it (a render is never refused for this) and ``graph-admin`` warns at render, publish and push
+(``Size.description_gap``) so the maintainer shortens it or writes the sentence in. The same
+warning names a description wrapped over several lines as a plain or quoted scalar, which the
+renderer leaves as written too (``start_sentence_gap``).
 """
 
 from __future__ import annotations
@@ -43,6 +45,23 @@ def lacks_start(description: str) -> bool:
 def fits(description: str) -> bool:
     """Whether ``START_SENTENCE`` can be added without passing the limit."""
     return len(f"{description} {START_SENTENCE}") <= MAX_DESCRIPTION
+
+
+TOO_LONG: Final = "too_long"
+WRAPPED: Final = "wrapped"
+
+
+def start_sentence_gap(lines: list[str]) -> str | None:
+    """Why ``with_start_sentence`` leaves the sentence out of a description that lacks ``graph
+    start``: ``TOO_LONG`` (it would pass the limit) or ``WRAPPED`` (a plain or quoted scalar over
+    several lines); ``None`` when the sentence is added, already there or there is no
+    description."""
+    description = description_of(lines)
+    if description is None or not description.strip() or not lacks_start(description):
+        return None
+    if not fits(description):
+        return TOO_LONG
+    return WRAPPED if with_start_sentence(lines) == lines else None
 
 
 def with_start_sentence(lines: list[str]) -> list[str]:

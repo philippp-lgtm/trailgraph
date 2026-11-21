@@ -51,7 +51,7 @@ from graph_cli.kernel.skill_marker import GENERATED, graph_skill_name
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.describe import describe_model
 from graph_cli.skills.graph_skill import Size, graph_block, measure, render_checked
-from graph_cli.skills.graph_skill.description import START_SENTENCE
+from graph_cli.skills.graph_skill.description import START_SENTENCE, WRAPPED
 from graph_cli.skills.names import check_names
 from graph_cli.skills.template import kind_of, parse_template
 from graph_cli.skills.tree import Problem, read_tree, validate, write_tree
@@ -94,7 +94,13 @@ class Checked:
             parts.append(f"SKILL.md has {size.skill} bytes of {size.budget}")
         if size.curated > size.curated_budget:
             parts.append(f"its curated text {size.curated} bytes of {size.curated_budget}")
-        if size.description_over:
+        if size.description_gap == WRAPPED:
+            parts.append(
+                f"its description lacks the graph start sentence: it is wrapped over several"
+                f" lines, so the renderer does not add '{START_SENTENCE}'; write the description"
+                " on one line (or as a block scalar) or write the sentence into it"
+            )
+        elif size.description_gap:
             parts.append(
                 f"its description has {size.description} characters, so the sentence"
                 f" '{START_SENTENCE}' that the renderer adds does not fit the 1,024 characters"

@@ -115,31 +115,35 @@ class ReadSkills(ReadCatalogs):
         """The compiled function, action and view catalogs as the render of ``actor`` sees them
         (``None``: nothing to list). Functions: those that fit ``view``; with ``limits`` and no
         ``read.function`` none, and the document says ``withheld`` so the block can say that
-        functions are not for this token, but only for a reader that sees at least one function:
-        one whose view hides them all gets ``None`` whatever its rights. Actions: those ``actor``
+        functions are not for this token, but only for a reader that sees at least one active
+        function: one whose view hides them all gets ``None`` and one that sees only deprecated
+        ones the catalog as it is, whatever its rights. Actions: those ``actor``
         may run. Views: those it may see."""
         found = self._published_slot(entry)
         functions: JsonObject | None = None
         if found is not None and found[1].count:
             # What the reader's view hides goes first, the right second: a reader that sees no
             # function must not learn through ``read.function`` that the graph has any.
-            document = found[1].compiled
-            sees = True
+            document: JsonObject | None = found[1].compiled
             if view.limited:
                 hidden = self._hidden_functions(entry, found, view)
                 kept = [
                     e
-                    for e in req_list(document, "functions")
+                    for e in req_list(found[1].compiled, "functions")
                     if isinstance(e, dict) and e.get("name") not in hidden
                 ]
-                document = {**document, "functions": kept}
-                sees = bool(kept)
-            if not sees:
-                functions = None
-            elif limits and self._function_denials(actor, entry):
-                functions = {**document, "functions": [], "withheld": True}
-            else:
-                functions = document
+                document = {**found[1].compiled, "functions": kept} if kept else None
+            if document is not None:
+                # Only an active function counts as seen (the render and the digest skip
+                # deprecated ones): a reader that sees none gets the same document with or
+                # without the right.
+                sees = any(
+                    isinstance(e, dict) and e.get("status") != "deprecated"
+                    for e in req_list(document, "functions")
+                )
+                if sees and limits and self._function_denials(actor, entry):
+                    document = {**document, "functions": [], "withheld": True}
+            functions = document
         return (
             functions,
             self._visible_catalog(actor, entry, limits=limits),

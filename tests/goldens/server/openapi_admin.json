@@ -2693,6 +2693,15 @@
                     "additionalProperties": {
                       "type": "integer"
                     }
+                  },
+                  "description_chars": {
+                    "type": "integer"
+                  },
+                  "description_gap": {
+                    "type": "string"
+                  },
+                  "start_sentence": {
+                    "type": "string"
                   }
                 },
                 "required": [

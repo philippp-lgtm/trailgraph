@@ -8,6 +8,8 @@ from support.skills import GRAPH_SKILL_NAME, render_inputs
 from graph_cli.skills.graph_skill import measure, render_checked
 from graph_cli.skills.graph_skill.description import (
     START_SENTENCE,
+    TOO_LONG,
+    WRAPPED,
     description_of,
     with_start_sentence,
 )
@@ -52,6 +54,11 @@ SHAPES = {
     ),
     "block, tab-free blank lines inside": (
         ["description: |", "    Items.", "", "    Places."],
+        True,
+    ),
+    "block, keep chomping": (["description: |+", "  Items and places.", ""], True),
+    "block, indent indicator": (
+        ["description: >2-", "   Items and places,", "   and stock."],
         True,
     ),
     "wrapped plain": (["description: Items and", "  places"], False),
@@ -162,3 +169,24 @@ def test_a_description_wrapped_over_lines_is_measured_whole_and_rendered_unchang
     assert problems == [] and rendered is not None
     text = rendered[SKILL_FILE].decode()
     assert yaml.safe_load(text.split("---\n")[1])["description"] == "Items and places."  # unchanged
+
+
+def test_a_wrapped_description_is_reported_not_silently_left_without_the_sentence() -> None:
+    documents, graph = render_inputs(compiled_model("inventory"))
+    wrapped = template_with('"Items and\n  places."')
+    template, _ = parse_template(wrapped)
+    assert template is not None
+    size = measure(template, documents, graph)
+    assert size.description_gap == WRAPPED and size.description_over and size.over
+    assert size.to_json()["description_gap"] == WRAPPED
+    # one line, a block scalar or a description that names graph start: no gap
+    for fine in (
+        '"Items and places."',
+        ">-\n  Items and\n  places.",
+        '"Items. Run `graph start`."',
+    ):
+        parsed, _ = parse_template(template_with(fine))
+        assert parsed is not None
+        assert measure(parsed, documents, graph).description_gap is None, fine
+    long = parse_template(template_with(f'"{"y" * (MAX_DESCRIPTION - 10)}"'))[0]
+    assert long is not None and measure(long, documents, graph).description_gap == TOO_LONG

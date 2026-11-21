@@ -132,8 +132,8 @@ The blocks already say what the model says. Write what it cannot:
    its space) unless the description names `graph start` itself, so keep the
    description under 970 characters: when the sentence does not fit it is left
    out and publish warns (`admin.skill_over_budget`, with the length). Write the
-   description on one line: one wrapped over lines as a plain or quoted scalar
-   gets no sentence.
+   description on one line (or as a block scalar): one wrapped over lines as a
+   plain or quoted scalar gets no sentence, and publish warns the same way.
 2. **Rules for you**: how to decide between two types, which values a
    field takes in practice, when to create versus update, what to look up
    before writing (an existing entity with a similar name), what needs the
