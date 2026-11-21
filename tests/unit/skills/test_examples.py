@@ -28,7 +28,7 @@ def examples(body: str, extra: dict[str, str] | None = None) -> list[CommandExam
     files.update({name: text.encode() for name, text in (extra or {}).items()})
     template, broken = parse_template(files)
     assert broken == [] and template is not None
-    return command_examples(template)
+    return command_examples(template, INVENTORY)
 
 
 def lines(found: list[CommandExample]) -> list[tuple[str, int, tuple[str, ...]]]:
@@ -146,9 +146,52 @@ def test_the_terms_hold_what_the_text_can_name() -> None:
 
 def test_a_placeholder_the_tool_does_not_use_names_something_of_the_graph() -> None:
     body = (
-        "```sh\ngraph file add <file> --title '<Subject> <Kind|Test> <YYYY-MM-DD>'\n"
-        "graph history <installation id>\n```\n"
+        "```sh\ngraph file add <file> --title '<title> <kind|group> <yyyy-mm-dd>'\n"
+        "graph history <entity id>\n```\n"
     )
     assert generic(body) == []
     plain = "```sh\ngraph file add <file> --title '<name>' --graph example_graph\n```\n"
     assert [w[0] for w in generic(plain)] == ["file"]
+
+
+def test_shell_comments_are_not_commands_and_their_quotes_open_nothing() -> None:
+    body = (
+        "```sh\n# don't run this: graph query is slow\ngraph find --type inv:Item  # don't page\n"
+        "graph get ITEM-0001\n```\n"
+    )
+    found = examples(body)
+    assert [e.words for e in found] == [("find", "--type", "inv:Item"), ("get", "ITEM-0001")]
+    assert [e.line for e in found] == [8, 9]
+
+
+def test_a_hash_inside_a_word_or_a_quote_is_not_a_comment() -> None:
+    body = "```sh\ngraph query 'MATCH (n) RETURN n // #1' --param tag=a#b\n```\n"
+    (found,) = examples(body)
+    assert found.words[1] == "MATCH (n) RETURN n // #1" and "tag=a#b" in found.words
+
+
+def test_a_query_written_in_double_quotes_has_its_parameter_back() -> None:
+    body = (
+        '```sh\ngraph query "MATCH (n:Item) WHERE n.name = \\$name RETURN n" --param name=x\n```\n'
+    )
+    assert recipes(body)[0][0] == "MATCH (n:Item) WHERE n.name = $name RETURN n"
+
+
+def test_a_file_in_the_equals_form_and_global_options_before_the_command() -> None:
+    body = "```sh\ngraph query --file=q.cypher\ngraph --graph g --json find --type inv:Item\n```\n"
+    assert [e.words for e in examples(body)] == [("find", "--type", "inv:Item")]
+
+
+def test_free_text_options_name_nothing_of_the_graph() -> None:
+    # a reason that happens to hold a term does not make the example about this graph
+    assert (
+        generic(
+            "```sh\ngraph transition <id> <state> --reason 'moved the Item to a Location'\n```\n"
+        )
+        != []
+    )
+    # a placeholder in a title says how this graph names things
+    assert generic("```sh\ngraph file add <file> --title '<title> <kind>'\n```\n") == []
+    # the field of --set names the graph; its value is data
+    assert generic("```sh\ngraph create <type> --set condition=<value>\n```\n") == []
+    assert generic("```sh\ngraph create <type> --set label=Item\n```\n") != []

@@ -65,6 +65,15 @@ PLACEHOLDER_RE: Final = re.compile(r"<[A-Za-z][^<>]*>")
 WORD_RE: Final = re.compile(r"[a-z0-9]+")
 TOKEN_RE: Final = re.compile(r"[A-Za-z][A-Za-z0-9_]*(?::[A-Za-z][A-Za-z0-9_]*)?")
 MAX_JOINED_LINES: Final = 60  # a quote that stays open longer is prose, not a command
+# String options whose value names fields, relations or sort keys of the graph.
+NAMING_OPTIONS: Final = frozenset(
+    {"--for", "--fields", "--field", "--attr", "--sort", "--rel", "--in-rel", "--unset"}
+)
+# Options whose value is data written for the graph: its words are no terms, but a placeholder
+# of the maintainer's (``--title '<kind> <date>'``) still says something about the graph.
+DATA_OPTIONS: Final = frozenset({"--title", "--label", "--name"})
+NAMING_TYPES: Final = frozenset({"term", "filter", "entity_ref"})
+NAME_PART_TYPES: Final = frozenset({"assignment", "json_assignment"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,26 +104,48 @@ class _Piece:
     fenced: bool
 
 
-def command_examples(template: Template) -> list[CommandExample]:
-    """Every ``graph <command> ...`` of the curated text, in file and line order."""
+def command_examples(
+    template: Template, inventory: Mapping[str, JsonValue]
+) -> list[CommandExample]:
+    """Every ``graph <command> ...`` of the curated text, in file and line order. Global
+    options before the command (``graph --graph g find``) are skipped."""
+    flags = _global_flags(inventory)
     found: list[CommandExample] = []
     for path, text in sorted(template.curated().items()):
         for piece in _pieces(text):
-            found += _examples(path, piece)
+            found += _examples(path, piece, flags)
     return found
 
 
-def _examples(path: str, piece: _Piece) -> Iterator[CommandExample]:
+def _examples(path: str, piece: _Piece, flags: Mapping[str, bool]) -> Iterator[CommandExample]:
     for match in GRAPH_RE.finditer(piece.text):
         if _open_quote(piece.text[: match.start()]):
             continue  # the word "graph" inside a quoted value, not a command
-        words = command_words(piece.text[match.end() :])
+        words = _without_global_options(command_words(piece.text[match.end() :]), flags)
         if not words or not COMMAND_WORD_RE.match(words[0]):
             continue
-        if "--file" in words or "-" in words:
+        if any(w == "--file" or w.startswith("--file=") or w == "-" for w in words):
             continue  # the input is elsewhere
         line = piece.line + piece.text.count("\n", 0, match.start())
         yield CommandExample(path, line, tuple(words), piece.fenced)
+
+
+def _without_global_options(words: list[str], flags: Mapping[str, bool]) -> list[str]:
+    index = 0
+    while index < len(words) and words[index].startswith("--"):
+        name, equals, _ = words[index].partition("=")
+        if name not in flags:
+            return words  # not a global option: leave the line as it is
+        index += 1 if flags[name] or equals else 2
+    return words[index:]
+
+
+def _global_flags(inventory: Mapping[str, JsonValue]) -> dict[str, bool]:
+    doc = as_object(dict(inventory), "inventory")
+    return {
+        req_str(as_object(o, "global_options[]"), "name"): as_object(o, "o").get("type") == "flag"
+        for o in req_list(doc, "global_options")
+    }
 
 
 def _pieces(text: str) -> Iterator[_Piece]:
@@ -137,8 +168,8 @@ def _pieces(text: str) -> Iterator[_Piece]:
             continue
         prose.append("")
         if opener is not None and opener.group(1) == fence:
-            if current:
-                yield _Piece(current, start, True)
+            if current.strip():
+                yield _Piece(_scan(current)[0], start, True)
             fence, heredoc, current, joined = None, None, "", 0
             continue
         if heredoc is not None:
@@ -153,15 +184,17 @@ def _pieces(text: str) -> Iterator[_Piece]:
             sep = " "
             continue
         current = f"{current}{sep}{line}"
-        if joined < MAX_JOINED_LINES and GRAPH_RE.search(current) and _open_quote(current):
+        cleaned, is_open = _scan(current)
+        if joined < MAX_JOINED_LINES and GRAPH_RE.search(cleaned) and is_open:
             sep = "\n"  # a quoted word goes on in the next line
             continue
-        tag = HEREDOC_RE.search(current)
-        yield _Piece(current, start, True)
+        tag = HEREDOC_RE.search(cleaned)
+        if cleaned.strip():
+            yield _Piece(cleaned, start, True)
         current = ""
         heredoc = tag.group(2) if tag is not None else None
-    if current:
-        yield _Piece(current, start, True)
+    if current.strip():
+        yield _Piece(_scan(current)[0], start, True)
     rest = "\n".join(prose)
     for found in INLINE_CODE_RE.finditer(rest):
         yield _Piece(found.group(2), rest.count("\n", 0, found.start(2)) + 1, False)
@@ -176,37 +209,74 @@ def _open_quote(text: str) -> bool:
     return False
 
 
+def _scan(text: str) -> tuple[str, bool]:
+    """``text`` without its shell comments (``#`` at the start of a word, outside quotes) and
+    whether it ends inside a quoted word."""
+    out: list[str] = []
+    quote: str | None = None
+    word_start = True
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote is None:
+            if char == "\\":
+                out.append(text[index : index + 2])
+                index += 2
+                word_start = False
+            elif char in "'\"":
+                quote = char
+                out.append(char)
+                index += 1
+                word_start = False
+            elif char == "#" and word_start:
+                end = text.find("\n", index)
+                index = len(text) if end < 0 else end
+            else:
+                out.append(char)
+                word_start = char in " \t\n;|&("
+                index += 1
+        else:
+            if char == "\\" and quote == '"':
+                out.append(text[index : index + 2])
+                index += 2
+                continue
+            if char == quote:
+                quote = None
+            out.append(char)
+            index += 1
+    return "".join(out), quote is not None
+
+
 # ---- options ------------------------------------------------------------------------------
 
 
-def _options(inventory: Mapping[str, JsonValue]) -> dict[tuple[str, ...], dict[str, bool]]:
-    """Per command path, its options (and the global ones) with whether each is a flag."""
+def _options(inventory: Mapping[str, JsonValue]) -> dict[tuple[str, ...], dict[str, str]]:
+    """Per command path, its options (and the global ones) with their types."""
     doc = as_object(dict(inventory), "inventory")
     common = {
-        req_str(as_object(o, "global_options[]"), "name"): o.get("type") == "flag"
+        req_str(as_object(o, "global_options[]"), "name"): str(as_object(o, "o").get("type"))
         for o in req_list(doc, "global_options")
-        if isinstance(o, dict)
     }
-    found: dict[tuple[str, ...], dict[str, bool]] = {}
+    found: dict[tuple[str, ...], dict[str, str]] = {}
     for value in req_list(doc, "commands"):
         command = as_object(value, "commands[]")
         path = tuple(str(p) for p in as_list(command["path"], "path"))
         options = dict(common)
         for option in as_list(command.get("options", []), "options"):
             body = as_object(option, "options[]")
-            options[req_str(body, "name")] = body.get("type") == "flag"
+            options[req_str(body, "name")] = str(body.get("type"))
         found[path] = options
     return found
 
 
 def _command_path(
-    words: tuple[str, ...], options: Mapping[tuple[str, ...], dict[str, bool]]
+    words: tuple[str, ...], options: Mapping[tuple[str, ...], dict[str, str]]
 ) -> tuple[str, ...] | None:
     return max((p for p in options if words[: len(p)] == p), key=len, default=None)
 
 
 def _arguments(
-    words: tuple[str, ...], flags: Mapping[str, bool]
+    words: tuple[str, ...], kinds: Mapping[str, str]
 ) -> Iterator[tuple[str | None, str]]:
     """``(option, value)`` for every argument word after the command path: ``(None, word)`` for
     a positional word, ``(--name, value)`` for an option that takes one; flags give nothing."""
@@ -218,7 +288,7 @@ def _arguments(
             yield None, word
             continue
         name, equals, value = word.partition("=")
-        if flags.get(name, True) and not equals:
+        if kinds.get(name, "flag") == "flag" and not equals:
             continue  # a flag (an unknown option counts as one)
         if not equals:
             if index >= len(words):
@@ -233,16 +303,16 @@ def query_recipes(
 ) -> list[QueryRecipe]:
     """The ``graph query`` examples that carry a Cypher text."""
     options = _options(inventory)
-    flags = options.get(("query",), {})
+    kinds = options.get(("query",), {})
     found: list[QueryRecipe] = []
     for example in examples:
         if example.words[0] != "query":
             continue
         text: str | None = None
         params: dict[str, str] = {}
-        for option, value in _arguments(example.words[1:], flags):
+        for option, value in _arguments(example.words[1:], kinds):
             if option is None:
-                text = value if text is None else text
+                text = _unescaped(value) if text is None else text
             elif option == "--param":
                 name, equals, given = value.partition("=")
                 if equals:
@@ -250,6 +320,12 @@ def query_recipes(
         if text is not None:
             found.append(QueryRecipe(example.path, example.line, text, params))
     return found
+
+
+def _unescaped(text: str) -> str:
+    """A Cypher text written in double quotes has ``\\$param`` for the shell; the query is
+    ``$param`` (a backslash before ``$`` is no Cypher)."""
+    return text.replace("\\$", "$")
 
 
 # ---- generic examples ---------------------------------------------------------------------
@@ -299,8 +375,11 @@ def generic_examples(
 ) -> list[CommandExample]:
     """The fenced examples of a real command that name no term of the graph (``terms``, see
     ``model_terms``). ``graph``: the graph's own name, which a ``--graph`` example uses and which
-    is no term either. A placeholder the tool's own examples do not use (``<Subject> <Date>``)
-    names something of the graph in the maintainer's words, so such an example is kept."""
+    is no term either. Only what names things counts: positional words, options that take types,
+    relations, fields, filters or assignments (the field of ``--set field=value``), not free text
+    such as ``--reason``. A placeholder the tool's own examples do not use (``<title> <kind>``)
+    names something of the graph in the maintainer's words, so such an example is kept, also in
+    a ``--title``."""
     options = _options(inventory)
     vocabulary = _placeholder_words(inventory)
     found = []
@@ -308,20 +387,28 @@ def generic_examples(
         path = _command_path(example.words, options)
         if not example.fenced or path is None:
             continue
-        values = [
-            value
-            for option, value in _arguments(example.words[len(path) :], options[path])
-            if option != "--graph"
-        ]
-        text = " ".join(values)
-        named = any(
+        kinds = options[path]
+        named: list[str] = []  # text whose words may be terms
+        written: list[str] = []  # text whose placeholders may say something about the graph
+        for option, value in _arguments(example.words[len(path) :], kinds):
+            if option == "--graph":
+                continue
+            if option is None or kinds.get(option) in NAMING_TYPES or option in NAMING_OPTIONS:
+                named.append(value)
+                written.append(value)
+            elif kinds.get(option) in NAME_PART_TYPES:  # ``field=value``: the field names
+                named.append(value.partition("=")[0])
+                written.append(value)
+            elif option in DATA_OPTIONS:
+                written.append(value)
+        specific = any(
             not set(WORD_RE.findall(placeholder.lower())) <= vocabulary
-            for placeholder in PLACEHOLDER_RE.findall(text)
+            for placeholder in PLACEHOLDER_RE.findall(" ".join(written))
         )
-        for token in TOKEN_RE.findall(PLACEHOLDER_RE.sub(" ", text)):
+        for token in TOKEN_RE.findall(PLACEHOLDER_RE.sub(" ", " ".join(named))):
             if token != graph and {token, *token.split(":")} & terms:
-                named = True
-        if not named:
+                specific = True
+        if not specific:
             found.append(example)
     return found
 

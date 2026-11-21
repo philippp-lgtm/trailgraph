@@ -164,8 +164,9 @@ def push_warnings(
 ) -> tuple[WarningRecord, ...]:
     """The warnings of the push: the release's, then the pushed functions', actions', views' and
     skill's; ``linted`` (the lint of the published skill against pushed functions, when the push
-    leaves the skill alone) comes last. Computed after the writes and the new base: a warning
-    check that raises fails the command late, with the push done."""
+    leaves the skill alone) comes last. ``linted`` is computed before the writes, with the other
+    checks; the rest here after the writes and the new base: a warning check that raises fails
+    the command late, with the push done."""
     warnings = locked.planned.warnings if locked.planned is not None else ()
     if catalogs.functions is not None:
         warnings += functions.single_ref_warnings(

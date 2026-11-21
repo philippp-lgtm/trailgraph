@@ -695,6 +695,43 @@ def test_a_template_is_linted_on_the_server_like_locally(
     ]
 
 
+def test_a_push_of_functions_through_the_api_lints_the_published_skill(
+    run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """The R6 lint of a push that publishes functions only runs on the server, against the
+    published template and the pushed functions."""
+    template = tmp_path / "graph-example-graph"
+    shutil.copytree(FIXTURES / "skills" / "template" / "graph-example-graph", template)
+    (template / "SKILL.md").write_text(
+        (template / "SKILL.md").read_text()
+        + "\n```sh\ngraph query 'MATCH (i:Item)-[:located_in]->(l:Location) WHERE l.alias = $loc"
+        " RETURN i.name, i.quantity' --param loc=LOC-0001\n```\n"
+    )
+    published = admin(run_cli, "graph", "skill", "publish", "example_graph", str(template))
+    assert published.code == 0, published.envelope
+    workspace = tmp_path / "workspace"
+    assert admin(run_cli, "graph", "pull", "example_graph", str(workspace)).code == 0
+    (workspace / "functions").mkdir()
+    shutil.copy(FUNCTIONS / "items_in_location.yaml", workspace / "functions")
+    app = served(installation, tmp_path)
+    root = installation["tokens"]["root"]
+    pushed = command(
+        app,
+        "graph/push",
+        root,
+        args={
+            "ref": "example_graph",
+            "dir": upload_tree(app, root, workspace),
+            "--dry-run": True,
+        },
+    )
+    assert pushed.status == 200, pushed.json
+    assert [w["code"] for w in pushed.json["warnings"]] == [
+        "admin.function_single_ref",
+        "admin.skill_recipe_covered",
+    ]
+
+
 def test_a_hand_edited_scope_is_found(run_cli: CliRunner, installation: dict[str, Any]) -> None:
     file = installation["root"] / "tokens" / "tokens.json"
     document = json.loads(file.read_text())

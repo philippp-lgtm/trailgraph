@@ -277,6 +277,22 @@ def test_a_push_of_functions_alone_lints_the_published_skill_against_them(
     assert push(run_cli, target, "--dry-run").warning_codes == []  # nothing left to publish
 
 
+def test_a_push_of_functions_alone_does_not_lint_a_static_published_skill(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create_graph(run_cli, "example_graph", version="1.0.0")
+    static = tmp_path / "static" / "graph-example-graph"
+    shutil.copytree(FIXTURES / "skills" / "graph-example-graph", static)
+    published = admin(run_cli, "graph", "skill", "publish", "example_graph", str(static))
+    assert published.code == 0, published.envelope
+    target = pulled(run_cli, tmp_path)
+    (target / "functions").mkdir()
+    shutil.copy(FUNCTIONS / "items_in_location.yaml", target / "functions")
+    done = push(run_cli, target)
+    assert done.code == 0, done.envelope
+    assert done.warning_codes == ["admin.function_single_ref"]  # nothing to lint, nothing broken
+
+
 def test_a_skill_whose_description_cannot_take_the_start_sentence_is_refused(
     run_cli: CliRunner, graph_id: str, tmp_path: Path
 ) -> None:

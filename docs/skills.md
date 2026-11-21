@@ -177,10 +177,8 @@ exactly as `graph` will render it and checks its curated text against the
 model, the app inventory and the published functions and actions. Any
 problem refuses (`admin.skill_invalid`); a skill over its size budget is
 published with a warning (`admin.skill_over_budget`), and so is a template
-that teaches what the tool already carries: a query recipe a published
-function answers, an example that names nothing of the graph, a recipe that
-fails against the model (`admin.skill_recipe_covered`,
-`admin.skill_generic_example`, `admin.skill_recipe_broken`). The checks, the
+that teaches what the tool already carries (the recipe lint, `admin.skill_recipe_covered`,
+`admin.skill_generic_example` and `admin.skill_recipe_broken`). The checks, the
 lint and the budgets are listed in the [`authoring-graph-skills`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-skills/SKILL.md#what-publishing-checks)
 admin skill.
 Publishing is audited as `maint.graph_configure` and records the ontology

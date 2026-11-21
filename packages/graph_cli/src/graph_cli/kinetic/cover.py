@@ -64,7 +64,8 @@ supplied, and every filter the recipe applies must be met by the function). The 
 above is untouched. A function covers a recipe when it is not deprecated and:
 
 1. every required parameter (no default) is supplied: a ``ref`` by an anchor of the recipe
-   (any key, compared with text or a parameter: a flag or a number fixes no entity) whose
+   (``id``, ``alias``, a unique field or a label, compared with text or a parameter: a flag,
+   a number or a status fixes no entity) whose
    classes fit the class of the function's anchor for it, a ``boolean``
    always, any other parameter when the recipe compares data with a key the way the function
    compares the parameter with it (``=`` and ``IN`` alike, the other operators each their
@@ -81,7 +82,9 @@ above is untouched. A function covers a recipe when it is not deprecated and:
    or ``WITH``, inline map keys of a non-optional ``MATCH`` node) that rule 1 did not consume
    is projected by the function or used in its own ``WHERE`` or maps;
 5. the function filters no more than the recipe: every filter key of the function that no
-   parameter of rule 1 consumed is a filter key of the recipe too, and every pattern the
+   parameter of rule 1 consumed is a filter key of the recipe too and its constants are the
+   recipe's (the same operator and values, or an ``=`` or ``IN`` whose values include the
+   recipe's); a function with a ``LIMIT`` or ``SKIP`` needs a recipe with one; every pattern the
    function negates (``NOT (a)-[:r]->(b)``) is negated by the recipe too (else the function
    would drop rows the recipe keeps). A filter key that only a boolean switch of the function
    applies (``WHERE $include_ended = true OR c.status <> 'ended'``) does not count: the call
@@ -100,6 +103,7 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kinetic.compile import REF_FIELDS, resolve_stored
 from graph_cli.kinetic.entries import FunctionEntry
 from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli.ontology_layer.vocabulary import LABEL_ROLES
 from graph_cli.query.cypher.ast import (
     Binary,
     Clause,
@@ -553,6 +557,8 @@ def covers(
 # Lint mode: query recipes of a graph skill against the functions of the graph
 
 RecipeData = Const | ListExpr | Parameter
+# ``(key, operator, values)`` of a field compared with constants; values as their ``repr``.
+Constant = tuple[str, str, frozenset[str]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -577,6 +583,8 @@ class RecipeSignature:
     negated: frozenset[frozenset[str]]  # the relations of each pattern under ``NOT``
     aggregates: bool  # an aggregate in any ``WITH`` or in the ``RETURN``
     totals: bool  # the ``RETURN`` holds aggregates only: no row per entity
+    limited: bool  # a ``SKIP`` or ``LIMIT`` somewhere
+    constants: frozenset[Constant]  # the constants compared with a field in a filter
 
 
 @dataclass(frozen=True, slots=True)
@@ -593,6 +601,8 @@ class FunctionLintSignature:
     negated: frozenset[frozenset[str]]
     aggregates: bool
     totals: bool
+    limited: bool
+    constants: frozenset[Constant]
     switches: Mapping[str, tuple[str, bool]]  # filter key -> (boolean parameter, value lifting it)
 
 
@@ -662,6 +672,23 @@ def _match_classes(query: Query, known: Mapping[str, Classes]) -> frozenset[froz
     return frozenset(found)
 
 
+def _identifies(key: str, classes: frozenset[str], model: CompiledModel) -> bool:
+    """Whether a value of this field can stand for one entity of the classes: ``id``, ``alias``,
+    a unique field or a label (``label``, ``alt_label``, ``hidden_label``). A status, an enum or
+    any other field narrows the rows and names nobody."""
+    if key in REF_FIELDS:
+        return True
+    for curie in classes:
+        found = model.classes[curie].attributes.get(key) if curie in model.classes else None
+        if (
+            found is not None
+            and found.kind in ("base", "datatype")
+            and (found.unique or found.role in LABEL_ROLES)
+        ):
+            return True
+    return False
+
+
 def _names_entity(value: RecipeData) -> bool:
     """Whether the data can stand for an entity: text or a list of texts, or a parameter. A flag,
     a number or a null compared with a field narrows the rows but fixes no entity."""
@@ -691,6 +718,8 @@ def recipe_signature(resolved: ResolvedQuery) -> RecipeSignature:
         _match_classes(resolved.query, known),
         _negations(resolved.query),
         *_aggregation(resolved.query),
+        _limited(resolved.query),
+        _constants(resolved.query),
     )
 
 
@@ -711,6 +740,8 @@ def function_lint_signature(entry: FunctionEntry, model: CompiledModel) -> Funct
         _match_classes(resolved.query, known),
         _negations(resolved.query),
         *_aggregation(resolved.query),
+        _limited(resolved.query),
+        _constants(resolved.query),
         _switches(
             resolved.query,
             frozenset(p.name for p in entry.defn.params if p.type == "boolean"),
@@ -763,6 +794,37 @@ def _lint_keys(resolved: ResolvedQuery, anchored: frozenset[str]) -> frozenset[s
         else:
             keys |= _tokens(item.expr, defs, anchored)
     return frozenset(keys)
+
+
+def _limited(query: Query) -> bool:
+    return any(
+        isinstance(c, With | Return) and (c.projection.skip or c.projection.limit) is not None
+        for c in query.clauses
+    )
+
+
+def _constants(query: Query) -> frozenset[Constant]:
+    """The fields a filter compares with constants, with the operator and the values."""
+    found: set[Constant] = set()
+    for c in _scoped_comparisons(query, literals=True):
+        if isinstance(c.value, Const):
+            values = frozenset({repr(c.value.value)})
+        elif isinstance(c.value, ListExpr):
+            values = frozenset(repr(i.value) for i in c.value.items if isinstance(i, Const))
+        else:
+            continue
+        found.add((c.field, _operator(c), values))
+    return frozenset(found)
+
+
+def _constant_met(wanted: Constant, recipe: frozenset[Constant]) -> bool:
+    """The recipe filters the field the same way, or asks for values among those the function
+    keeps (an ``=`` or ``IN`` of the function is a superset of the recipe's)."""
+    key, operator, values = wanted
+    return any(
+        k == key and o == operator and (v == values or (operator == "=" and v <= values))
+        for k, o, v in recipe
+    )
 
 
 def _has_aggregate(e: Expr) -> bool:
@@ -867,7 +929,7 @@ def _supply(
             continue
         filtered.update(key for key, _ in function.compared.get(param.name, ()))
         if param.type == "boolean":
-            values.append((param.name, None))
+            values.append((param.name, "<true|false>"))
             continue
         if param.type == "ref":
             slots = [a for a in function.base.anchors if a.parameter == param.name and a.is_ref]
@@ -879,6 +941,7 @@ def _supply(
                     if i not in taken
                     and anchor.classes is not None
                     and a.classes is not None
+                    and _identifies(anchor.key, anchor.classes, model)
                     and _fits(anchor.classes, a.classes, model)
                 ),
                 None,
@@ -954,6 +1017,14 @@ def recipe_covers(
         lifted = {function.switches[k] for k in open_keys if k in function.switches}
         if any(k not in function.switches for k in open_keys):
             continue
+        if any(
+            not _constant_met(c, recipe.constants)
+            for c in function.constants
+            if c[0] not in supplied.taken and c[0] not in function.switches
+        ):
+            continue
+        if function.limited and not recipe.limited:
+            continue  # a top-n answers no question about all
         if not function.negated <= recipe.negated:
             continue
         walked = {t for triple in base.triples for t in triple.relations or ()}

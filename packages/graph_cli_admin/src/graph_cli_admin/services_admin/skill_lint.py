@@ -21,6 +21,7 @@ remote mode, and for a push that publishes functions only, against the published
 
 from __future__ import annotations
 
+import re
 import shlex
 from collections.abc import Callable, Mapping
 from typing import Final
@@ -45,6 +46,7 @@ from graph_cli.skills.template import Template
 
 MAX_LISTED: Final = 20  # findings in ``details``; ``more`` counts the rest
 SHOWN: Final = 3  # findings the message names
+PLACEHOLDER: Final = re.compile(r"^<[^<>]*>$")
 MAX_COMMAND: Final = 120  # characters of a generic example in a finding
 
 
@@ -58,14 +60,38 @@ def lint(
 ) -> tuple[WarningRecord, ...]:
     """The lint warnings of ``template`` for graph ``entry`` once ``model`` and the compiled
     function catalog ``functions`` (``None``: no functions) are published. ``described`` is
-    ``describe_model`` of the same."""
-    examples = command_examples(template)
+    ``describe_model`` of the same.
+
+    Advisory: the lint never breaks the command it runs in. Whatever it cannot read (a
+    recipe that overflows the parser, a catalog of an odd shape) leaves its findings out."""
+    try:
+        return _lint(entry, template, described, model, functions, inventory)
+    except Exception:
+        return ()
+
+
+def _lint(
+    entry: GraphEntry,
+    template: Template,
+    described: Mapping[str, JsonValue],
+    model: CompiledModel,
+    functions: JsonObject | None,
+    inventory: Mapping[str, JsonValue],
+) -> tuple[WarningRecord, ...]:
+    examples = command_examples(template, inventory)
     recipes = query_recipes(examples, inventory)
-    pairs = function_pairs(load_entries(functions) if functions is not None else (), model)
     covered: list[JsonValue] = []
     broken: list[JsonValue] = []
+    pairs = (
+        function_pairs(load_entries(functions) if functions is not None else (), model)
+        if recipes
+        else ()
+    )  # read only when there is a recipe to judge
     for recipe in recipes:
-        verdict = judge_recipe(recipe.text, recipe.params, model, pairs)
+        try:
+            verdict = judge_recipe(recipe.text, recipe.params, model, pairs)
+        except Exception:
+            continue  # one unreadable recipe does not hide the others
         if verdict.cover:
             covered.append(_covered(entry, recipe, verdict.cover[0]))
         elif verdict.error is not None and not verdict.placeholder_parse_failure:
@@ -162,7 +188,10 @@ def _call(graph: str, cover: RecipeCover) -> str:
     words = [f"graph run {cover.function} --graph {graph}"]
     words += [f"--param {name}=<ref>" for name in cover.ref_params]
     for name, text in cover.value_params:
-        words.append(f"--param {name}={shlex.quote(text) if text is not None else '<value>'}")
+        shown = (
+            "<value>" if text is None else text if PLACEHOLDER.match(text) else shlex.quote(text)
+        )
+        words.append(f"--param {name}={shown}")
     return " ".join(words)
 
 

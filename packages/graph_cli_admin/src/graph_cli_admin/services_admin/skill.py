@@ -208,7 +208,10 @@ def lint_files(
     template, problems = parse_template(files)
     if template is None or problems:
         return ()
-    described = describe_model(entry, model, functions, actions, views)
+    try:
+        described = describe_model(entry, model, functions, actions, views)
+    except Exception:  # advisory: a catalog that does not describe leaves the lint out
+        return ()
     return skill_lint.lint(entry, template, described, model, functions, inventory)
 
 

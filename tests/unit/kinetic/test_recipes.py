@@ -385,3 +385,73 @@ def test_a_boolean_switch_that_lifts_a_filter_is_set_by_the_call() -> None:
         ("entity", "g"),
     )
     assert with_functions(fixed)(text) == []
+
+
+# Constants, limits, anchors that name an entity, required switches, ellipses
+
+
+def test_a_constant_filter_of_the_function_must_be_the_recipes() -> None:
+    same = "MATCH (q:Position) WHERE q.status = 'vacant' RETURN q.title, q.status"
+    assert covering(same) == ["open_positions"]
+    other = "MATCH (q:Position) WHERE q.status = 'abolished' RETURN q.title, q.status"
+    assert covering(other) == []  # open_positions keeps vacant ones only
+    many = function(
+        "staffing",
+        "MATCH (q:Position) WHERE q.status IN ['vacant', 'filled']"
+        " RETURN q.title AS t, q.status AS s",
+        ("t", "s"),
+    )
+    run = with_functions(many)
+    assert run(same) == ["staffing"]  # the recipe's value is among the function's
+    assert run(other) == []
+
+
+def test_a_function_with_a_limit_covers_only_a_recipe_with_one() -> None:
+    top = function(
+        "first_titles",
+        "MATCH (q:Position) RETURN q.title AS title ORDER BY title LIMIT 5",
+        ("title",),
+    )
+    run = with_functions(top)
+    assert run("MATCH (q:Position) RETURN q.title") == []
+    assert run("MATCH (q:Position) RETURN q.title ORDER BY q.title LIMIT 3") == ["first_titles"]
+
+
+def test_only_a_field_that_names_an_entity_supplies_a_ref() -> None:
+    holder = function(
+        "position_holder",
+        "MATCH (p:Person)-[:holds]->(q:Position) WHERE q.id = $position RETURN p.name AS person",
+        ("person",),
+        params="params:\n  position:\n    type: ref\n    class: org:Position\n    summary: One.",
+    )
+    entity = function(
+        "legal_name",
+        "MATCH (l:LegalEntity) WHERE l.id = $entity RETURN l.name AS name",
+        ("name",),
+        params="params:\n  entity:\n    type: ref\n    class: leg:LegalEntity\n    summary: One.",
+    )
+    run = with_functions(holder, entity)
+    holds = "MATCH (p:Person)-[:holds]->(q:Position) WHERE q.{} RETURN p.name"
+    assert run(holds.format("alias = 'POS-0001'")) == ["position_holder"]
+    assert run(holds.format("title = 'Lead'")) == ["position_holder"]  # a label
+    assert run(holds.format("status = 'filled'")) == []  # a lifecycle state names nobody
+    legal = "MATCH (l:LegalEntity) WHERE l.{} RETURN l.name"
+    assert run(legal.format("registration_number = 'R1'")) == ["legal_name"]  # unique
+    assert run(legal.format("country = 'DE'")) == []
+
+
+def test_a_required_switch_without_a_default_is_shown_in_the_call() -> None:
+    required = function(
+        "internal_entities",
+        "MATCH (l:LegalEntity) WHERE $internal = true RETURN l.name AS name",
+        ("name",),
+        params="params:\n  internal:\n    type: boolean\n    summary: Only entities of the group.",
+    )
+    pairs = function_pairs(entries({**EXAMPLE, **required}), MODEL)
+    (cover, *_) = judge_recipe("MATCH (l:LegalEntity) RETURN l.name", {}, MODEL, pairs).cover
+    assert cover.value_params == (("internal", "<true|false>"),)
+
+
+def test_an_ellipsis_is_a_placeholder_where_cypher_has_none() -> None:
+    verdict = judged("MATCH (n:Position) WHERE n.title = ... RETURN n.title")
+    assert verdict.error is not None and verdict.placeholder_parse_failure

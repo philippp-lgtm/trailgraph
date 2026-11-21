@@ -10,9 +10,9 @@ would, against the model the graph will have, and answers one of three things:
 - ``error``: the text does not parse or resolve against the model (a ``GraphCliError``): the
   recipe is broken for every agent that copies it.
 - ``placeholder_parse_failure``: the text does not parse and holds a ``<placeholder>`` where
-  Cypher has no place for one (``(n:<type>)``, ``n.<attribute>``). That is a generic example
-  of the command, not a recipe of this graph; the caller leaves it to the generic-example
-  check and does not report it as broken.
+  Cypher has no place for one (``(n:<type>)``, ``n.<attribute>``, ``...``). That is a generic
+  example of the command, not a recipe of this graph; the caller leaves it to the
+  generic-example check and does not report it as broken.
 
 Reading a recipe: a ``<word>`` outside a string literal becomes the parameter ``$word``. A
 parameter without a value, or with a ``<placeholder>`` as value, gets a sample (a list holding
@@ -49,9 +49,10 @@ from graph_cli.query.cypher.text_params import text_bindings
 from graph_cli.query.cypher.values import Value, is_number_text, parameter_value
 from graph_cli.query.cypher.walk import parameters
 
-# A string literal or a quoted name (left alone), ``<word>`` (a parameter), or another ``<...>``.
+# A string literal or a quoted name (left alone), ``<word>`` (a parameter), or another ``<...>``
+# or an ellipsis (placeholders for text Cypher has no place for).
 _SCAN: Final = re.compile(
-    r"""'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`[^`]*`|<([a-z][a-z0-9_]*)>|(<[A-Za-z][^<>\s'"`]*>)""",
+    r"""'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`[^`]*`|<([a-z][a-z0-9_]*)>|(<[A-Za-z][^<>\s'"`]*>|\.\.\.|…)""",
     re.DOTALL,
 )
 _PLACEHOLDER_VALUE: Final = re.compile(r"^<[^<>]*>$")

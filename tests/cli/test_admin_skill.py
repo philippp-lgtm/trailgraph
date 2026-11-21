@@ -397,6 +397,28 @@ def test_render_and_publish_warn_about_recipes_the_tool_carries(
     assert admin(run_cli, "audit", "verify").code == 0
 
 
+def test_a_recipe_the_lint_cannot_read_does_not_break_render_or_publish(
+    run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
+) -> None:
+    """The lint is advisory: a recipe that overflows the parser leaves its own finding out and
+    nothing else (here a 5,000-term condition next to a recipe that a function answers)."""
+    publish_functions(run_cli)
+    template = linted_template(tmp_path)
+    skill_md = template / "SKILL.md"
+    deep = " AND ".join(["i.quantity = 1"] * 5000)
+    skill_md.write_text(
+        skill_md.read_text()
+        + f"\n```sh\ngraph query 'MATCH (i:Item) WHERE {deep} RETURN i.name'\n```\n"
+    )
+    out = tmp_path / "preview"
+    out.mkdir()
+    rendered = render(run_cli, template, out)
+    assert rendered.code == 0, rendered.envelope
+    assert "admin.skill_recipe_covered" in [w["code"] for w in rendered.envelope["warnings"]]
+    published = publish(run_cli, template)
+    assert published.code == 0 and published.data["published"] is True
+
+
 def test_a_template_without_recipes_the_tool_carries_has_no_lint_warning(
     run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
 ) -> None:
