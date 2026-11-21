@@ -55,6 +55,32 @@ the agent has to run the function once per value.
 
 Pure: signatures need only the resolved query and the model. ``SignatureCache``
 keeps function signatures by function hash and model version.
+
+Lint mode (``recipe_covers``) asks the same question of a query recipe written into a graph
+skill, for the maintainer who sees the function and decides, not for an agent at run time.
+It is looser where a person judges (an anchor on any key counts, also a name; a function may
+need no triple) and stricter where a hint would mislead (every required parameter must be
+supplied, and every filter the recipe applies must be met by the function). The live rule
+above is untouched. A function covers a recipe when it is not deprecated and:
+
+1. every required parameter (no default) is supplied: a ``ref`` by an anchor of the recipe
+   (any key) whose classes fit the class of the function's anchor for it, a ``boolean``
+   always, any other parameter when the recipe compares data with a key the way the function
+   compares the parameter with it (``=`` and ``IN`` alike, the other operators each their
+   own);
+2. the triples agree both ways (every required triple of the recipe matches a triple of the
+   function, every required triple of the function matches one of the recipe); when neither
+   side has a required triple, every class of a node of the recipe fits a class of a node of
+   the function, and a function with required triples never covers a recipe without;
+3. it returns what the recipe returns (a function's ``*`` counts as every key) and both
+   aggregate or neither does;
+4. every filter key of the recipe (property keys in the ``WHERE`` of a non-optional ``MATCH``
+   or ``WITH``, inline map keys of a non-optional ``MATCH`` node) that rule 1 did not consume
+   is projected by the function or used in its own ``WHERE`` or maps;
+5. the function filters no more than the recipe: every filter key of the function that no
+   parameter of rule 1 consumed is a filter key of the recipe too, and every pattern the
+   function negates (``NOT (a)-[:r]->(b)``) is negated by the recipe too. Else the function
+   would drop rows the recipe keeps.
 """
 
 from __future__ import annotations
@@ -87,6 +113,7 @@ from graph_cli.query.cypher.ast import (
     Variable,
     With,
 )
+from graph_cli.query.cypher.compare import Comparison, comparisons
 from graph_cli.query.cypher.resolve import AGGREGATES, ResolvedQuery
 from graph_cli.query.cypher.walk import clause_expressions, clause_patterns, subexpressions
 
@@ -172,6 +199,7 @@ class _Anchor:
     classes: Classes
     value: Const | ListExpr | Parameter
     variable: str | None
+    key: str = ""
 
 
 def _node_classes(
@@ -244,7 +272,7 @@ def _where_anchors(
         if found is not None:
             (variable, key), data = found
             if only is None or key in only:
-                yield _Anchor(known.get(variable), data, variable)
+                yield _Anchor(known.get(variable), data, variable, key)
             continue
         branches = [_equality(d) for d in _disjuncts(conjunct)]
         if len(branches) > 1 and all(b is not None for b in branches):
@@ -252,7 +280,7 @@ def _where_anchors(
             if len(same) == 1:  # ``v.k = a OR v.k = b``: an ``IN``
                 ((variable, key), _) = next(b for b in branches if b is not None)
                 if only is None or key in only:
-                    yield _Anchor(known.get(variable), ListExpr(()), variable)
+                    yield _Anchor(known.get(variable), ListExpr(()), variable, key)
 
 
 def _anchors(
@@ -268,7 +296,7 @@ def _anchors(
                     for key, value in node.properties.entries:
                         data = _data(value, allow_list=False)
                         if data is not None and (only is None or key in only):
-                            yield _Anchor(_classes(node, known), data, node.variable)
+                            yield _Anchor(_classes(node, known), data, node.variable, key)
             if clause.where is not None:
                 yield from _where_anchors(clause.where, known, only)
         elif isinstance(clause, With) and clause.where is not None:
@@ -374,7 +402,10 @@ def function_signature(entry: FunctionEntry, model: CompiledModel) -> FunctionSi
     Raises the resolver's error when the stored text no longer resolves against
     ``model`` (a stale catalog).
     """
-    resolved = resolve_stored(entry.query, entry.defn, model)
+    return _signature_of(entry, resolve_stored(entry.query, entry.defn, model))
+
+
+def _signature_of(entry: FunctionEntry, resolved: ResolvedQuery) -> FunctionSignature:
     known = _node_classes(resolved)
     declared = {p.name: p for p in entry.defn.params}
     anchors = []
@@ -507,6 +538,264 @@ def covers(
                 featured=entry.defn.featured,
                 summary=entry.defn.summary,
             )
+        )
+    found.sort(key=lambda c: (-c.share, not c.featured, c.function))
+    return tuple(found)
+
+
+# Lint mode: query recipes of a graph skill against the functions of the graph
+
+RecipeData = Const | ListExpr | Parameter
+
+
+@dataclass(frozen=True, slots=True)
+class RecipeAnchor:
+    classes: Classes
+    key: str  # the property the data is compared with, any key
+    value: RecipeData
+
+
+@dataclass(frozen=True, slots=True)
+class RecipeSignature:
+    """What a query recipe asks (lint mode): anchors on any key, triples, output, the data it
+    compares with which key, its filter keys and the classes of its non-optional nodes."""
+
+    anchors: tuple[RecipeAnchor, ...]
+    required: frozenset[Triple]
+    triples: frozenset[Triple]
+    output: Output
+    compared: Mapping[tuple[str, str], RecipeData]  # (key, operator) -> data of the first one
+    filters: frozenset[str]
+    classes: frozenset[frozenset[str]]
+    negated: frozenset[frozenset[str]]  # the relations of each pattern under ``NOT``
+
+
+@dataclass(frozen=True, slots=True)
+class FunctionLintSignature:
+    """A function as lint mode sees it: its signature plus the keys and operators it compares
+    each parameter with, its own filter keys, the classes of its non-optional nodes and the
+    patterns it negates."""
+
+    base: FunctionSignature
+    compared: Mapping[str, frozenset[tuple[str, str]]]  # parameter -> (key, operator)
+    filters: frozenset[str]
+    classes: frozenset[frozenset[str]]
+    negated: frozenset[frozenset[str]]
+
+
+@dataclass(frozen=True, slots=True)
+class RecipeCover:
+    """A function that answers a recipe: which parameters the recipe supplies (``ref_params``)
+    and with what data (``value_params``: parameter and the text the recipe compares with, or
+    ``None`` when it is not a constant), for the call a finding shows."""
+
+    function: str
+    featured: bool
+    share: float
+    ref_params: tuple[str, ...]
+    value_params: tuple[tuple[str, str | None], ...]
+
+
+def _in_scope(query: Query) -> Iterator[Match | With]:
+    """The clauses whose conditions filter the rows: non-optional ``MATCH`` and ``WITH``."""
+    for clause in query.clauses:
+        if (isinstance(clause, Match) and not clause.optional) or isinstance(clause, With):
+            yield clause
+
+
+def _filter_keys(query: Query) -> frozenset[str]:
+    keys: set[str] = set()
+    for clause in _in_scope(query):
+        if isinstance(clause, Match):
+            for part in clause.patterns:
+                for node in part.nodes:
+                    if node.properties is not None:
+                        keys.update(key for key, _ in node.properties.entries)
+        if clause.where is not None:
+            keys.update(e.key for e in subexpressions(clause.where) if isinstance(e, Property))
+    return frozenset(keys)
+
+
+def _scoped_comparisons(query: Query, *, literals: bool) -> Iterator[Comparison]:
+    for clause in _in_scope(query):
+        yield from comparisons(Query((clause,)), literals=literals)
+
+
+def _operator(c: Comparison) -> str:
+    """``=`` for ``=`` and ``IN`` either way (a list of one is the value), else the operator."""
+    return "=" if c.op in ("=", "in") else c.op
+
+
+def _negations(query: Query) -> frozenset[frozenset[str]]:
+    """The relation types of each pattern under ``NOT``."""
+    found: set[frozenset[str]] = set()
+    for clause in query.clauses:
+        negated = _negated(clause)
+        for part in clause_patterns(clause):
+            if id(part) in negated:
+                found.add(frozenset(t for rel in part.rels for t in rel.types))
+    return frozenset(found)
+
+
+def _match_classes(query: Query, known: Mapping[str, Classes]) -> frozenset[frozenset[str]]:
+    found: set[frozenset[str]] = set()
+    for clause in query.clauses:
+        if isinstance(clause, Match) and not clause.optional:
+            for part in clause.patterns:
+                for node in part.nodes:
+                    classes = _classes(node, known)
+                    if classes is not None:
+                        found.add(classes)
+    return frozenset(found)
+
+
+def recipe_signature(resolved: ResolvedQuery) -> RecipeSignature:
+    """The lint-mode signature of a resolved recipe (``--param`` values are data)."""
+    known = _node_classes(resolved)
+    found = list(_anchors(resolved.query, known, None))
+    given = frozenset(a.variable for a in found if a.variable is not None and a.key in REF_FIELDS)
+    required, every = _triples(resolved.query, known)
+    compared: dict[tuple[str, str], RecipeData] = {}
+    for c in _scoped_comparisons(resolved.query, literals=True):
+        compared.setdefault((c.field, _operator(c)), c.value)
+    return RecipeSignature(
+        tuple(RecipeAnchor(a.classes, a.key, a.value) for a in found),
+        required,
+        every,
+        _output(resolved.query, given),
+        compared,
+        _filter_keys(resolved.query),
+        _match_classes(resolved.query, known),
+        _negations(resolved.query),
+    )
+
+
+def function_lint_signature(entry: FunctionEntry, model: CompiledModel) -> FunctionLintSignature:
+    """The lint-mode signature of a published function; raises the resolver's error when the
+    stored text no longer resolves against ``model``."""
+    resolved = resolve_stored(entry.query, entry.defn, model)
+    known = _node_classes(resolved)
+    keys: dict[str, set[tuple[str, str]]] = {}
+    for c in _scoped_comparisons(resolved.query, literals=False):
+        if isinstance(c.value, Parameter):
+            keys.setdefault(c.value.name, set()).add((c.field, _operator(c)))
+    return FunctionLintSignature(
+        _signature_of(entry, resolved),
+        {name: frozenset(found) for name, found in keys.items()},
+        _filter_keys(resolved.query),
+        _match_classes(resolved.query, known),
+        _negations(resolved.query),
+    )
+
+
+def _lint_output(recipe: Output, function: Output) -> bool:
+    """The function returns every key of the recipe (``*`` is every key) and aggregates when the
+    recipe does, and only then: a count answers no listing."""
+    keys = "*" in function.keys or recipe.keys <= function.keys
+    return keys and function.aggregates == recipe.aggregates
+
+
+@dataclass(frozen=True, slots=True)
+class _Supplied:
+    refs: tuple[str, ...]
+    values: tuple[tuple[str, str | None], ...]
+    consumed: frozenset[str]  # keys of the recipe the parameters took
+    taken: frozenset[str]  # keys of the function the parameters filter on
+
+
+def _supply(
+    recipe: RecipeSignature,
+    entry: FunctionEntry,
+    function: FunctionLintSignature,
+    model: CompiledModel,
+) -> _Supplied | None:
+    """What the recipe supplies for the required parameters of the function; ``None`` when one
+    stays open."""
+    refs: list[str] = []
+    values: list[tuple[str, str | None]] = []
+    consumed: set[str] = set()
+    filtered: set[str] = set()
+    taken: set[int] = set()
+    for param in entry.defn.params:
+        if param.default is not None:
+            continue
+        filtered.update(key for key, _ in function.compared.get(param.name, ()))
+        if param.type == "boolean":
+            continue
+        if param.type == "ref":
+            slots = [a for a in function.base.anchors if a.parameter == param.name and a.is_ref]
+            found = next(
+                (
+                    (i, a)
+                    for a in slots
+                    for i, anchor in enumerate(recipe.anchors)
+                    if i not in taken
+                    and anchor.classes is not None
+                    and a.classes is not None
+                    and _fits(anchor.classes, a.classes, model)
+                ),
+                None,
+            )
+            if found is None:
+                return None
+            taken.add(found[0])
+            consumed.add(recipe.anchors[found[0]].key)
+            refs.append(param.name)
+        else:
+            met = sorted(function.compared.get(param.name, frozenset()) & recipe.compared.keys())
+            if not met:
+                return None
+            consumed.update(key for key, _ in met)
+            values.append((param.name, _text_of(recipe.compared[met[0]])))
+    return _Supplied(tuple(refs), tuple(values), frozenset(consumed), frozenset(filtered))
+
+
+def _text_of(data: RecipeData) -> str | None:
+    if isinstance(data, Const) and data.value is not None and not isinstance(data.value, bool):
+        return str(data.value)
+    return None
+
+
+def recipe_covers(
+    recipe: RecipeSignature,
+    functions: Sequence[tuple[FunctionEntry, FunctionLintSignature]],
+    model: CompiledModel,
+) -> tuple[RecipeCover, ...]:
+    """The functions that answer the recipe (rules in the module docstring), best first: the
+    share of the function's triples the recipe uses (descending), ``featured`` functions, then
+    name."""
+    found: list[RecipeCover] = []
+    for entry, function in functions:
+        if entry.deprecated:
+            continue
+        supplied = _supply(recipe, entry, function, model)
+        if supplied is None or not _lint_output(recipe.output, function.base.output):
+            continue
+        base = function.base
+        if recipe.required:
+            if not all(any(_matches(q, f, model) for f in base.triples) for q in recipe.required):
+                continue
+            if not all(any(_matches(q, f, model) for q in recipe.required) for f in base.required):
+                continue
+            used = sum(
+                1 for f in base.triples if any(_matches(q, f, model) for q in recipe.required)
+            )
+            share = used / len(base.triples)
+        else:
+            if base.required or not recipe.classes:
+                continue
+            if not all(any(_fits(c, f, model) for f in function.classes) for c in recipe.classes):
+                continue
+            share = 1.0
+        met = base.output.keys | function.filters
+        if not all("*" in met or key in met for key in recipe.filters - supplied.consumed):
+            continue
+        if not function.filters - supplied.taken <= recipe.filters:
+            continue
+        if not function.negated <= recipe.negated:
+            continue
+        found.append(
+            RecipeCover(entry.name, entry.defn.featured, share, supplied.refs, supplied.values)
         )
     found.sort(key=lambda c: (-c.share, not c.featured, c.function))
     return tuple(found)
