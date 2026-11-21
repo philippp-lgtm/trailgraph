@@ -49,10 +49,13 @@ from graph_cli.query.cypher.ast import (
     PatternPart,
     Query,
     RelPattern,
+    Return,
+    With,
 )
 from graph_cli.query.cypher.compare import Comparison, comparisons
 from graph_cli.query.cypher.parser import parse
 from graph_cli.query.cypher.resolve import SYSTEM_BASES, FieldUse, ResolvedQuery, VarInfo, resolve
+from graph_cli.query.cypher.text_params import TEXT_BASES
 from graph_cli.query.cypher.values import Value
 from graph_cli.query.cypher.walk import clause_expressions, clause_patterns
 
@@ -70,7 +73,6 @@ FITS: Final[dict[str, frozenset[str]]] = {
     "datetime": frozenset({"datetime"}),
     "ref": frozenset({"string"}),
 }
-_TEXT_BASES: Final = frozenset({"string", "text", "iri"})
 REF_FIELDS: Final = frozenset({"id", "alias"})
 
 
@@ -178,21 +180,28 @@ def single_refs(
     A parameter qualifies when it is a ``ref`` without ``many`` and every use of it in the
     stored query is an ``=`` comparison with a field (or an inline map entry): the function
     can then take a list and use ``IN``, and answers several entities in one run. A parameter
-    that is also returned, ordered against or compared otherwise is left alone. Functions in
-    ``exempt`` (those a view runs, which hands them one entity) and deprecated functions are
-    skipped, and so is a function whose stored query does not resolve against ``model``
-    (checking the catalog reports that).
+    that is also returned, ordered against or compared otherwise is left alone. Skipped are
+    functions in ``exempt`` (those a view runs, which hands them one entity), deprecated
+    functions, a function with more than one single-value ``ref`` (a question about a pair:
+    lists would mean a cross product), a function whose stored query has a ``LIMIT`` (a
+    pick per entity cannot be batched) and a function whose stored query does not resolve
+    against ``model`` (checking the catalog reports that).
     """
     found: list[tuple[str, str, str]] = []
     for item in req_list(document, "functions"):
         entry = as_object(item, "functions")
         defn = FunctionDef.from_json(entry, req_str(entry, "source_query"))
         refs = [p for p in defn.params if p.type == "ref" and not p.many]
-        if defn.status != "active" or defn.name in exempt or not refs:
+        if defn.status != "active" or defn.name in exempt or len(refs) != 1:
             continue
         try:
             resolved = resolve_stored(req_str(entry, "query"), defn, model)
         except GraphCliError:
+            continue
+        if any(
+            isinstance(c, With | Return) and c.projection.limit is not None
+            for c in resolved.query.clauses
+        ):
             continue
         compared: dict[str, list[Comparison]] = {}
         for use in comparisons(resolved.query):
@@ -464,7 +473,7 @@ class _Compile:
         elif shape == "text":
             if param.many or param.type != "string":
                 return "text matching takes a string parameter"
-            if used.many or not set(used.datatypes) & _TEXT_BASES:
+            if used.many or not set(used.datatypes) & TEXT_BASES:
                 return f"the field is {_describe_field(used)}, not text"
             return None
         elif param.many != used.many:

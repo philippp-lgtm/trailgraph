@@ -19,7 +19,7 @@ def resolved_with(text: str, texts: dict[str, str], model: CompiledModel) -> Res
 
 
 def bound(text: str, texts: dict[str, str], model: CompiledModel = INV) -> dict[str, object]:
-    return dict(text_bindings(resolved_with(text, texts, model), texts))
+    return dict(text_bindings(parse(text), resolved_with(text, texts, model), texts))
 
 
 def warned(text: str, model: CompiledModel = INV) -> list[tuple[str | None, str, object]]:
@@ -46,6 +46,22 @@ def warned(text: str, model: CompiledModel = INV) -> list[tuple[str | None, str,
 def test_a_number_compared_with_text_fields_is_bound_as_written(where: str) -> None:
     text = f"MATCH (i:Item) WHERE {where} RETURN i"
     assert bound(text, {"n": "2.10"}) == {"n": "2.10"}
+
+
+@pytest.mark.parametrize("paging", ["LIMIT $n", "SKIP $n", "SKIP $n LIMIT 5"])
+def test_a_parameter_that_also_pages_stays_a_number(paging: str) -> None:
+    # resolving folds the paging use into a constant; the parameter is still used as a number
+    text = f"MATCH (i:Item) WHERE i.label = $n RETURN i.label {paging}"
+    assert bound(text, {"n": "2"}) == {}
+
+
+def test_a_number_compared_with_a_field_of_an_unlabelled_node_is_bound_as_written() -> None:
+    assert bound("MATCH (i) WHERE i.label = $n RETURN i", {"n": "2.10"}) == {"n": "2.10"}
+
+
+def test_a_parameter_in_an_inline_map_and_in_the_result_stays_a_number() -> None:
+    assert bound("MATCH (i:Item {label: $n}) RETURN i, $n AS n", {"n": "2"}) == {}
+    assert bound("MATCH (i:Item {label: $n}) RETURN i.label", {"n": "2"}) == {"n": "2"}
 
 
 def test_an_integer_is_bound_as_written() -> None:
@@ -174,6 +190,13 @@ def test_other_comparisons_are_not_reported(where: str) -> None:
 
 def test_a_number_literal_is_not_reported_for_anonymous_nodes() -> None:
     assert warned("MATCH (i:Item)-[:located_in]->(:Location {code: 2}) RETURN i") == []
+
+
+def test_a_negative_number_literal_is_reported() -> None:
+    assert warned("MATCH (i:Item) WHERE i.label = -2 RETURN i") == [("i", "label", -2)]
+    assert warned("MATCH (i:Item) WHERE i.label IN [-1, +2.5] RETURN i") == [
+        ("i", "label", [-1, "2.5"])
+    ]
 
 
 # is_number_text

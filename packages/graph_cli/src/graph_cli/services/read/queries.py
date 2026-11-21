@@ -46,7 +46,7 @@ def _number_for_text(variable: str | None, name: str, literal: JsonValue) -> War
     return WarningRecord(
         "query.number_for_text",
         f"{variable}.{name} holds text, but the query compares it with the number {shown}, "
-        "which never equals text; write the value as a quoted string",
+        "which never matches text; write the value as a quoted string",
         {"variable": variable, "field": name, "literal": literal},
     )
 
@@ -76,7 +76,7 @@ class ReadQueries(ReadCatalogs):
 
         with self.timings.phase("resolve"):
             resolved = resolve(query, view.model, spec.parameters)
-            rebound = text_bindings(resolved, spec.texts)
+            rebound = text_bindings(query, resolved, spec.texts)
             if rebound:
                 resolved = resolve(query, view.model, {**spec.parameters, **rebound})
             warnings = tuple(

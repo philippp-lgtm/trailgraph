@@ -107,3 +107,12 @@ def test_parameters_and_constants_come_together_with_the_flag() -> None:
     uses = found(text, literals=True)
     assert [type(c.value) for c in uses] == [Parameter, Const]
     assert [c.op for c in uses] == ["=", "starts_with"]
+
+
+def test_a_signed_number_is_a_constant_with_literals() -> None:
+    [use] = found("MATCH (a) WHERE a.x = -2 RETURN a", literals=True)
+    assert isinstance(use.value, Const) and use.value.value == -2
+    [listed] = found("MATCH (a) WHERE a.x IN [-1, +3] RETURN a", literals=True)
+    assert isinstance(listed.value, ListExpr)
+    assert [i.value for i in listed.value.items if isinstance(i, Const)] == [-1, 3]
+    assert found("MATCH (a) WHERE a.x = -2 RETURN a") == []

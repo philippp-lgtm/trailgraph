@@ -26,7 +26,7 @@ from decimal import Decimal
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
-from graph_cli.query.cypher.ast import Const, ListExpr, Parameter
+from graph_cli.query.cypher.ast import Const, ListExpr, Parameter, Query
 from graph_cli.query.cypher.compare import Comparison, comparisons
 from graph_cli.query.cypher.resolve import FieldUse, ResolvedQuery
 from graph_cli.query.cypher.values import Value, is_number_text
@@ -36,16 +36,21 @@ TEXT_BASES: Final = frozenset({"string", "text", "iri"})
 _ORDERING: Final = frozenset({"<", "<=", ">", ">="})
 
 
-def text_bindings(resolved: ResolvedQuery, texts: Mapping[str, str]) -> dict[str, Value]:
+def text_bindings(
+    query: Query, resolved: ResolvedQuery, texts: Mapping[str, str]
+) -> dict[str, Value]:
     """The parameters of ``texts`` (name to the text as written) to bind as text.
 
     A scalar is bound as its text; a JSON list of numbers as a list of the
     numbers' texts. Only names the query uses and that meet the rules of the
     module docstring are returned; an empty result means nothing changes.
+    ``query`` is the parsed query ``resolved`` came from: resolving folds the
+    parameters of ``SKIP`` and ``LIMIT`` into constants, and such a use keeps
+    a parameter a number.
     """
     fields = {(f.variable, f.field): f for f in resolved.fields}
     occurrences: dict[str, int] = {}
-    for use in parameters(resolved.query):
+    for use in parameters(query):
         occurrences[use.name] = occurrences.get(use.name, 0) + 1
     compared: dict[str, list[Comparison]] = {}
     for found in comparisons(resolved.query):

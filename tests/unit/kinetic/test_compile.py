@@ -543,3 +543,22 @@ def test_single_refs_ignore_lists_and_other_types() -> None:
         )
         == []
     )
+
+
+def test_single_refs_skip_a_function_with_two_single_value_refs() -> None:
+    query = (
+        "MATCH (a:OrgUnit)-[:part_of]->(b:OrgUnit) WHERE a.id = $p AND b.id = $q"
+        " RETURN a.name AS name"
+    )
+    assert refs_of(minimal(query, p=UNIT, q=UNIT)) == []
+    mixed = "MATCH (a:OrgUnit) WHERE a.id = $p AND a.name = $q RETURN a.name AS name"
+    assert refs_of(minimal(mixed, p=UNIT, q="type: string")) == [("probe", "p", "org:OrgUnit")]
+
+
+def test_single_refs_skip_a_function_that_picks_with_a_limit() -> None:
+    picked = "MATCH (u:OrgUnit) WHERE u.id = $p RETURN u.name AS name ORDER BY name LIMIT 1"
+    assert refs_of(minimal(picked, p=UNIT)) == []
+    paged = "MATCH (u:OrgUnit) WHERE u.id = $p WITH u LIMIT 3 RETURN u.name AS name"
+    assert refs_of(minimal(paged, p=UNIT)) == []
+    unlimited = "MATCH (u:OrgUnit) WHERE u.id = $p RETURN u.name AS name ORDER BY name"
+    assert refs_of(minimal(unlimited, p=UNIT)) == [("probe", "p", "org:OrgUnit")]

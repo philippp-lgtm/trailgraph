@@ -19166,7 +19166,7 @@
                             "additionalProperties": {}
                           }
                         ],
-                        "description": "name=value binds $name; the value is JSON when it parses, else text."
+                        "description": "name=value binds $name; the value is JSON when it parses, else text (a number compared only with text fields is bound as written)."
                       },
                       "--param": {
                         "oneOf": [

@@ -960,6 +960,14 @@ def test_remote_graph_admin_answers_as_locally(
     assert error["code"] == "remote.unauthorized" and "GRAPH_CLI_ADMIN_TOKEN" in error["message"]
     assert scoped.returncode == 3, scoped.stdout + scoped.stderr
     assert "remote.unauthorized" in scoped.stderr and "scope app" in scoped.stderr
+    published = [
+        o
+        for o in actual
+        if isinstance(o[0], list) and o[0][:3] == ["graph", "functions", "publish"] and o[1] == 0
+    ]  # the warning of the check crosses the admin API with the answer
+    assert any(
+        w["code"] == "admin.function_single_ref" for o in published for w in o[2]["warnings"]
+    )
     assert covered(expected) == {s.path for s in all_specs() if s.remote != "local"} - {
         ("describe", "commands"),  # the same code on both sides: the client's inventory
         ("self", "update"),  # installs this program: tests/unit/catalog/test_dist.py

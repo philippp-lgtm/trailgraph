@@ -9,7 +9,8 @@ fields a parameter meets: a function's parameter types, the text a
 ``--param`` value is bound as.
 
 The value is a ``Parameter`` by default. With ``literals=True`` it can also be
-a ``Const`` or a list of constants, so a check sees ``x.f = 2.1`` as well.
+a ``Const`` or a list of constants (a number with a sign included), so a check
+sees ``x.f = 2.1`` and ``x.f = -1`` as well.
 Only the shapes above count: a field inside an arithmetic expression or a
 function call is not a comparison here.
 """
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Final, Literal
 
 from graph_cli.query.cypher.ast import (
@@ -30,6 +32,7 @@ from graph_cli.query.cypher.ast import (
     Parameter,
     Property,
     Query,
+    Unary,
     Variable,
 )
 from graph_cli.query.cypher.walk import clause_expressions, clause_patterns
@@ -84,14 +87,28 @@ def _field_of(e: Expr) -> tuple[str, str] | None:
     return None
 
 
+def _constant(e: Expr) -> Const | None:
+    """A constant; a number with a sign (``-1``, ``+2.5``) is one too."""
+    if isinstance(e, Const):
+        return e
+    if isinstance(e, Unary) and e.op in ("-", "+") and isinstance(e.operand, Const):
+        value = e.operand.value
+        if isinstance(value, int | Decimal) and not isinstance(value, bool):
+            return Const(-value if e.op == "-" else value, e.pos)
+    return None
+
+
 def _operand(e: Expr, literals: bool) -> Parameter | Const | ListExpr | None:
     if isinstance(e, Parameter):
         return e
-    if literals and isinstance(e, Const):
-        return e
-    if literals and isinstance(e, ListExpr) and all(isinstance(i, Const) for i in e.items):
-        return e
-    return None
+    if not literals:
+        return None
+    if isinstance(e, ListExpr):
+        items = [_constant(i) for i in e.items]
+        if all(i is not None for i in items):
+            return ListExpr(tuple(i for i in items if i is not None), e.pos)
+        return None
+    return _constant(e)
 
 
 def _scalar(e: Expr, literals: bool) -> Parameter | Const | None:

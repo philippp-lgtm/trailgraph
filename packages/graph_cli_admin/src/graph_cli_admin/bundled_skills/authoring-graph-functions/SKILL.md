@@ -76,7 +76,9 @@ when the graph has one module).
    for several entities (the units of a person, the owners of a set of
    items), declare the `ref` with `many: true` and compare it with
    `WHERE x.id IN $p`: one run answers a whole batch, where a single-value
-   `ref` costs one run per entity. A switch is a `boolean` with
+   `ref` costs one run per entity. Return the entity's `id` or `alias` as a
+   column too (and group an aggregate by it), so a caller can tell which
+   entity each row belongs to. A switch is a `boolean` with
    `default: false`. "All entities" is a function of its own without the
    `ref`, never an optional `ref`: a `ref` takes an id, an alias or hex digits
    and has no default.
@@ -184,5 +186,5 @@ the graph is pinned to. So:
 | `function.module_required`, `function.unknown_module` | name a module of the graph in `module:` |
 | `term.unknown`, `query.*` | the query itself: fix the name or the syntax |
 | `function.unknown_key`, `function.missing_key`, `function.invalid_value` | the file does not follow the format; see `references/format.md` |
-| `admin.function_single_ref` (a warning, nothing is refused) | an active function takes a single-value `ref` that its query only compares with `=`: declare it `many: true` and compare with `IN` so one run can answer several entities; keep it single only when one entity is the point. Functions a published view runs are not listed (a view hands them one entity); `graph-admin usage report` shows which functions agents run often |
+| `admin.function_single_ref` (a warning, nothing is refused) | an active function takes a single-value `ref` that its query only compares with `=`: declare it `many: true` and compare with `IN` so one run can answer several entities; keep it single only when one entity is the point (which functions are left out: [format](references/format.md#what-publishing-checks)) |
 | `function.round_trip_failed` | a defect of graph_cli, not of the file: write the query another way (`references/format.md`, published form) and tell the user so it gets reported |

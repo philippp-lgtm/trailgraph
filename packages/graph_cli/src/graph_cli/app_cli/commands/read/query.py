@@ -329,7 +329,8 @@ SPECS: Final = (
             ParamSpec(
                 "--param",
                 "assignment",
-                "name=value binds $name; the value is JSON when it parses, else text.",
+                "name=value binds $name; the value is JSON when it parses, else text"
+                " (a number compared only with text fields is bound as written).",
                 repeatable=True,
                 pairs="map",
                 pair_values="json",
