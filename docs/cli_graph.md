@@ -1068,6 +1068,9 @@ Run one with `do NAME --param name=value ...`, with `--dry-run` first:
   `action.parameter_type`). A missing, unknown or malformed parameter is a
   usage error (exit 2: `action.parameter_missing`,
   `action.parameter_unknown`, `action.parameter_invalid`).
+- A list parameter may stand for the target of an edge a `create` writes:
+  the expansion has one edge per value (in order, each once), and the
+  dry run checks them all like any other write.
 - The preconditions are checked on the entities' current state under the
   graph lock, right before the write, so nothing can change between check
   and commit. A failing one refuses the action with

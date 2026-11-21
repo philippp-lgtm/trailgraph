@@ -12,6 +12,7 @@ from graph_cli.kinetic.action_format import (
     node_json,
     path_text,
     scan_op,
+    spread_edges,
     substitute,
 )
 from graph_cli.kinetic.params import ParamDef
@@ -252,6 +253,42 @@ def test_substitute_replaces_and_drops_entries() -> None:
         "add": {"l": ["one"]},
     }
     assert op["set"] == {"title": "$t", "note": "$n"}  # the template is not changed
+
+
+def test_a_list_target_spreads_into_one_edge_per_value() -> None:
+    template: JsonObject = {
+        "op": "create",
+        "type": "ex:Thing",
+        "edges": [
+            {"rel": "ex:in", "target": "$places", "qualifiers": {"since": "2026-01-01"}},
+            {"rel": "ex:near", "target": "@other"},
+        ],
+    }
+    scan = scan_op(template, 0)
+    assert scan.uses[0].field == "edges.target"
+    spread = spread_edges(substitute(template, scan.uses, lambda use: ["B", "A", "B", "C"]))
+    assert spread["edges"] == [
+        {"rel": "ex:in", "target": "B", "qualifiers": {"since": "2026-01-01"}},
+        {"rel": "ex:in", "target": "A", "qualifiers": {"since": "2026-01-01"}},
+        {"rel": "ex:in", "target": "C", "qualifiers": {"since": "2026-01-01"}},
+        {"rel": "ex:near", "target": "@other"},
+    ]  # order kept, each value once, the other edge untouched
+    assert spread["edges"][0]["qualifiers"] is not spread["edges"][1]["qualifiers"]  # type: ignore[index]
+    empty = spread_edges(substitute(template, scan.uses, lambda use: []))
+    assert empty["edges"] == [{"rel": "ex:near", "target": "@other"}]  # no value, no edge
+
+
+def test_spreading_changes_nothing_else() -> None:
+    single: JsonObject = {
+        "op": "create",
+        "type": "ex:T",
+        "edges": [{"rel": "ex:in", "target": "A"}],
+    }
+    assert spread_edges(single) is single
+    bare: JsonObject = {"op": "create", "type": "ex:T"}
+    assert spread_edges(bare) is bare
+    link: JsonObject = {"op": "link", "id": "A", "rel": "ex:in", "target": ["B", "C"]}
+    assert spread_edges(link) is link  # only a create has edges to spread
 
 
 def test_yaml_nodes_and_json_convert_both_ways() -> None:

@@ -86,9 +86,10 @@ a function of the graph (`action.name_taken`).
    entity the action is given.
 6. **`ops`**: the change-set ops with `$parameter` in place of references
    and values. Use `unlink ... all: true` where the recipe removes
-   whatever edges there are; the dry run shows which. Every write is
-   visible in the file: types, relations and attributes are never
-   parameters.
+   whatever edges there are; the dry run shows which. A `create` that
+   gives one entity several edges of one relation takes a `many` `ref` as
+   the edge target (see the format reference). Every write is visible in
+   the file: types, relations and attributes are never parameters.
 7. **`reason`**: `required` when the change should always be justified (a
    leaver, a retraction); the agent is refused without `--reason`.
 8. **`examples`**: at least one request in plain words, no ids and no

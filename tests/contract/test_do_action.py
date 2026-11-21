@@ -39,6 +39,36 @@ examples:
 """
 
 
+ADD_ITEM = """\
+schema: graph_cli.action/1
+name: add_item
+summary: Record a new item in a location and its categories.
+use_when: An item arrives and is put away.
+params:
+  label:
+    type: string
+    summary: The name of the item.
+  location:
+    type: ref
+    class: inv:Location
+    summary: Where the item is stored.
+  categories:
+    type: ref
+    class: inv:Category
+    many: true
+    summary: The categories the item belongs to.
+ops:
+  - op: create
+    type: inv:Item
+    attrs: {name: $label, status: ordered}
+    edges:
+      - {rel: inv:located_in, target: $location}
+      - {rel: inv:in_category, target: $categories}
+examples:
+  - request: The new crate goes to the depot and into two categories.
+"""
+
+
 @pytest.fixture(params=("inventory",))
 def ontology(request: pytest.FixtureRequest) -> str:
     return str(request.param)
@@ -153,6 +183,32 @@ def test_do_writes_what_apply_of_the_expanded_change_set_writes(
     assert [r.content_hash for r in mine.revisions] == [r.content_hash for r in theirs.revisions]
     assert [(r.id, r.rev) for r in mine.revisions] == [(r.id, r.rev) for r in theirs.revisions]
     assert mine.request.command == "do" and theirs.request.command == "apply"
+
+
+def test_a_list_parameter_writes_one_edge_per_value(tmp_path: Path, backend: str) -> None:
+    env = ServiceEnv(backend, "inventory", tmp_path / "root")
+    publish_actions(env, {"add_item.yaml": ADD_ITEM})
+    service = action_service(env)
+    place = make_location(env)
+    item = make_item(env)
+    categories = make_categories(env, item, 3)
+    params = ("label=Crate", f"location={place}", *(f"categories={c}" for c in categories))
+    head = env.head_seq()
+    dry = do(service, env, "add_item", *params, f"categories={categories[0]}", dry_run=True)
+    assert dry.write.dry_run and [e.ops for e in dry.write.entities] == [("create",)]
+    assert env.head_seq() == head
+    result = do(service, env, "add_item", *params, f"categories={categories[0]}")
+    assert result.write.seq == head + 1
+    (tx,) = [t for t in env.txs() if t.seq == head + 1]
+    (op,) = tx.changeset["ops"]  # type: ignore[index, union-attr]
+    edges = [(e["rel"], e["target"]) for e in op["edges"]]  # type: ignore[index]
+    assert edges == [("inv:located_in", place), *(("inv:in_category", c) for c in categories)]
+    (created,) = [e.id for e in result.write.entities]
+    stored = env.snapshot().get(created)
+    assert stored is not None
+    assert sorted(str(e.target) for e in stored.edges if e.rel == "inv:in_category") == sorted(
+        categories
+    )
 
 
 def test_a_precondition_that_became_false_after_the_dry_run_refuses_the_write(
