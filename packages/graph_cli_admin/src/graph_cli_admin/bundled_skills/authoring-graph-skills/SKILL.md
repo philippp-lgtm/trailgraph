@@ -27,14 +27,14 @@ generated from the graph's model:
 
 | Block | Renders |
 | --- | --- |
-| `start` | to load the `graph-cli` skill first; how to tell the graph is available here and which name to pass as `--graph`; the graph language; the rules of working with `graph` that hold from the first call, so the skill works even when an agent loads it alone; one clause that the graph has views (`graph describe views`) when it has some the reader can call. Do not repeat them in the curated text |
+| `start` | to run `graph start --json` once per session if not done yet (it refreshes stale skills and gives the counts and the search commands) and to load the `graph-cli` skill first; how to tell the graph is available here and which name to pass as `--graph`; the graph language; the rules of working with `graph` that hold from the first call, so the skill works even when an agent loads it alone; one clause that the graph has views (`graph describe views`) when it has some the reader can call. Do not repeat them in the curated text |
 | `modules` | for a graph with several modules: one row per subject area (module, prefix, summary, number of types, links to other modules), the commands to read one module and, when the graph has functions or actions, one line that `graph describe module` lists a module's functions and actions; replaces `types` and `relations` |
 | `types` | one row per entity type: name, alias example, summary, supertypes, fields (enum values inline, `required`, `many`, `unique`, write-once, defaults, their name roles), states and transitions |
 | `relations` | relations from or to those types, each with its `graph query` pattern, cardinality, characteristics and qualifiers (inverse labels, which no command takes, only in `references/model.md`) |
 | `constraints` | transition guards and rules with severity (write-once fields too when the template has no `types`) |
 | `names` | the alias format and which fields `graph lookup` matches; next to `types` a pointer to the name roles marked there; on a modular graph one example and pointers, not every type. Tells agents to use a candidate only on exactly one exact match, else to ask |
 | `model` | a pointer to `references/model.md`, the full model, written for every generated skill |
-| `functions` | the graph's named functions: at most 12 of them (the ones marked `featured: true` in their file, by module then name) with signature and summary, and the commands to run, list and search them (further functions are not listed and nothing warns about them); one line saying so when there are none |
+| `functions` | the graph's named functions: at most 12 of them (the ones marked `featured: true` in their file, by module then name) with signature and summary, and the commands to run, list and search them (further functions are not listed and nothing warns about them); one line saying so when there are none, and one line saying that functions are not for this token when the reader may not `read.function` |
 | `actions` | the graph's named write actions: at most 8 of them (the ones marked `featured: true` in their file, by module then name, that the reader may run: an action is left out when a write it needs is not allowed to the actor that installs or renders the skill) as `name(signature)` with summary (`?` marks an optional parameter, "Needs `--reason`" an action with `reason: required`), the rule to dry run first (`graph do <action> --param <name>=<value> --dry-run`) and the commands to list, search and describe them; one line saying so when there are none |
 
 Each block at most once. Put `functions` where agents decide how to answer
@@ -131,7 +131,9 @@ The blocks already say what the model says. Write what it cannot:
    "Run `graph start` first and load graph-cli with it." (52 characters with
    its space) unless the description names `graph start` itself, so keep the
    description under 970 characters: when the sentence does not fit it is left
-   out and publish warns (`admin.skill_over_budget`, with the length).
+   out and publish warns (`admin.skill_over_budget`, with the length). Write the
+   description on one line: one wrapped over lines as a plain or quoted scalar
+   gets no sentence.
 2. **Rules for you**: how to decide between two types, which values a
    field takes in practice, when to create versus update, what to look up
    before writing (an existing entity with a similar name), what needs the
@@ -156,7 +158,8 @@ The blocks already say what the model says. Write what it cannot:
    (entering one kind of document, building one kind of entry) and
    glossaries go into `references/<job>.md`, with one line in `SKILL.md`
    that says when to read it. A recipe that a function covers does not
-   belong in the text at all: the `functions` block lists it. Hard limits:
+   belong in the text at all: the `functions` block lists it when it is
+   `featured`, and `graph start` and `graph describe search` find the rest. Hard limits:
    `SKILL.md` at most 500 lines, the whole tree at most 256 KB.
 5. **Rules as criteria, not values.** Say what decides a case and give
    the test question; do not list values from the data. A rule that pulls
@@ -223,7 +226,8 @@ same warning follows when a function or action the text runs is later deleted.
 3. Fix what `render` reports (exit 1 lists the problems; the preview is
    written anyway).
 4. Publish as described in `maintaining-graphs`. Agents get the new text
-   with `graph self update` or `graph skills install` where they work.
+   with `graph start` (it refreshes stale copies; `graph self update` and
+   `graph skills install` do too) where they work.
 
 Test it: give an agent with the installed skill a few real requests and
 watch whether it loads the skill, picks the right types and follows the

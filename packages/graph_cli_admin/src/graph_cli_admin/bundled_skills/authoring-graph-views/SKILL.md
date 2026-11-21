@@ -93,6 +93,21 @@ filters as `graph find --type <type> --where <entry>` before writing them into t
 5. Look at the answer as the smallest reader would: `bytes`, `cut`, `more`, `approx`. An entity view
    that is trimmed (`cut: true`, stubs) wants fewer or smaller sections or a lower `max`.
 
+## What agents learn of a view
+
+A view has no `featured` key: the graph skill names no view, it only says in one clause
+that the graph has views when it has any. Agents learn of the others from `graph start`
+(the count) and from `graph describe views` and `describe search`, which read the catalog
+when they are called. Publishing, changing or removing a view therefore leaves every
+installed graph skill current; only the first view of a graph, or the last one removed,
+changes the skill and makes installed copies stale (the next `graph start` refreshes them).
+
+A caller finds a view only when it sees everything the view names (classes, attributes,
+relations, enums, the functions it runs); for a caller with read limits that misses one it
+does not exist (hidden), and `graph view --name` of it is `view.not_found`. A caller that sees
+all of it but lacks `read.find` (a set view) or `read.function` (a `rows` section) finds it marked
+`allowed: false` with the right it misses, and the call is `access.denied`.
+
 ## Release refusals
 
 The invariant: the published views always resolve against the ontology the graph is pinned to and the

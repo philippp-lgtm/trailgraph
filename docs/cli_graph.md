@@ -1002,10 +1002,11 @@ are found and read, never changed, with the `describe` commands:
   the catalog being checked) the run is refused with `function.stale`: tell
   the maintainer.
 
-Functions are shown only to callers who may `read.function` on the graph
+A function is usable only by callers who may `read.function` on the graph
 (see [Access control](access_control.md#functions)); for everyone else the
-graph reads as if it had none. A graph that has no functions shows nothing
-about them in any `describe` command.
+functions are *not allowed*, not absent ([Entries you may not use](#entries-you-may-not-use)).
+A graph that has no functions shows nothing about them in any `describe`
+command.
 
 Maintainers write functions as one YAML file each and publish them with
 `graph-admin` ([`graph functions publish`](cli_graph_admin.md#commands)). The

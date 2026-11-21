@@ -91,7 +91,7 @@ holds, then finds it done or finishes it.
 
 ## After the release
 
-- Tell the user that agents using the graph need fresh skills (`graph self update`), and that
+- Tell the user that agents using the graph get fresh skills with their next `graph start`, and that
   older revisions are shown under the new names, so `graph history` and `--as-of` keep working
   with the new terms; scripts that name an old term get `term.unknown` with the new name in the
   message.

@@ -206,7 +206,8 @@ Later versions:
    `references/release_with_a_migration.md`).
 7. `graph-admin audit verify`: clean.
 8. The graph skill: a template skill renders the new model by itself;
-   reinstall it with `graph skills install`. Check its curated text with
+   installed copies go stale and the next `graph start` of an agent
+   refreshes them (`graph skills install` does too). Check its curated text with
    `graph-admin graph skill render`, and publish again when the text or a
    static skill must change (`authoring-graph-skills`).
 9. Update the README next to the ontology: new questions, design choices,

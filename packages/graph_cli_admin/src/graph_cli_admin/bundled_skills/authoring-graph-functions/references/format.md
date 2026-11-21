@@ -50,7 +50,7 @@ featured: true
 | `query` | yes | the read-only Cypher query, at most 2,000 characters |
 | `returns` | yes | list of `{column, summary}`, exactly the query's result columns in order |
 | `examples` | yes | at least one `{question, params}`; `params` optional |
-| `featured` | no | `true` lists the function in the graph skill (at most 12 are listed); default `false` |
+| `featured` | no | `true` lists the function in the graph skill (at most 12 are listed); default `false`. The only key that changes the skill: publishing a function that is not featured leaves installed skills current |
 | `status` | no | `active` (default) or `deprecated` |
 | `replaced_by` | no | name of an active function; only with `status: deprecated` |
 

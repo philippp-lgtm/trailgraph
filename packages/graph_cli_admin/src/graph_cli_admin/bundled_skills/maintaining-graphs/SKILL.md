@@ -97,10 +97,8 @@ carry them over and push from there.
    the graph to it and publishes a changed skill, functions, actions and views
    in one step; it writes the new base into the folder.
 6. `graph-admin audit verify`.
-7. Tell the user that the agents using the graph need fresh skills (a generated
-   graph skill renders the new model on its own): `graph self update` or
-   `graph skills install` where they work. A release that imports a file kind
-   (`files_pdf`, ...) is followed by `graph-admin files extract --graph <graph>
+7. Agents get the new model with their next `graph start`. A release that imports a
+   file kind (`files_pdf`, ...) is followed by `graph-admin files extract --graph <graph>
    --dry-run` and the run ([extract_file_metadata.md](references/extract_file_metadata.md)).
 
 A graph with several ontology modules is released the same way. Give `--module <main>`
@@ -184,25 +182,27 @@ graph-admin graph functions show <graph>
 
 The dry run reports every problem of every file together
 (`admin.functions_invalid`); a missing or empty `functions/` folder unpublishes all
-functions. Agents run functions only with `read.function`; a policy installed by a
-build that did not know it grants it only after `graph-admin policy apply` runs
-again with the same source (`access.denied` for that: tell the user).
+functions. Agents run functions only with `read.function` (without it they are marked
+`allowed: false`; an older policy needs `policy apply` again,
+[give_an_app_a_role.md](references/give_an_app_a_role.md)). A publish of a function,
+action or view needs nothing from agents; only `featured` changes make installed graph
+skills stale (`graph start` refreshes them).
 
 ## Publish or change actions and views
 
 The named actions (`actions/<name>.yaml`) and the views (`views/<name>.yaml`) are
-published by `graph-admin graph push` after the release, the skill and the
-functions, views last (they run functions). Write them with the
-`authoring-graph-actions` and `authoring-graph-views` skills. `graph-admin graph
-actions publish <graph> <folder>/actions --dry-run` and `graph-admin graph views
-publish <graph> <folder>/views --dry-run` report every problem together
-(`admin.actions_invalid`, `admin.views_invalid`), then the push as above publishes;
-an empty folder unpublishes all of its kind; `graph-admin graph actions show
-<graph>` and `graph-admin graph views show <graph>` list them. Functions and actions
-share one namespace per graph; views have their own. An action needs no policy: a
-caller without the write rights of its ops does not see it; a caller sees a view
-only if it sees everything the view names. A function a view runs cannot be removed
-or changed incompatibly alone (`admin.views_broken`): push both.
+published by `graph-admin graph push` after the release, the skill and the functions,
+views last (they run functions); write them with `authoring-graph-actions` and
+`authoring-graph-views`. `graph-admin graph actions publish <graph> <folder>/actions
+--dry-run` and `graph-admin graph views publish <graph> <folder>/views --dry-run` report
+every problem together (`admin.actions_invalid`, `admin.views_invalid`); the push as
+above publishes, an empty folder unpublishes all of its kind, `graph-admin graph actions
+show <graph>` and `graph-admin graph views show <graph>` list them. Functions and actions share one namespace per graph; views have
+their own. An action needs no policy: a caller lacking a write right of its ops, or
+`read.find` or `read.function` for a view, finds it marked `allowed: false`
+(`access.denied` when it calls it); what names a hidden term does not exist for it. A
+function a view runs cannot be removed or changed incompatibly alone
+(`admin.views_broken`): push both.
 
 ## Give an app a role
 

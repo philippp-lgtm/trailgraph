@@ -91,7 +91,9 @@ when the graph has one module).
    that every agent reads first. At most 12 functions are listed (by
    module, then name; further ones are not shown there), so feature only
    the few that answer the questions most often asked, and leave the rest
-   to search and the module pages.
+   to `graph start` (counts) and `graph describe search` and `describe
+   module`. It is the only switch of a function that touches the graph
+   skill: the skill shows nothing else of the catalog.
 
 Check the query by running it as an ad-hoc `graph query` with real values
 first; then write the file around it.
@@ -111,8 +113,22 @@ first; then write the file around it.
    function`, `graph describe function <function>`, `graph run <function>
    --param <name>=<value>`. If the search does not find it, sharpen
    `summary` and `use_when`.
-5. Agents see a changed list in the generated graph skill after `graph
-   skills install` or `graph self update`.
+5. Nothing is left to do for the agents when the function is not
+   `featured`: `graph describe` and `graph start` read the catalog when they
+   are called, and installed graph skills stay current. Featuring or
+   unfeaturing a function (or publishing the first, or removing the last, of
+   the graph) makes the installed skills stale; the next `graph start` of an
+   agent refreshes them.
+
+## Who sees a function
+
+A caller finds a function only when it sees everything the function names
+(types, relations, the class of a `ref`, an enum, the module); for a caller
+with read limits that misses one it does not exist (hidden). A caller that
+sees all of it but lacks `read.function` finds it marked `allowed: false` with
+the right it misses, and `graph run` answers `access.denied`. So `summary`
+and `use_when` reach every caller who sees the names: write them in terms
+that hold for every such caller.
 
 ## Release refusals
 

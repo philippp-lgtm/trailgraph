@@ -48,7 +48,7 @@ recording changes to them. The rules below say what the model itself cannot.
 
 <!-- graph_cli:block functions -->
 
-Questions that no function above answers (replace the placeholders):
+Questions that no function answers (replace the placeholders):
 
 ```sh
 graph lookup "<name>" --graph company

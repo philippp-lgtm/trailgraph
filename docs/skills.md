@@ -28,7 +28,7 @@ linking and reading files; fixed text) and `references/history.md`
 (earlier revisions and states; fixed text). The renderer reads nothing but
 that document. Its write step sends an agent
 to a named action first (`graph describe search <value> --kind action` or the graph skill's
-list, then `graph do <action> --dry-run`, then without) and to the primitives only when none
+featured ones, then `graph do <action> --dry-run`, then without) and to the primitives only when none
 fits. Its description ends with the sentence "Run `graph start` once per session before
 loading this or any graph skill", the first step of its workflow is `graph start`
 ([Starting a session](cli_graph.md#starting-a-session)), and its error guidance names
@@ -115,8 +115,8 @@ without being featured leaves every rendered file as it was, and installed copie
 stay `fresh`. Featuring or unfeaturing one, or the first or last entry of a kind,
 changes the render and makes them `stale` (see [Stale skills](#stale-skills)).
 
-Only the actions the installing reader may run are listed (the `describe`
-commands apply the same rule, [Access control](access_control.md#actions)),
+Only the featured actions the installing reader may run are listed (an action it may
+not run is counted by `graph start` as not allowed, [Access control](access_control.md#actions)),
 so a reader who may run none gets the skill of a graph without actions.
 `graph-admin` renders and publishes with the whole catalog, so the preview
 and the name check know every action.

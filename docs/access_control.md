@@ -974,8 +974,8 @@ after an update.
   shows the needs as published. For a caller with [read limits](#read-limits)
   a need is also met only through a type the caller sees.
 - **Listing.** `describe actions`, `describe action`, `describe module`,
-  `describe modules` and `describe search` show an action only when, for each
-  need, at least one of its concrete types allows it, with the attributes and
+  `describe modules` and `describe search` show an action as one the caller may
+  run only when, for each need, at least one of its concrete types allows it, with the attributes and
   relations the action writes there where the policy has rules on terms of that
   type (any-of per need). So an action no argument could run is not listed, and a
   listed action can still be refused for an entity of a type the caller may not
@@ -990,7 +990,7 @@ after an update.
   from a caller with read limits: it is `action.not_found` with `did_you_mean`
   over the actions the caller sees
   ([Functions and actions of a limited reader](#functions-and-actions-of-a-limited-reader)).
-- **Graph skill.** Unlike the functions, the generated graph skill lists
+- **Graph skill.** Like the functions, the generated graph skill lists
   only the featured actions the installing reader may run
   ([Skills](skills.md#per-reader)).
 - **Publishing** the catalog is `maint.graph_configure`, as for the functions.

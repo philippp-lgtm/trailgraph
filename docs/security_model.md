@@ -193,6 +193,12 @@ are accepted and known:
   Published views follow the same rule with two additions: a set view also needs `read.find`, and a
   view that names anything the caller cannot see is not found at all, so a view definition never
   shows a hidden term ([Views](access_control.md#views)).
+- **A function, action or view the caller may not use is named.** One that names only what the
+  caller sees but needs a right it lacks is listed as not allowed, with its name, summary, `use_when`,
+  parameters and the right that is missing; the maintainer's query, operations, conditions, sections
+  and literals stay out, and anything that names a hidden term stays absent. So a caller learns
+  that a reviewed function, action or view exists, never what it does or touches
+  ([Functions, actions and views you may not use](access_control.md#functions-actions-and-views-you-may-not-use)).
 - **Activity shows, data does not.** The envelope's `seq` counts every
   transaction of the graph, hidden ones included. A revision whose only change
   was an edge to a hidden entity appears in `history` with an empty `changed`.

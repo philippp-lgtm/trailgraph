@@ -50,7 +50,7 @@ against it and audited. The CLI is on `PATH`.
    term you can only name, `graph describe search <value> --json`
    (types, relations, fields, values; not data); never dump the whole schema.
    For a question, look for a function first (`graph describe search <value>
-   --kind function` or the graph skill's list) and run it with
+   --kind function` or the graph skill's featured ones) and run it with
    `graph run <function> --param ...` (a `ref` parameter takes an id: look
    names up with `graph lookup <value> --for <function>.<param>`); write a
    `query` when none fits. An empty value in a function's answer means
@@ -76,7 +76,7 @@ against it and audited. The CLI is on `PATH`.
    abbreviations and synonyms into `alt_label` fields, misspellings into
    `hidden_label` fields.
 6. For a change, look for an action first (`graph describe search <value>
-   --kind action`, the graph skill's list, `graph get <id> --affordances`):
+   --kind action`, the graph skill's featured ones, `graph get <id> --affordances`):
    `graph do <action> --dry-run`, read what it will change, then run it
    without. None fits: preview `create`, `apply`, `supersede`, `retract`,
    `transition` with `--dry-run --json`; one `update`, `link` or `unlink`
