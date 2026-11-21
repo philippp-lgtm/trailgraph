@@ -142,3 +142,13 @@ def test_the_terms_hold_what_the_text_can_name() -> None:
     assert {"inv:Item", "Item", "inv:located_in", "located_in", "inventory"} <= TERMS
     assert {"condition", "worn", "status", "in_stock", "serial_number"} <= TERMS
     assert not TERMS & SYSTEM_FIELDS
+
+
+def test_a_placeholder_the_tool_does_not_use_names_something_of_the_graph() -> None:
+    body = (
+        "```sh\ngraph file add <file> --title '<Subject> <Kind|Test> <YYYY-MM-DD>'\n"
+        "graph history <installation id>\n```\n"
+    )
+    assert generic(body) == []
+    plain = "```sh\ngraph file add <file> --title '<name>' --graph example_graph\n```\n"
+    assert [w[0] for w in generic(plain)] == ["file"]

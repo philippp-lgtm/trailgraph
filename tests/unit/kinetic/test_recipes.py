@@ -250,3 +250,32 @@ def test_a_function_that_no_longer_resolves_is_left_out() -> None:
         hash="stale",
     )
     assert function_pairs([stale], MODEL) == ()
+
+
+def test_a_flag_or_a_number_fixes_no_entity() -> None:
+    text = (
+        "MATCH (l:LegalEntity {in_group: true, name: 'X'}) WHERE l.country IN [1, 2] RETURN l.name"
+    )
+    anchors = recipe_signature(resolve(parse(text), MODEL)).anchors
+    assert [a.key for a in anchors] == ["name"]  # only text names an entity
+    listed = "MATCH (l:LegalEntity) WHERE l.name IN ['X', 'Y'] AND l.alias = $a RETURN l.name"
+    assert {a.key for a in recipe_signature(resolve(parse(listed), MODEL, {"a": "A"})).anchors} == {
+        "name",
+        "alias",
+    }
+
+
+def test_a_relationship_the_recipe_negates_must_be_negated_or_walked_by_the_function() -> None:
+    # vacant_positions negates holds itself: the recipe may leave it to the function
+    lone = (
+        "MATCH (q:Position)-[:in_unit]->(u:OrgUnit)-[:part_of*0..5]->(d:OrgUnit)"
+        " WHERE d.alias = 'x' AND q.status <> 'abolished' AND NOT (:Person)-[:holds]->(q)"
+        " RETURN q.title, q.status, u.name"
+    )
+    assert covering(lone)[0] == "vacant_positions"
+    # members_of_unit walks holds without negating it: its rows show who holds, so the caller can
+    # tell the positions nobody holds; a negation of a relationship it never walks stays open
+    unwalked = (
+        f"{MEMBERS} WHERE u.alias = 'x' AND NOT (q)-[:carries]->(:Role) RETURN p.name, q.title"
+    )
+    assert covering(unwalked) == []

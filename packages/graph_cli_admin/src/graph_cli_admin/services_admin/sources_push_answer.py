@@ -156,11 +156,16 @@ def _kind_answer(
 
 
 def push_warnings(
-    locked: Locked, catalogs: Catalogs, checked: skill.Checked | None, after: GraphEntry
+    locked: Locked,
+    catalogs: Catalogs,
+    checked: skill.Checked | None,
+    after: GraphEntry,
+    linted: tuple[WarningRecord, ...] = (),
 ) -> tuple[WarningRecord, ...]:
     """The warnings of the push: the release's, then the pushed functions', actions', views' and
-    skill's. Computed after the writes and the new base: a warning check that raises fails the
-    command late, with the push done."""
+    skill's; ``linted`` (the lint of the published skill against pushed functions, when the push
+    leaves the skill alone) comes last. Computed after the writes and the new base: a warning
+    check that raises fails the command late, with the push done."""
     warnings = locked.planned.warnings if locked.planned is not None else ()
     if catalogs.functions is not None:
         warnings += functions.single_ref_warnings(
@@ -177,4 +182,4 @@ def push_warnings(
         warnings += authored_views.deprecated_warnings(catalogs.views, catalogs.view_functions)
     if checked is not None:
         warnings += checked.warnings(after, locked.ws.skill.name)
-    return warnings
+    return warnings + linted

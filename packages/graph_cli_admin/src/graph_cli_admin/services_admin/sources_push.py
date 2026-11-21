@@ -39,7 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from graph_cli.kernel.authz import Decision
-from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot, SkillSlot
 from graph_cli.kernel.ports.storage import MaintenanceSession
@@ -118,6 +118,7 @@ def push(
         locked = Locked.of(ctx, entry, ws, current, publishes, planned, target_pin)
         catalogs = _check_catalogs(locked)
         checked = _check_skill(locked, catalogs, inventory=inventory)
+        linted = _lint_published(locked, catalogs, checked, inventory=inventory)
         slot = _skill_slot(locked, checked)
         seq = session.head().seq
         after = (
@@ -129,7 +130,7 @@ def push(
         data = answer(locked, catalogs, slot, final, after, dry_run=dry_run)
     if not dry_run:
         write_base(source, source_document(after, final))
-    return Pushed(after, data, seq, push_warnings(locked, catalogs, checked, after))
+    return Pushed(after, data, seq, push_warnings(locked, catalogs, checked, after, linted))
 
 
 def _write_all(
@@ -410,13 +411,47 @@ def _check_skill(
         inventory=inventory,
         model=ws.compiled.model if locked.releasing else None,
         # the catalogs the graph will have: `graph run <name>` and `graph do <name>` in
-        # the text are checked
-        functions=catalogs.functions.compiled if catalogs.functions is not None else None,
+        # the text are checked, and the recipes are linted against the functions
+        functions=_functions_after(locked, catalogs),
         actions=catalogs.actions.compiled if catalogs.actions is not None else None,
         views=catalogs.views.compiled if catalogs.views is not None else None,
     )
     skill.refuse(label, locked.after, ws.skill.name, checked.problems)
     return checked
+
+
+def _functions_after(locked: Locked, catalogs: Catalogs) -> JsonObject | None:
+    """The function catalog the graph will have when the push changes it (pushed, or compiled
+    again by the release); ``None``: the published one stays."""
+    if catalogs.functions is not None:
+        return catalogs.functions.compiled
+    again = locked.planned.functions if locked.planned is not None else None
+    return again.slot.compiled if again is not None else None
+
+
+def _lint_published(
+    locked: Locked,
+    catalogs: Catalogs,
+    checked: skill.Checked | None,
+    *,
+    inventory: Mapping[str, JsonValue],
+) -> tuple[WarningRecord, ...]:
+    """The lint of the published template against the functions the push publishes, when the
+    push neither releases nor publishes the skill (``checked`` would have linted it)."""
+    published = locked.current.skill
+    if checked is not None or catalogs.functions is None or published is None:
+        return ()
+    final = final_slots(locked, catalogs, None)
+    actions, views = final.actions, final.views
+    return skill.lint_files(
+        locked.after,
+        dict(published.files),
+        model=locked.model(),
+        functions=catalogs.functions.compiled,
+        actions=actions.compiled if actions is not None and actions.count else None,
+        views=views.compiled if views is not None and views.count else None,
+        inventory=inventory,
+    )
 
 
 def _skill_slot(locked: Locked, checked: skill.Checked | None) -> SkillSlot | None:

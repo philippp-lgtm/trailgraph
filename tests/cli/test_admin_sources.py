@@ -26,6 +26,7 @@ from graph_cli.storage.files.audit_log import FileAuditLog
 
 TEMPLATE = FIXTURES / "skills" / "template" / "graph-example-graph"
 INVENTORY = ONTOLOGIES / "inventory"
+FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
 SKILL = Path("skill") / "graph-example-graph"
 BASE = ".graph_cli_source.json"
 
@@ -243,6 +244,37 @@ def test_a_skill_over_budget_is_pushed_with_a_warning(
     assert outcome.code == 0, outcome.envelope
     assert outcome.data["skill"]["published"] is True  # warned, not refused
     assert outcome.warning_codes == ["admin.skill_over_budget"]
+
+
+COVERED_RECIPE = """
+```sh
+graph query 'MATCH (i:Item)-[:located_in]->(l:Location) WHERE l.alias = $loc \\
+  RETURN i.name, i.quantity' --param loc=LOC-0001 --json
+```
+"""
+
+
+def test_a_push_of_functions_alone_lints_the_published_skill_against_them(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create_graph(run_cli, "example_graph", version="1.0.0")
+    template = tmp_path / "template" / "graph-example-graph"
+    shutil.copytree(TEMPLATE, template)
+    (template / "SKILL.md").write_text((template / "SKILL.md").read_text() + COVERED_RECIPE)
+    published = admin(run_cli, "graph", "skill", "publish", "example_graph", str(template))
+    assert published.code == 0 and published.warning_codes == []  # no function answers it yet
+    target = pulled(run_cli, tmp_path)
+    (target / "functions").mkdir()
+    shutil.copy(FUNCTIONS / "items_in_location.yaml", target / "functions")
+    first = push(run_cli, target, "--dry-run")
+    assert first.code == 0, first.envelope
+    assert first.warning_codes == ["admin.function_single_ref", "admin.skill_recipe_covered"]
+    (finding,) = first.warnings[1]["details"]["findings"]
+    assert finding["function"] == "items_in_location"  # the pushed function, not yet published
+    done = push(run_cli, target)
+    assert done.code == 0 and done.data["skill"]["published"] is False
+    assert done.warning_codes == ["admin.function_single_ref", "admin.skill_recipe_covered"]
+    assert push(run_cli, target, "--dry-run").warning_codes == []  # nothing left to publish
 
 
 def test_a_skill_whose_description_cannot_take_the_start_sentence_is_refused(

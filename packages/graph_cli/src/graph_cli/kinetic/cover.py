@@ -64,7 +64,8 @@ supplied, and every filter the recipe applies must be met by the function). The 
 above is untouched. A function covers a recipe when it is not deprecated and:
 
 1. every required parameter (no default) is supplied: a ``ref`` by an anchor of the recipe
-   (any key) whose classes fit the class of the function's anchor for it, a ``boolean``
+   (any key, compared with text or a parameter: a flag or a number fixes no entity) whose
+   classes fit the class of the function's anchor for it, a ``boolean``
    always, any other parameter when the recipe compares data with a key the way the function
    compares the parameter with it (``=`` and ``IN`` alike, the other operators each their
    own);
@@ -79,8 +80,10 @@ above is untouched. A function covers a recipe when it is not deprecated and:
    is projected by the function or used in its own ``WHERE`` or maps;
 5. the function filters no more than the recipe: every filter key of the function that no
    parameter of rule 1 consumed is a filter key of the recipe too, and every pattern the
-   function negates (``NOT (a)-[:r]->(b)``) is negated by the recipe too. Else the function
-   would drop rows the recipe keeps.
+   function negates (``NOT (a)-[:r]->(b)``) is negated by the recipe too (else the function
+   would drop rows the recipe keeps); and every pattern the recipe negates is negated by the
+   function too, or at least walked by it, so that its rows show whether the relationship is
+   there.
 """
 
 from __future__ import annotations
@@ -649,6 +652,16 @@ def _match_classes(query: Query, known: Mapping[str, Classes]) -> frozenset[froz
     return frozenset(found)
 
 
+def _names_entity(value: RecipeData) -> bool:
+    """Whether the data can stand for an entity: text or a list of texts, or a parameter. A flag,
+    a number or a null compared with a field narrows the rows but fixes no entity."""
+    if isinstance(value, Const):
+        return isinstance(value.value, str)
+    if isinstance(value, ListExpr):
+        return all(isinstance(i, Const) and isinstance(i.value, str) for i in value.items)
+    return True
+
+
 def recipe_signature(resolved: ResolvedQuery) -> RecipeSignature:
     """The lint-mode signature of a resolved recipe (``--param`` values are data)."""
     known = _node_classes(resolved)
@@ -659,7 +672,7 @@ def recipe_signature(resolved: ResolvedQuery) -> RecipeSignature:
     for c in _scoped_comparisons(resolved.query, literals=True):
         compared.setdefault((c.field, _operator(c)), c.value)
     return RecipeSignature(
-        tuple(RecipeAnchor(a.classes, a.key, a.value) for a in found),
+        tuple(RecipeAnchor(a.classes, a.key, a.value) for a in found if _names_entity(a.value)),
         required,
         every,
         _output(resolved.query, given),
@@ -793,6 +806,9 @@ def recipe_covers(
         if not function.filters - supplied.taken <= recipe.filters:
             continue
         if not function.negated <= recipe.negated:
+            continue
+        walked = {t for triple in base.triples for t in triple.relations or ()}
+        if not all(rels <= walked for rels in recipe.negated - function.negated):
             continue
         found.append(
             RecipeCover(entry.name, entry.defn.featured, share, supplied.refs, supplied.values)

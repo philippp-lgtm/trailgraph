@@ -328,6 +328,86 @@ def test_render_reports_the_size_and_warns_over_budget(
     assert publish(run_cli, TEMPLATE, "--dry-run").warning_codes == []
 
 
+FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
+RECIPES = """
+## Recipes
+
+```sh
+graph query 'MATCH (i:Item)-[:located_in]->(l:Location) WHERE l.alias = $loc \\
+  RETURN i.name, i.quantity' --param loc=LOC-0001 --json
+graph query 'MATCH (i:Item) WHERE i.nope = 1 RETURN i' --json
+graph query 'MATCH (n:<type>) RETURN n' --json
+graph describe types --json
+graph find --type inv:Item --json
+```
+"""
+
+
+def linted_template(tmp_path: Path) -> Path:
+    """The template with a covered recipe, a broken one, a placeholder query and generic examples
+    (one specific example, a plain ``find`` of a type, stays unreported)."""
+    target = copy_template(tmp_path)
+    skill_md = target / "SKILL.md"
+    skill_md.write_text(skill_md.read_text() + RECIPES)
+    return target
+
+
+def publish_functions(run_cli: CliRunner) -> None:
+    outcome = admin(run_cli, "graph", "functions", "publish", "example_graph", str(FUNCTIONS))
+    assert outcome.code == 0, outcome.envelope
+
+
+def test_render_and_publish_warn_about_recipes_the_tool_carries(
+    run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
+) -> None:
+    publish_functions(run_cli)
+    template = linted_template(tmp_path)
+    out = tmp_path / "preview"
+    out.mkdir()
+    rendered = render(run_cli, template, out)
+    assert rendered.code == 0, rendered.envelope
+    lint = [w for w in rendered.envelope["warnings"] if w["code"] != "admin.function_single_ref"]
+    assert [w["code"] for w in lint] == [
+        "admin.skill_recipe_covered",
+        "admin.skill_generic_example",
+        "admin.skill_recipe_broken",
+    ]
+    covered, generic, broken = lint
+    assert covered["details"]["graph"] == "example_graph"
+    assert covered["details"]["skill"] == "graph-example-graph"
+    assert covered["details"]["more"] == 0
+    (found,) = covered["details"]["findings"]
+    assert found["function"] == "items_in_location"
+    assert (
+        found["call"] == "graph run items_in_location --graph example_graph --param location=<ref>"
+    )
+    assert found["file"] == "SKILL.md" and found["line"] > 20
+    assert f"SKILL.md line {found['line']}: {found['call']}" in covered["message"]
+    commands = [f["command"] for f in generic["details"]["findings"]]
+    assert commands == [
+        "graph query 'MATCH (n:<type>) RETURN n' --json",
+        "graph describe types --json",
+    ]
+    (bad,) = broken["details"]["findings"]
+    assert bad["code"] == "term.unknown" and "nope" in bad["message"]
+
+    published = publish(run_cli, template, "--reason", "recipes")
+    assert published.code == 0 and published.data["published"] is True  # warned, not refused
+    assert [w["code"] for w in published.envelope["warnings"]] == [w["code"] for w in lint]
+    assert admin(run_cli, "audit", "verify").code == 0
+
+
+def test_a_template_without_recipes_the_tool_carries_has_no_lint_warning(
+    run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
+) -> None:
+    publish_functions(run_cli)
+    out = tmp_path / "preview"
+    out.mkdir()
+    rendered = render(run_cli, TEMPLATE, out)
+    assert [w["code"] for w in rendered.envelope["warnings"]] == []
+    assert render(run_cli, SKILL, out, "--force").warning_codes == []  # a static skill: no lint
+
+
 def test_a_description_that_cannot_take_the_start_sentence_is_refused(
     run_cli: CliRunner, graph_id: str, tmp_path: Path
 ) -> None:

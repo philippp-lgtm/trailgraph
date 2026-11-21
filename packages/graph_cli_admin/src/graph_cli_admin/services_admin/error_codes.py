@@ -120,6 +120,24 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
         "A graph skill is over its size budget.",
     ),
     ErrorSpec(
+        "admin.skill_recipe_covered",
+        _C.WARNING,
+        False,
+        "A graph skill teaches a query that a published function answers.",
+    ),
+    ErrorSpec(
+        "admin.skill_generic_example",
+        _C.WARNING,
+        False,
+        "A graph skill teaches a command example that names nothing of the graph.",
+    ),
+    ErrorSpec(
+        "admin.skill_recipe_broken",
+        _C.WARNING,
+        False,
+        "A graph skill teaches a query that fails against the graph's model.",
+    ),
+    ErrorSpec(
         "admin.module_bump_insufficient",
         _C.WARNING,
         False,

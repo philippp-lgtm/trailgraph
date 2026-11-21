@@ -61,7 +61,8 @@ SYSTEM_FIELDS: Final = frozenset(
 )
 GRAPH_RE: Final = re.compile(rf"(?<![\w/.<$-]){PROGRAM}[ \t]+(?=\S)")
 HEREDOC_RE: Final = re.compile(r"<<-?[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
-PLACEHOLDER_RE: Final = re.compile(r"<[^<>\s]*>")
+PLACEHOLDER_RE: Final = re.compile(r"<[A-Za-z][^<>]*>")
+WORD_RE: Final = re.compile(r"[a-z0-9]+")
 TOKEN_RE: Final = re.compile(r"[A-Za-z][A-Za-z0-9_]*(?::[A-Za-z][A-Za-z0-9_]*)?")
 MAX_JOINED_LINES: Final = 60  # a quote that stays open longer is prose, not a command
 
@@ -298,22 +299,39 @@ def generic_examples(
 ) -> list[CommandExample]:
     """The fenced examples of a real command that name no term of the graph (``terms``, see
     ``model_terms``). ``graph``: the graph's own name, which a ``--graph`` example uses and which
-    is no term either."""
+    is no term either. A placeholder the tool's own examples do not use (``<Subject> <Date>``)
+    names something of the graph in the maintainer's words, so such an example is kept."""
     options = _options(inventory)
+    vocabulary = _placeholder_words(inventory)
     found = []
     for example in examples:
         path = _command_path(example.words, options)
         if not example.fenced or path is None:
             continue
-        flags = options[path]
-        named = False
-        for option, value in _arguments(example.words[len(path) :], flags):
-            if option == "--graph":
-                continue
-            for token in TOKEN_RE.findall(PLACEHOLDER_RE.sub(" ", value)):
-                parts = {token, *token.split(":")}
-                if token != graph and parts & terms:
-                    named = True
+        values = [
+            value
+            for option, value in _arguments(example.words[len(path) :], options[path])
+            if option != "--graph"
+        ]
+        text = " ".join(values)
+        named = any(
+            not set(WORD_RE.findall(placeholder.lower())) <= vocabulary
+            for placeholder in PLACEHOLDER_RE.findall(text)
+        )
+        for token in TOKEN_RE.findall(PLACEHOLDER_RE.sub(" ", text)):
+            if token != graph and {token, *token.split(":")} & terms:
+                named = True
         if not named:
             found.append(example)
     return found
+
+
+def _placeholder_words(inventory: Mapping[str, JsonValue]) -> frozenset[str]:
+    """The words inside the ``<placeholders>`` of the examples of the commands."""
+    words: set[str] = set()
+    for command in req_list(as_object(dict(inventory), "inventory"), "commands"):
+        for example in as_list(as_object(command, "commands[]").get("examples", []), "examples"):
+            line = req_str(as_object(example, "examples[]"), "command")
+            for placeholder in PLACEHOLDER_RE.findall(line):
+                words.update(WORD_RE.findall(placeholder.lower()))
+    return frozenset(words)

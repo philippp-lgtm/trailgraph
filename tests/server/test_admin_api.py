@@ -655,6 +655,46 @@ def test_render_and_pull_answer_their_files_instead_of_a_server_path(
     assert data["path"] is None and sorted(data["pulled"]) == data["files"], data
 
 
+def test_a_template_is_linted_on_the_server_like_locally(
+    installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """The recipe lint runs where the skill is checked: server-side, with the functions the
+    server's graph has, so a remote render warns exactly as a local one."""
+    template = tmp_path / "graph-example-graph"
+    shutil.copytree(FIXTURES / "skills" / "template" / "graph-example-graph", template)
+    (template / "SKILL.md").write_text(
+        (template / "SKILL.md").read_text() + "\n```sh\ngraph describe types --json\n"
+        "graph query 'MATCH (i:Item)-[:located_in]->(l:Location) WHERE l.alias = $loc"
+        " RETURN i.name, i.quantity' --param loc=LOC-0001\n"
+        "graph query 'MATCH (i:Item) WHERE i.nope = 1 RETURN i'\n```\n"
+    )
+    app = served(installation, tmp_path)
+    root = installation["tokens"]["root"]
+    functions = command(
+        app,
+        "graph/functions/publish",
+        root,
+        args={"ref": "example_graph", "dir": upload_tree(app, root, FUNCTIONS)},
+    )
+    assert functions.status == 200, functions.json
+    rendered = command(
+        app,
+        "graph/skill/render",
+        root,
+        args={
+            "ref": "example_graph",
+            "dir": upload_tree(app, root, template),
+            "--out": {"files": {}, "name": "out"},
+        },
+    )
+    assert rendered.status == 200, rendered.json
+    assert [w["code"] for w in rendered.json["warnings"]] == [
+        "admin.skill_recipe_covered",
+        "admin.skill_generic_example",
+        "admin.skill_recipe_broken",
+    ]
+
+
 def test_a_hand_edited_scope_is_found(run_cli: CliRunner, installation: dict[str, Any]) -> None:
     file = installation["root"] / "tokens" / "tokens.json"
     document = json.loads(file.read_text())
