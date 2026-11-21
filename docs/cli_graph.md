@@ -117,12 +117,14 @@ never replaces the program.
 
 - **Program and skills.** For every scope that has a skill of this program (the project's, found
   from `--dir` or the working directory, and the user's) it does what `graph self update` does for
-  the skills: refreshes stale copies and installs the skills of the pointer's graphs that are not
-  installed yet. Each copy is `fresh`, `refreshed` (if you loaded it earlier in the session, load it
+  the skills: refreshes stale copies and, in the project scope only, installs the skills of the
+  pointer's graphs that are not installed yet (the user scope is refreshed with what it has: the
+  project an agent happens to run in decides nothing about what is installed for the user). Each copy is `fresh`, `refreshed` (if you loaded it earlier in the session, load it
   again), `modified` (edited by hand, left alone), `foreign` (not installed by this program, left
   alone) or `unavailable`; with `--check` nothing is written and the copies that would change are
   `stale` or `missing`. In the remote mode the program's build is compared with the server's and a
-  different one is named with the hint `graph self update`; a checkout has no build to compare
+  different one is named with the hint `graph self update`, and the skills are then only reported
+  (`stale`), not written: `self update` replaces the program and renders them again; a checkout has no build to compare
   (`unchecked`). Without an installed skill there is nothing to refresh.
 - **Graphs.** One item per graph the project may use (as `graphs`): `name`, `title`, `level` (what
   you can do: `write` or `read` when any write or read action is allowed, `none` when none is, so

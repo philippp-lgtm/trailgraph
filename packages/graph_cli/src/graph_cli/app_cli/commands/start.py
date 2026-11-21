@@ -173,8 +173,10 @@ def program_state(session: RemoteSession | None) -> dict[str, JsonValue]:
 
 def refreshed(state: CommandState, *, check: bool, directory: str | None) -> list[JsonValue]:
     """The installed skill copies, refreshed unless ``check`` (the code of ``graph self update``
-    without the program swap: ``skills install --project-graphs`` for each scope that has a
-    skill of this program, in this process): ``{scope, skill, state}`` each."""
+    without the program swap, in this process): ``{scope, skill, state}`` each. Each scope that
+    has a skill of this program is refreshed; only the project scope also gets the skills of its
+    pointer's graphs that are not installed yet (``--project-graphs``), never the user scope:
+    which project an agent happens to run in must not decide what is installed for the user."""
     from graph_cli.app_cli.commands.skills import install
 
     app = services(state)
@@ -183,7 +185,13 @@ def refreshed(state: CommandState, *, check: bool, directory: str | None) -> lis
     for scope, project in skill_scopes(app, base):
         try:
             result = install(
-                state, scope, str(project) if project else None, (), False, check, True
+                state,
+                scope,
+                str(project) if project else None,
+                (),
+                False,
+                check,
+                project is not None,
             )
         except GraphCliError as exc:  # one scope that cannot be read does not end the answer
             found.append({"scope": scope, "skill": None, "state": "error", "reason": exc.code})
@@ -219,12 +227,20 @@ def _state(step: Mapping[str, JsonValue], check: bool) -> str:
     return "missing" if check else "refreshed"  # create
 
 
+def holds_back(program: Mapping[str, JsonValue], check: bool) -> bool:
+    """Whether the skills are only reported, not written: with ``--check``, and while the program
+    differs from the server's build (``graph self update`` replaces it and renders the copies
+    again, so a refresh now would be redone)."""
+    return check or program.get("state") == "outdated"
+
+
 def client_part(
     state: CommandState, *, check: bool, directory: str | None, session: RemoteSession | None
 ) -> JsonObject:
+    program = program_state(session)
     return {
-        "program": program_state(session),
-        "skills": refreshed(state, check=check, directory=directory),
+        "program": program,
+        "skills": refreshed(state, check=holds_back(program, check), directory=directory),
     }
 
 
@@ -257,18 +273,18 @@ def _skill_lines(data: JsonObject) -> list[str]:
             names.append(name)
     lines: list[str] = []
     if "refreshed" in by_state:  # the plan's sentence: a copy loaded before is out of date now
-        lines.append(
-            f"{_named(by_state['refreshed'])} refreshed; if loaded already in this session,"
-            " load again."
-        )
+        lines.append(f"{_named(by_state['refreshed'])} refreshed; if loaded earlier, load again.")
     due = [(n, s) for s in ("stale", "missing") for n in by_state.get(s, ())]
-    if due:  # only with --check
-        lines.append(f"skills to refresh with {PROGRAM} start: {_listed(due)}")
+    if due:  # only with --check, or while the program differs from the server's build
+        program = data.get("program")
+        outdated = isinstance(program, Mapping) and program.get("state") == "outdated"
+        how = f"{PROGRAM} self update" if outdated else f"{PROGRAM} start"
+        lines.append(f"skills to refresh with {how}: {_listed(due)}")
     left = [
         (n, s) for s in ("modified", "foreign", "unavailable", "error") for n in by_state.get(s, ())
     ]
     if left:
-        lines.append(f"skills left as they are: {_listed(left)}")
+        lines.append(f"skills left alone: {_listed(left)}")
     fresh = len(by_state.get("fresh", ()))
     if not lines:
         return [f"skills: fresh ({fresh})"]

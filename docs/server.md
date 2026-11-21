@@ -349,7 +349,8 @@ false` turns `/v1/dist/` off (404).
 `graph start` (the first call of a session) does the skill half of this without replacing the
 program: the server answers the graphs and what the token may use (`POST /v1/commands/start`, the
 usual command route), the client compares its build with the manifest below, refreshes the stale skill
-copies from the server's skills and names a different build with the hint `graph self update`.
+copies from the server's skills and names a different build with the hint `graph self update` (the
+skills are then only reported: the update renders them again).
 
 `graph self update` brings a machine in step with the server:
 

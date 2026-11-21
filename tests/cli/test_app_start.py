@@ -146,7 +146,7 @@ def test_start_refreshes_a_stale_copy_and_reports_it(run_cli: CliRunner, project
     assert all(s["state"] == "fresh" for s in again.data["skills"])
     republish("second")
     text = run_cli("graph", "start", cwd=project).stdout
-    assert "graph-example-graph refreshed; if loaded already in this session, load again." in text
+    assert "graph-example-graph refreshed; if loaded earlier, load again." in text
     assert "skills fresh: 1" in text
 
 
@@ -155,6 +155,39 @@ def tmp_skill(base: Path, name: str) -> Path:
     folder = base / name / GRAPH_SKILL.name
     shutil.copytree(GRAPH_SKILL, folder)
     return folder
+
+
+def test_the_user_scope_never_gets_the_graph_skills_of_the_project_it_runs_in(
+    run_cli: CliRunner, project: Path, isolated_env: dict[str, str]
+) -> None:
+    """Like ``self update``: a scope is refreshed with what it has; only the project scope also
+    gets the skills of its pointer's graphs. Which project an agent runs in decides nothing
+    about what is installed for the user."""
+    skills = Path(isolated_env["HOME"]) / ".claude" / "skills"
+    skills.parent.mkdir()
+    installed = app(run_cli, "skills", "install", "--scope", "user", cwd=project)
+    assert installed.code == 0, installed.envelope
+    assert sorted(p.name for p in skills.iterdir()) == ["graph-cli"]  # no graph skill yet
+    before = tree_hash(skills)
+    checked = start(run_cli, project, "--check")
+    assert [(s["scope"], s["skill"], s["state"]) for s in checked.data["skills"]] == [
+        ("user", "graph-cli", "fresh")
+    ]
+    assert tree_hash(skills) == before
+    done = start(run_cli, project)
+    assert [(s["scope"], s["skill"], s["state"]) for s in done.data["skills"]] == [
+        ("user", "graph-cli", "fresh")
+    ]
+    assert sorted(p.name for p in skills.iterdir()) == ["graph-cli"] and tree_hash(skills) == before
+    # the project scope, which has a skill, does get the graphs of its pointer
+    app(run_cli, "skills", "install", "--scope", "project", "--dir", str(project))
+    again = start(run_cli, project)
+    assert {(s["scope"], s["skill"], s["state"]) for s in again.data["skills"]} == {
+        ("user", "graph-cli", "fresh"),
+        ("project", "graph-cli", "fresh"),
+        ("project", "graph-example-graph", "refreshed"),
+    }
+    assert sorted(p.name for p in skills.iterdir()) == ["graph-cli"]
 
 
 def test_a_copy_edited_by_hand_is_reported_and_left_alone(
@@ -172,8 +205,7 @@ def test_a_copy_edited_by_hand_is_reported_and_left_alone(
     assert tree_hash(skill.parent) == before  # left alone (the graph's own skill is installed)
     assert (skill.parent.parent / "graph-example-graph").is_dir()
     assert (
-        "skills left as they are: graph-cli (modified)"
-        in run_cli("graph", "start", cwd=project).stdout
+        "skills left alone: graph-cli (modified)" in run_cli("graph", "start", cwd=project).stdout
     )
 
 

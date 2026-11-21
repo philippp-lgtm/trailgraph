@@ -91,6 +91,35 @@ def test_a_graph_the_caller_cannot_open_says_so_and_a_normal_one_is_plain() -> N
     assert "not allowed" not in line and "functions 200" in line
 
 
+def test_the_worst_case_that_is_still_plausible_fits_the_budget() -> None:
+    """Five graphs with 24-character names and 30-character titles, three-digit counts, something
+    not allowed of every kind, two withheld rights each, a program that differs from the
+    server's and the three skill lines (refreshed, left alone, fresh). The documented bound is
+    the real one: a longer sentence anywhere breaks this test, not the promise."""
+    skills = [
+        {"scope": "project", "skill": f"graph-example-graph-name-{n:02d}", "state": state}
+        for n, state in enumerate(["refreshed", "refreshed", "modified", "foreign", "fresh"], 1)
+    ]
+    data = answer(5, skills=skills)
+    data["hidden_count"] = 0
+    for item in data["graphs"]:
+        item["title"] = "a title of thirty characters.."
+        item["withheld"] = ["read.function", "read.query"]
+        item["counts"] = {
+            "modules": 120,
+            "types": 321,
+            "functions": 200,
+            "actions": 100,
+            "views": 100,
+        }
+    text = render(data)
+    assert len(text.encode()) <= BUDGET, (len(text.encode()), text)
+    assert "skills left alone" in text and "refreshed; if loaded earlier" in text
+    three = answer(3, skills=skills)  # titles are named for up to three graphs
+    three["graphs"] = data["graphs"][:3]
+    assert len(render(three).encode()) <= BUDGET
+
+
 def test_the_level_names_what_a_deny_rule_takes_away_below_it() -> None:
     plain = answer(1)
     plain["graphs"] = [{**graph(1), "level": "read", "withheld": []}]

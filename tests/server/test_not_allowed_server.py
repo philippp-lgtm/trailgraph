@@ -29,12 +29,16 @@ id: installation
 roles:
   reader: {description: "Reads example_graph"}
   writer: {description: "Writes example_graph"}
+  blind: {description: "Reads example_graph without the curated catalogs"}
 grants:
   - {entrypoint: server, principal: {role: reader}, graphs: [example_graph], level: read}
   - {entrypoint: server, principal: {role: writer}, graphs: [example_graph], level: write}
+  - {entrypoint: server, principal: {role: blind}, graphs: [example_graph], level: read}
 scopes:
   example_project: {example_graph: write}
 no_project: {"*": none}
+deny:
+  - {id: blind_no_catalogs, role: [blind], action: ["read.function", "read.find"]}
 """
 GRAPH = {"--graph": "example_graph"}
 ACTIONS = ["move_item", "retire_item"]
@@ -44,15 +48,16 @@ ACTIONS = ["move_item", "retire_item"]
 def served(run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path) -> Any:
     init(run_cli, isolated_env)
     create_graph(run_cli, "example_graph", "inventory")
-    actions = FIXTURES / "actions" / "inventory" / "valid"
-    published = admin(run_cli, "graph", "actions", "publish", "example_graph", str(actions))
-    assert published.code == 0, published.envelope
+    for kind in ("functions", "actions", "views"):
+        folder = FIXTURES / kind / "inventory" / "valid"
+        published = admin(run_cli, "graph", kind, "publish", "example_graph", str(folder))
+        assert published.code == 0, published.envelope
     path = write_policy(tmp_path / "policies", "installation.yaml", POLICY)
     applied = admin(run_cli, "policy", "apply", str(path), "--reason", "test")
     assert applied.code == 0, applied.envelope
     tokens = {
         name: new_token(run_cli, f"app_{name}", "--project", "example_project", "--role", name)
-        for name in ("reader", "writer")
+        for name in ("reader", "writer", "blind")
     }
     server = ServerApp(Settings.load(isolated_env, tmp_path), log=io.StringIO(), enroll=Enrollment)
     return server, tokens
@@ -81,6 +86,32 @@ def test_a_token_that_may_not_write_gets_the_actions_marked_through_the_server(
     assert [
         (h["curie"], h["allowed"]) for h in hits.json["data"]["items"] if h["kind"] == "action"
     ] == [("retire_item", False)]
+
+
+WITHHELD = {"query", "returns", "ops", "preconditions", "sections", "examples", "touches", "needs"}
+WITHHELD |= {"hash", "call", "featured", "max_bytes", "page_bytes"}
+
+
+def test_the_definition_of_a_not_allowed_entry_stays_withheld_through_the_server(
+    served: Any,
+) -> None:
+    """The keys that carry the maintainer's definition are absent over the server as they are
+    locally (the answer is a whitelist: name, summary, use_when, signature, status and the
+    marks), for an action, a function and a view alike."""
+    server, tokens = served
+    for path, key, name in (
+        ("describe/action", "action", "retire_item"),
+        ("describe/function", "function", "items_in_location"),
+        ("describe/view", "view", "items_in_location"),
+    ):
+        token = tokens["reader"] if key == "action" else tokens["blind"]
+        shown = command(server, path, token, name=name, **GRAPH)
+        assert shown.status == 200, shown.json
+        item = shown.json["data"][key]
+        assert item["allowed"] is False and item["missing"], (key, item)
+        assert not WITHHELD & set(item), (key, sorted(WITHHELD & set(item)))
+        allowed = command(server, path, tokens["writer"], name=name, **GRAPH).json["data"][key]
+        assert "allowed" not in allowed and {"signature", "name"} <= set(allowed)
 
 
 def test_do_of_a_not_allowed_action_is_a_403_that_names_the_right(served: Any) -> None:

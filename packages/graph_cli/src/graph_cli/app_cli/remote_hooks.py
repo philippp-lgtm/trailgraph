@@ -341,7 +341,7 @@ def start_hook(
     """The graphs and what the token may use come from the server; the program and the skills
     are judged and refreshed here (``--check`` and ``--dir`` stay on this side). The text is
     rendered here from the merged answer."""
-    from graph_cli.app_cli.commands.start import client_part, render
+    from graph_cli.app_cli.commands.start import client_part, holds_back, render
 
     sent = {key: value for key, value in args.items() if key == "--graph"}
     document, _, _ = session.command(spec.path, api_args(sent), text=False, write=None)
@@ -362,7 +362,8 @@ def start_hook(
         state.warnings[:] = [w for w in state.warnings if w.code != "remote.version_differs"]
     merged: dict[str, JsonValue] = {**here, **data}
     warnings = document.get("warnings")
-    if not check and isinstance(warnings, list):
+    held = isinstance(program, Mapping) and holds_back(program, check)
+    if not held and isinstance(warnings, list):
         # claims were read before the refresh: a stale copy was found and has just been replaced
         warnings = [
             w for w in warnings if not (isinstance(w, Mapping) and w.get("code") == "skills.stale")

@@ -11,6 +11,7 @@ one), so a limited reader learns nothing from the counts.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Protocol
 
 from graph_cli.access_control.effective import effective_level, withheld_actions
 from graph_cli.kernel.actor import ActorContext
@@ -25,8 +26,13 @@ from graph_cli.services.read.catalogs import ReadCatalogs
 from graph_cli.services.read.installation import ReadInstallation
 
 
-def _active(entries: Sequence[object]) -> int:
-    return sum(1 for e in entries if not getattr(e, "deprecated", False))
+class _Deprecatable(Protocol):
+    @property
+    def deprecated(self) -> bool: ...
+
+
+def _active(entries: Sequence[_Deprecatable]) -> int:
+    return sum(1 for e in entries if not e.deprecated)
 
 
 class ReadStart(ReadInstallation, ReadCatalogs):
