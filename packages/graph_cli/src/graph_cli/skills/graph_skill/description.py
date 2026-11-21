@@ -47,7 +47,9 @@ def fits(description: str) -> bool:
 
 def with_start_sentence(lines: list[str]) -> list[str]:
     """``lines`` with ``START_SENTENCE`` appended to the description when it lacks ``graph start``
-    and the sentence fits; the lines unchanged otherwise."""
+    and the sentence fits; the lines unchanged otherwise (also for a plain or quoted description
+    wrapped over several lines: rewriting it would need a YAML emitter, and the render is never
+    refused for the sentence, so publish only warns when the description is over its limit)."""
     bounds = frontmatter_bounds(lines)
     description = description_of(lines)
     if bounds is None or description is None or not lacks_start(description):
@@ -59,16 +61,27 @@ def with_start_sentence(lines: list[str]) -> list[str]:
     if index is None:
         return lines
     value = lines[index].partition(":")[2].strip()
+    # The last line that belongs to the value: a following line is part of it while it is
+    # indented or empty; the empty lines at its end are not (they may precede the next key).
+    last = index
+    for number in range(index + 1, end):
+        text = lines[number]
+        if text and text[0] not in " \t":
+            break
+        if text.strip():
+            last = number
     found = list(lines)
-    if value[:1] in ("|", ">"):  # a block scalar: one more line at the indent of its last one
-        last = index
-        while last + 1 < end and (not lines[last + 1] or lines[last + 1][0] in " \t"):
-            last += 1
+    if value[:1] in ("|", ">"):  # a block scalar: one more line at the indent of its body
         if last == index:
             return lines
-        indent = lines[last][: len(lines[last]) - len(lines[last].lstrip())] or "  "
+        body = lines[next(n for n in range(index + 1, last + 1) if lines[n].strip())]
+        indent = body[: len(body) - len(body.lstrip())]
         found.insert(last + 1, f"{indent}{START_SENTENCE}")
         return found
+    if (
+        last != index
+    ):  # a plain or quoted scalar wrapped over lines: left as the maintainer wrote it
+        return lines
     found[index] = (
         f"description: {json.dumps(f'{description} {START_SENTENCE}', ensure_ascii=False)}"
     )

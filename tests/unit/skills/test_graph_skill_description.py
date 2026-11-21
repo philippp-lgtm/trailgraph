@@ -1,5 +1,7 @@
 """The description of a generated graph skill points to ``graph start`` (graph start plan S7)."""
 
+import pytest
+import yaml
 from support.fixtures import FIXTURES, compiled_model
 from support.skills import GRAPH_SKILL_NAME, render_inputs
 
@@ -33,6 +35,55 @@ def test_the_sentence_is_appended_to_every_form_of_a_description() -> None:
         assert found is not None and found.endswith(START_SENTENCE), (form, made)
         assert made[0] == "---" and made[-2:] == ["", "x"]
         assert "name: graph-example-graph" in made and "metadata:" in made  # the rest is kept
+
+
+# (frontmatter lines of the description, whether the sentence is appended). Every shape must stay
+# valid YAML; a plain or quoted scalar wrapped over lines is left as written.
+SHAPES = {
+    "plain": (["description: Items and places"], True),
+    "double quoted": (['description: "Items, and \\"places\\"."'], True),
+    "single quoted": (["description: 'Items and places, don''t guess'"], True),
+    "folded": (["description: >-", "  Items and places,", "  and their stock."], True),
+    "literal": (["description: |", "  Items and places."], True),
+    "block, four spaces": (["description: >", "    Items and places,", "    and stock."], True),
+    "block, blank line before the next key": (
+        ["description: >", "    Items and places.", ""],
+        True,
+    ),
+    "block, tab-free blank lines inside": (
+        ["description: |", "    Items.", "", "    Places."],
+        True,
+    ),
+    "wrapped plain": (["description: Items and", "  places"], False),
+    "wrapped double quoted": (['description: "Items and', '  places"'], False),
+    "wrapped single quoted": (["description: 'Items and", "  places'"], False),
+    "wrapped, four spaces": (["description: Items and", "    places"], False),
+}
+
+
+def frontmatter_of(made: list[str]) -> dict[str, object]:
+    assert made[0] == "---"
+    parsed = yaml.safe_load("\n".join(made[1 : made.index("---", 1)]))
+    assert isinstance(parsed, dict)
+    return parsed
+
+
+@pytest.mark.parametrize("shape", sorted(SHAPES))
+def test_the_sentence_never_breaks_the_frontmatter(shape: str) -> None:
+    description, appended = SHAPES[shape]
+    before = lines("\n".join(description))
+    before = "\n".join(before).split("\n")
+    old = frontmatter_of(before)  # the shape itself is valid YAML
+    made = with_start_sentence(before)
+    new = frontmatter_of(made)  # and so is the result, whatever it did
+    assert new["name"] == old["name"] and new["metadata"] == old["metadata"]
+    first = " ".join(str(old["description"]).split())
+    if appended:
+        assert " ".join(str(new["description"]).split()) == f"{first} {START_SENTENCE}"
+    else:
+        assert made == before and new["description"] == old["description"]
+    # what the renderer's checks read is what YAML reads
+    assert " ".join((description_of(before) or "").split()) == first
 
 
 def test_a_description_that_names_graph_start_is_left_alone() -> None:
@@ -95,3 +146,19 @@ def test_a_description_that_cannot_take_the_sentence_renders_and_is_reported() -
     fine = parse_template(template_with('"Short."'))[0]
     assert fine is not None
     assert not measure(fine, documents, graph).description_over
+
+
+def test_a_description_wrapped_over_lines_is_measured_whole_and_rendered_unchanged() -> None:
+    documents, graph = render_inputs(compiled_model("inventory"))
+    wrapped = f'"{"a" * 600}\n  {"b" * 600}"'  # 1,201 characters once folded
+    rendered, problems = render_checked(
+        template_with(wrapped), documents, graph, name=GRAPH_SKILL_NAME
+    )
+    assert any("description is longer" in p.message for p in problems), problems
+    short = '"Items and\n  places."'
+    rendered, problems = render_checked(
+        template_with(short), documents, graph, name=GRAPH_SKILL_NAME
+    )
+    assert problems == [] and rendered is not None
+    text = rendered[SKILL_FILE].decode()
+    assert yaml.safe_load(text.split("---\n")[1])["description"] == "Items and places."  # unchanged

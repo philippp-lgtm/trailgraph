@@ -155,7 +155,8 @@ def _frontmatter(text: str, name: str) -> list[Problem]:
 
 def frontmatter_keys(block: str) -> dict[str, str]:
     """Top-level ``key: value`` pairs of a YAML frontmatter, enough to read name and
-    description: plain, single- or double-quoted scalars and block scalars."""
+    description: plain, single- or double-quoted scalars (also wrapped over lines) and block
+    scalars."""
     found: dict[str, str] = {}
     lines = block.splitlines()
     for index, line in enumerate(lines):
@@ -170,15 +171,30 @@ def frontmatter_keys(block: str) -> dict[str, str]:
                     break
                 body.append(following.strip())
             value = " ".join(part for part in body if part)
-        elif value.startswith('"'):
-            try:
-                value = str(json.loads(value))
-            except ValueError:
-                value = value.strip('"')
-        elif value.startswith("'"):
-            value = value[1:-1].replace("''", "'")
+        else:
+            value = _flow_value(value, lines[index + 1 :])
         found[key.strip()] = value
     return found
+
+
+def _flow_value(value: str, following: list[str]) -> str:
+    """A plain or quoted scalar as YAML reads it: the indented lines that continue it are folded
+    in with one space each. A key with nothing on its line has a nested mapping and stays empty."""
+    if value:
+        for line in following:
+            if not line.strip():
+                continue
+            if line[0] not in " \t":
+                break
+            value = f"{value} {line.strip()}"
+    if value.startswith('"'):
+        try:
+            return str(json.loads(value))
+        except ValueError:
+            return value.strip('"')
+    if value.startswith("'"):
+        return value[1:-1].replace("''", "'")
+    return value
 
 
 def _is_relative(name: str) -> bool:

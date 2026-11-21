@@ -66,7 +66,10 @@ chooses the skill by its description is sent to the first call of a session. The
 may have 1,024 characters; when the sentence would pass that, it is left out (the render is
 never refused for it) and `graph-admin` warns at render, publish and push
 (`admin.skill_over_budget`, naming the length of the description): shorten the description
-or write the sentence into it. A `static` skill is installed as it is, so it gets nothing.
+or write the sentence into it. A description wrapped over several lines as a plain or
+quoted scalar is left as written too (the sentence is not added; write it in); folded and
+literal block scalars take it as one more line. A `static` skill is installed as it is, so it
+gets nothing.
 The `start` block opens with "If you have not yet in this session: `graph start --json`".
 
 Every generated skill also gets `references/model.md` (every type of the
@@ -313,7 +316,10 @@ may carry any digest or none.
 
 - A write (`--dry-run` included) is refused with `skills.outdated` (exit 1);
   the hint is `graph start` (with `--dir` for a project's copy), which refreshes
-  the copies; `graph self update` is for a program that is not the server's build.
+  the copies; `graph self update` is for a program that is not the server's build. In the
+  remote mode against a server of another build the first `graph start` only reports the
+  copies and names `graph self update` (two steps: the update installs the build and renders
+  the copies again).
 - A read runs and warns `skills.stale`, naming the same command.
 - Meta commands (`whoami`, `describe commands`, `start`, `skills ...`) are never
   checked: they are how a stale copy is found and refreshed. `graph start` refreshes the
