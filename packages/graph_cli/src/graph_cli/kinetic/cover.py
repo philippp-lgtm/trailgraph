@@ -75,9 +75,10 @@ above is untouched. A function covers a recipe when it is not deprecated and:
    side has a required triple, every class of a node of the recipe fits a class of a node of
    the function, and a function with required triples never covers a recipe without;
 3. it returns what the recipe returns (a function's ``*`` counts as every key), aggregates
-   when the recipe does (in a ``WITH`` or the ``RETURN``) and is no bare total (a ``RETURN`` of
-   aggregates only) unless the recipe is one: a grouped ``collect`` or ``count`` keeps a row
-   per entity;
+   when the recipe does (in a ``WITH`` or the ``RETURN``) and is a bare total (a ``RETURN`` of
+   aggregates only) exactly when the recipe is one: a grouped ``collect`` or ``count`` keeps a
+   row per entity. An aggregate is the same only over the same thing: ``count(x)`` over another
+   class or relation, or with and without ``DISTINCT``, is another column;
 4. every filter key of the recipe (property keys in the ``WHERE`` of a non-optional ``MATCH``
    or ``WITH``, inline map keys of a non-optional ``MATCH`` node) that rule 1 did not consume
    is projected by the function or used in its own ``WHERE`` or maps;
@@ -86,9 +87,13 @@ above is untouched. A function covers a recipe when it is not deprecated and:
    recipe's (the same operator and values, or an ``=`` or ``IN`` whose values include the
    recipe's); a function with a ``LIMIT`` or ``SKIP`` needs a recipe with one; every pattern the
    function negates (``NOT (a)-[:r]->(b)``) is negated by the recipe too (else the function
-   would drop rows the recipe keeps). A filter key that only a boolean switch of the function
-   applies (``WHERE $include_ended = true OR c.status <> 'ended'``) does not count: the call
-   sets the switch, which is named in the finding when its value is not the default. And every
+   would drop rows the recipe keeps). A filter on an aggregate of a ``WITH`` (``WITH p,
+   count(q) AS n WHERE n > 1``) is a filter key and a constant like any other, named by what
+   the alias stands for. A filter that only a boolean switch of the function applies (``WHERE
+   $include_ended = true OR c.status <> 'ended'``) is met by setting the switch: to lift it when
+   the recipe does not filter that field, to apply it when the recipe filters the field the same
+   way (``status <> 'ended'``); a recipe that filters it another way is not covered. The call
+   names the switch value when it is not the default. And every
    pattern the recipe negates is negated by the function too, or at least walked by it, so that
    its rows show whether the relationship is there.
 """
@@ -702,6 +707,8 @@ def _names_entity(value: RecipeData) -> bool:
 def recipe_signature(resolved: ResolvedQuery) -> RecipeSignature:
     """The lint-mode signature of a resolved recipe (``--param`` values are data)."""
     known = _node_classes(resolved)
+    what = _what(resolved)
+    having_keys, having_constants = _having(resolved, what)
     found = list(_anchors(resolved.query, known, None))
     given = frozenset(a.variable for a in found if a.variable is not None and a.key in REF_FIELDS)
     required, every = _triples(resolved.query, known)
@@ -712,14 +719,14 @@ def recipe_signature(resolved: ResolvedQuery) -> RecipeSignature:
         tuple(RecipeAnchor(a.classes, a.key, a.value) for a in found if _names_entity(a.value)),
         required,
         every,
-        _lint_keys(resolved, given),
+        _lint_keys(resolved, given, what),
         compared,
-        _filter_keys(resolved.query),
+        _filter_keys(resolved.query) | having_keys,
         _match_classes(resolved.query, known),
         _negations(resolved.query),
         *_aggregation(resolved.query),
         _limited(resolved.query),
-        _constants(resolved.query),
+        _constants(resolved.query) | having_constants,
     )
 
 
@@ -728,20 +735,22 @@ def function_lint_signature(entry: FunctionEntry, model: CompiledModel) -> Funct
     stored text no longer resolves against ``model``."""
     resolved = resolve_stored(entry.query, entry.defn, model)
     known = _node_classes(resolved)
+    what = _what(resolved)
+    having_keys, having_constants = _having(resolved, what)
     keys: dict[str, set[tuple[str, str]]] = {}
     for c in _scoped_comparisons(resolved.query, literals=False):
         if isinstance(c.value, Parameter):
             keys.setdefault(c.value.name, set()).add((c.field, _operator(c)))
     return FunctionLintSignature(
         _signature_of(entry, resolved),
-        _lint_keys(resolved, frozenset()),
+        _lint_keys(resolved, frozenset(), what),
         {name: frozenset(found) for name, found in keys.items()},
-        _filter_keys(resolved.query),
+        _filter_keys(resolved.query) | having_keys,
         _match_classes(resolved.query, known),
         _negations(resolved.query),
         *_aggregation(resolved.query),
         _limited(resolved.query),
-        _constants(resolved.query),
+        _constants(resolved.query) | having_constants,
         _switches(
             resolved.query,
             frozenset(p.name for p in entry.defn.params if p.type == "boolean"),
@@ -749,22 +758,55 @@ def function_lint_signature(entry: FunctionEntry, model: CompiledModel) -> Funct
     )
 
 
-def _tokens(e: Expr, defs: Mapping[str, frozenset[str]], anchored: frozenset[str]) -> set[str]:
+def _what(resolved: ResolvedQuery) -> Mapping[str, str]:
+    """What a variable stands for in an aggregate: the classes of a node, the relation types of a
+    relationship (``*`` when they are not known), so that ``count(q)`` over one class or relation
+    is not ``count(q)`` over another."""
+    found: dict[str, str] = {}
+    for variable, classes in _node_classes(resolved).items():
+        found[variable] = "|".join(sorted(classes)) if classes else "*"
+    for clause in resolved.query.clauses:
+        for part in clause_patterns(clause):
+            for rel in part.rels:
+                if rel.variable is not None:
+                    found[rel.variable] = "|".join(sorted(rel.types)) or "*"
+    return found
+
+
+def _tokens(
+    e: Expr,
+    defs: Mapping[str, frozenset[str]],
+    anchored: frozenset[str],
+    what: Mapping[str, str],
+) -> set[str]:
     """The keys an expression projects: a property key, ``min:held_on`` for a property inside an
-    aggregate (a ``max`` of a key is not the key), and what the alias of an earlier ``WITH`` item
-    stands for. ``id`` and ``alias`` of an ``anchored`` variable are left out (the caller gave
-    them)."""
+    aggregate (a ``max`` of a key is not the key), ``count:@<classes or relations>`` for an
+    aggregate of a node or relationship (``count_distinct`` with ``DISTINCT``, ``count:*`` for
+    ``count(*)``), and what the alias of an earlier ``WITH`` item stands for. ``id`` and ``alias``
+    of an ``anchored`` variable are left out (the caller gave them)."""
     found: set[str] = set()
     inside: set[int] = set()
     for x in subexpressions(e):
-        if isinstance(x, FunctionCall) and x.name in AGGREGATES:
+        if isinstance(x, CountStar):
+            found.add("count:*")
+        elif isinstance(x, FunctionCall) and x.name in AGGREGATES:
+            name = f"{x.name}_distinct" if x.distinct else x.name
             for arg in x.args:
                 for y in subexpressions(arg):
+                    inside.add(id(y))
                     if isinstance(y, Property):
-                        found.add(f"{x.name}:{y.key}")
-                        inside.add(id(y))
+                        found.add(f"{name}:{y.key}")
+                    elif isinstance(y, Variable):
+                        stands = defs.get(y.name)
+                        found.add(
+                            f"{name}:@{'+'.join(sorted(stands))}"
+                            if stands
+                            else f"{name}:@{what.get(y.name, '*')}"
+                        )
     for x in subexpressions(e):
-        if isinstance(x, Property) and id(x) not in inside:
+        if id(x) in inside:
+            continue
+        if isinstance(x, Property):
             given = isinstance(x.subject, Variable) and x.subject.name in anchored
             if not (given and x.key in REF_FIELDS):
                 found.add(x.key)
@@ -773,7 +815,9 @@ def _tokens(e: Expr, defs: Mapping[str, frozenset[str]], anchored: frozenset[str
     return found
 
 
-def _lint_keys(resolved: ResolvedQuery, anchored: frozenset[str]) -> frozenset[str]:
+def _lint_keys(
+    resolved: ResolvedQuery, anchored: frozenset[str], what: Mapping[str, str]
+) -> frozenset[str]:
     """What the final ``RETURN`` projects, key by key (see ``_tokens``); ``*`` for a whole node or
     relationship (a variable that holds a list or a number projects no entity)."""
     query = resolved.query
@@ -783,7 +827,7 @@ def _lint_keys(resolved: ResolvedQuery, anchored: frozenset[str]) -> frozenset[s
         if isinstance(clause, With):
             for item in clause.projection.items:
                 if not (isinstance(item.expr, Variable) and item.expr.name == item.name):
-                    defs[item.name] = frozenset(_tokens(item.expr, defs, anchored))
+                    defs[item.name] = frozenset(_tokens(item.expr, defs, anchored, what))
     last = query.clauses[-1]
     if not isinstance(last, Return):
         return frozenset()
@@ -792,8 +836,55 @@ def _lint_keys(resolved: ResolvedQuery, anchored: frozenset[str]) -> frozenset[s
         if isinstance(item.expr, Variable) and kinds.get(item.expr.name) in ("node", "rel"):
             keys.add("*")
         else:
-            keys |= _tokens(item.expr, defs, anchored)
+            keys |= _tokens(item.expr, defs, anchored, what)
     return frozenset(keys)
+
+
+_FLIPPED: Final = {"=": "=", "<>": "<>", "<": ">", "<=": ">=", ">": "<", ">=": "<="}
+
+
+def _having(
+    resolved: ResolvedQuery, what: Mapping[str, str]
+) -> tuple[frozenset[str], frozenset[Constant]]:
+    """The filters a ``WITH`` puts on an aggregate alias (``WITH p, count(q) AS n WHERE n > 1``):
+    the filter key is what the alias stands for (``count:@<class>``) and the constants are its
+    comparisons with literals, so that both sides compare the same aggregate the same way."""
+    defs: dict[str, frozenset[str]] = {}
+    aggregated: dict[str, frozenset[str]] = {}
+    keys: set[str] = set()
+    constants: set[Constant] = set()
+    for clause in resolved.query.clauses:
+        if not isinstance(clause, With):
+            continue
+        for item in clause.projection.items:
+            if isinstance(item.expr, Variable) and item.expr.name == item.name:
+                continue
+            tokens = frozenset(_tokens(item.expr, defs, frozenset(), what))
+            defs[item.name] = tokens
+            if _has_aggregate(item.expr) or any(
+                isinstance(x, Variable) and x.name in aggregated for x in subexpressions(item.expr)
+            ):
+                aggregated[item.name] = tokens
+        if clause.where is None:
+            continue
+        for x in subexpressions(clause.where):
+            if isinstance(x, Variable) and x.name in aggregated:
+                keys.add("+".join(sorted(aggregated[x.name])))
+            if isinstance(x, Binary) and x.op in _FLIPPED:
+                for side, other, op in (
+                    (x.left, x.right, x.op),
+                    (x.right, x.left, _FLIPPED[x.op]),
+                ):
+                    if (
+                        isinstance(side, Variable)
+                        and side.name in aggregated
+                        and isinstance(other, Const)
+                    ):
+                        key = "+".join(sorted(aggregated[side.name]))
+                        constants.add(
+                            (key, "=" if op == "=" else op, frozenset({repr(other.value)}))
+                        )
+    return frozenset(keys), frozenset(constants)
 
 
 def _limited(query: Query) -> bool:
@@ -900,7 +991,7 @@ def _lint_output(recipe: RecipeSignature, function: FunctionLintSignature) -> bo
     recipe does, and is no bare total (a count answers no listing) unless the recipe is one."""
     if not ("*" in function.keys or recipe.keys <= function.keys):
         return False
-    return (function.aggregates or not recipe.aggregates) and (recipe.totals or not function.totals)
+    return (function.aggregates or not recipe.aggregates) and recipe.totals == function.totals
 
 
 @dataclass(frozen=True, slots=True)
@@ -969,14 +1060,24 @@ def _text_of(data: RecipeData) -> str | None:
 def _switch_values(
     entry: FunctionEntry, lifted: set[tuple[str, bool]]
 ) -> tuple[tuple[str, str | None], ...]:
-    """The ``--param`` pairs of the switches a call must set to lift a filter the recipe lacks:
-    the parameters whose lifting value is not their default."""
+    """The ``--param`` pairs of the switches a call must set, to lift a filter the recipe lacks or
+    to apply one it has: the parameters whose value is not their default."""
     defaults = {p.name: p.default for p in entry.defn.params}
     return tuple(
         (name, "true" if value else "false")
         for name, value in sorted(lifted)
         if defaults.get(name) is not value
     )
+
+
+def _call_values(
+    supplied: tuple[tuple[str, str | None], ...], switches: tuple[tuple[str, str | None], ...]
+) -> tuple[tuple[str, str | None], ...]:
+    """The ``--param`` pairs of a call: what the recipe supplies, with the value of a switch
+    replacing the placeholder of a required boolean that is also that switch."""
+    set_to = dict(switches)
+    shown = [(name, set_to.pop(name, value)) for name, value in supplied]
+    return (*shown, *set_to.items())
 
 
 def recipe_covers(
@@ -1014,14 +1115,22 @@ def recipe_covers(
         if not all("*" in met or key in met for key in recipe.filters - supplied.consumed):
             continue
         open_keys = function.filters - supplied.taken - recipe.filters
-        lifted = {function.switches[k] for k in open_keys if k in function.switches}
         if any(k not in function.switches for k in open_keys):
             continue
-        if any(
-            not _constant_met(c, recipe.constants)
-            for c in function.constants
-            if c[0] not in supplied.taken and c[0] not in function.switches
-        ):
+        lifted = {function.switches[k] for k in open_keys}
+        applied: set[tuple[str, bool]] = set()
+        refused = False
+        for c in function.constants:
+            if c[0] in supplied.taken:
+                continue
+            if c[0] not in function.switches:
+                refused = refused or not _constant_met(c, recipe.constants)
+            elif _constant_met(c, recipe.constants):
+                name, lifting = function.switches[c[0]]
+                applied.add((name, not lifting))  # the recipe filters like the function does
+            elif c[0] in recipe.filters:
+                refused = True  # the recipe filters that field another way: no switch fits
+        if refused or {n for n, _ in lifted} & {n for n, _ in applied}:
             continue
         if function.limited and not recipe.limited:
             continue  # a top-n answers no question about all
@@ -1036,7 +1145,7 @@ def recipe_covers(
                 entry.defn.featured,
                 share,
                 supplied.refs,
-                (*supplied.values, *_switch_values(entry, lifted)),
+                _call_values(supplied.values, _switch_values(entry, lifted | applied)),
             )
         )
     found.sort(key=lambda c: (-c.share, not c.featured, c.function))

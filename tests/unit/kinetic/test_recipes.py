@@ -387,6 +387,99 @@ def test_a_boolean_switch_that_lifts_a_filter_is_set_by_the_call() -> None:
     assert with_functions(fixed)(text) == []
 
 
+def switched(name: str, switch: str, default: str, where: str) -> dict[str, str]:
+    """A function over positions whose filter ``where`` is lifted by the boolean ``switch``."""
+    return function(
+        name,
+        f"MATCH (q:Position) WHERE {where} RETURN q.title AS t, q.status AS s",
+        ("t", "s"),
+        params=(f"params:\n  {switch}:\n    type: boolean\n{default}    summary: A switch."),
+    )
+
+
+def calls(functions: dict[str, str], text: str) -> list[tuple[str, tuple[Any, ...]]]:
+    pairs = function_pairs(entries({**EXAMPLE, **functions}), MODEL)
+    verdict = judge_recipe(text, {}, MODEL, pairs)
+    assert verdict.error is None, verdict.error
+    return [(c.function, c.value_params) for c in verdict.cover]
+
+
+def test_a_switched_filter_is_lifted_or_applied_never_contradicted() -> None:
+    both = "MATCH (q:Position) RETURN q.title, q.status"
+    vacant = "MATCH (q:Position) WHERE q.status = 'vacant' RETURN q.title, q.status"
+    filled = "MATCH (q:Position) WHERE q.status = 'filled' RETURN q.title, q.status"
+    not_vacant = "MATCH (q:Position) WHERE q.status <> 'vacant' RETURN q.title, q.status"
+    lifts = switched(
+        "all_positions", "all", "    default: false\n", "$all = true OR q.status = 'vacant'"
+    )
+    assert calls(lifts, both) == [("all_positions", (("all", "true"),))]  # the switch lifts it
+    assert calls(lifts, vacant)[0] == ("all_positions", ())  # applied: its default
+    assert calls(lifts, filled) == []  # another constant on the switched field
+    assert calls(lifts, not_vacant) == []
+    applies = switched(
+        "some_positions",
+        "only_vacant",
+        "    default: false\n",
+        "$only_vacant = false OR q.status = 'vacant'",
+    )
+    assert calls(applies, vacant)[0] == ("some_positions", (("only_vacant", "true"),))
+    assert calls(applies, both)[0] == ("some_positions", ())  # false lifts the filter
+    assert calls(applies, filled) == []
+
+
+def test_a_required_switch_that_is_also_a_lifting_one_is_named_once() -> None:
+    required = switched("each_position", "all", "", "$all = true OR q.status = 'vacant'")
+    found = calls(required, "MATCH (q:Position) RETURN q.title, q.status")
+    assert found == [("each_position", (("all", "true"),))]  # no second `all=<true|false>`
+    vacant = "MATCH (q:Position) WHERE q.status = 'vacant' RETURN q.title, q.status"
+    assert calls(required, vacant)[0] == ("each_position", (("all", "false"),))
+
+
+CROWDED = function(
+    "crowded_units",
+    "MATCH (u:OrgUnit)<-[:in_unit]-(q:Position) WITH u, count(q) AS n WHERE n > 1"
+    " RETURN u.name AS unit, n",
+    ("unit", "n"),
+)
+
+
+def test_a_filter_on_an_aggregate_of_a_with_must_be_the_recipes() -> None:
+    run = with_functions(CROWDED)
+    head = "MATCH (u:OrgUnit)<-[:in_unit]-(q:Position) WITH u, count(q) AS {a}"
+    assert run(f"{head.format(a='n')} RETURN u.name, n") == []  # no filter: another question
+    assert run(f"{head.format(a='n')} WHERE n > 1 RETURN u.name, n") == ["crowded_units"]
+    assert run(f"{head.format(a='k')} WHERE k > 1 RETURN u.name, k") == ["crowded_units"]
+    assert run(f"{head.format(a='n')} WHERE n > 2 RETURN u.name, n") == []
+    assert run(f"{head.format(a='n')} WHERE n >= 1 RETURN u.name, n") == []
+    assert run(f"{head.format(a='n')} WHERE 1 < n RETURN u.name, n") == ["crowded_units"]
+
+
+def test_an_aggregate_is_the_same_only_over_the_same_thing() -> None:
+    run = with_functions(UNIT_SIZES)
+    optional = "MATCH (u:OrgUnit) OPTIONAL MATCH (q:Position)-[:in_unit]->(u) RETURN u.name, "
+    assert run(optional + "count(q)") == ["unit_sizes"]
+    assert run(optional + "count(u)") == []  # another class
+    assert run(optional + "count(DISTINCT q)") == []  # another column
+    assert run(optional.replace("RETURN u.name, ", "RETURN ") + "count(q)") == []  # a total
+
+
+def test_a_total_is_covered_only_by_a_total() -> None:
+    run = with_functions(
+        function("total_positions", "MATCH (q:Position) RETURN count(q) AS n", ("n",))
+    )
+    assert run("MATCH (q:Position) RETURN count(q)") == ["total_positions"]
+    assert run("MATCH (q:Position) RETURN count(DISTINCT q)") == []
+    assert run("MATCH (q:Position) RETURN count(*)") == []
+    assert run("MATCH (q:Position) RETURN q.title, count(q)") == []
+    grouped = with_functions(
+        function(
+            "title_counts", "MATCH (q:Position) RETURN q.title AS t, count(q) AS n", ("t", "n")
+        )
+    )
+    assert grouped("MATCH (q:Position) RETURN count(q)") == []  # rows per title are no total
+    assert grouped("MATCH (q:Position) RETURN q.title, count(q)") == ["title_counts"]
+
+
 # Constants, limits, anchors that name an entity, required switches, ellipses
 
 
@@ -455,3 +548,23 @@ def test_a_required_switch_without_a_default_is_shown_in_the_call() -> None:
 def test_an_ellipsis_is_a_placeholder_where_cypher_has_none() -> None:
     verdict = judged("MATCH (n:Position) WHERE n.title = ... RETURN n.title")
     assert verdict.error is not None and verdict.placeholder_parse_failure
+
+
+def test_a_function_the_signature_cannot_read_loses_only_its_own_coverage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import graph_cli.kinetic.recipes as recipes
+
+    real = recipes.function_lint_signature
+
+    def fail_for_one(entry: FunctionEntry, model: Any) -> Any:
+        if entry.name == "members_of_unit":
+            raise RecursionError("a query too deep for the parser")
+        return real(entry, model)
+
+    monkeypatch.setattr(recipes, "function_lint_signature", fail_for_one)
+    pairs = function_pairs(CATALOG, MODEL)
+    assert "members_of_unit" not in {entry.name for entry, _ in pairs}
+    assert len(pairs) == len(CATALOG) - 1
+    verdict = judge_recipe("MATCH (q:Position) RETURN count(q)", {}, MODEL, pairs)
+    assert [c.function for c in verdict.cover] == ["position_count"]  # the others still cover

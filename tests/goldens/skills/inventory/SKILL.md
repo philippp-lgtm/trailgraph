@@ -24,7 +24,7 @@ Working with `graph`:
 - For what is known about one entity, `graph view <id> --json` answers in one call (key fields, relations with counts, files, what applies next): use it before walking edges with `get` and `neighbors`.
 - Never guess an option, type, field, relation or state: `graph <command> --help` lists the options, `graph describe type <type> --graph example_graph --json` the fields, states and relations.
 - Preview `create`, `apply`, `transition`, `supersede` and `retract` with `--dry-run`, then run them without; one `update`, `link` or `unlink` may run directly. Say why in `--reason`, with how you learned it (in English, whatever language the values are in), never in a field value, and pass `--expect <rev>` when the write depends on what you read. A change set for `graph apply` goes into a file in the working directory.
-- Ask the user before `retract` and before a `transition` into a terminal state (`graph describe type` marks them `terminal`).
+- Ask the user before `retract` and before a `transition` into a terminal state (`graph describe type` lists them under `terminal`).
 - Read `data.findings` of every write and tell the user about each warning.
 
 ## What is in it

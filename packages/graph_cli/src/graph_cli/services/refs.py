@@ -207,18 +207,21 @@ def invalid_ref(
     *,
     argument: str | None = None,
     lookup_for: str | None = None,
+    lookup_for_source: str | None = None,
     of_class: str | None = None,
 ) -> GraphCliError:
     """A CLI argument that is not an entity reference (a name, say). ``details.expected`` is
     ``entity_ref`` (the forms are in the message), which makes the hint ``graph lookup`` for the
-    text. ``lookup_for`` (``<function>.<param>``, ``<action>.<param>`` or a relation) and
-    ``of_class`` say which slot the entity is for, so the lookup keeps the candidates that fit.
-    No name is resolved here."""
+    text. ``lookup_for`` (a relation the entity is the target of), ``lookup_for_source`` (a
+    relation it is the source of) and ``of_class`` say which slot the entity is for, so the
+    lookup keeps the candidates that fit. No name is resolved here."""
     details: dict[str, JsonValue] = {"actual": text, "expected": "entity_ref"}
     if argument is not None:
         details["argument"] = argument
     if lookup_for is not None:
         details["for"] = lookup_for
+    if lookup_for_source is not None:
+        details["for_source"] = lookup_for_source
     if of_class is not None:
         details["class"] = of_class
     message = (
@@ -235,6 +238,7 @@ def resolve_ref(
     *,
     argument: str | None = None,
     lookup_for: str | None = None,
+    lookup_for_source: str | None = None,
     of_class: str | None = None,
 ) -> tuple[EntityId, tuple[WarningRecord, ...]]:
     """One reference from a CLI argument: full id, alias or abbreviation (B1.9).
@@ -244,7 +248,13 @@ def resolve_ref(
     """
     ref = parse_entity_ref(text, allow_abbrev=True)
     if ref is None:
-        raise invalid_ref(text, argument=argument, lookup_for=lookup_for, of_class=of_class)
+        raise invalid_ref(
+            text,
+            argument=argument,
+            lookup_for=lookup_for,
+            lookup_for_source=lookup_for_source,
+            of_class=of_class,
+        )
     resolver = _Resolver(snapshot, NO_BINDINGS, True, {})
     found = resolver.ref(ref, "", subject=False)
     assert not isinstance(found, LocalRef | AbbrevRef)
@@ -271,13 +281,7 @@ def entity_params(
     ids: list[Value] = []
     for text in texts:
         assert isinstance(text, str)
-        entity, found = resolve_ref(
-            text,
-            snapshot,
-            argument=param.name,
-            lookup_for=f"{name}.{param.name}",
-            of_class=param.of_class,
-        )
+        entity, found = resolve_ref(text, snapshot)  # ``bind`` refused any name before
         warnings += found
         revision = snapshot.get(entity)
         if revision is None:

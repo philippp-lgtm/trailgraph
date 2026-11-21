@@ -70,12 +70,13 @@ def function_pairs(
     entries: Sequence[FunctionEntry], model: CompiledModel
 ) -> tuple[tuple[FunctionEntry, FunctionLintSignature], ...]:
     """The functions with their lint signatures; one whose stored query no longer resolves
-    against ``model`` is left out (checking the catalog reports it)."""
+    against ``model``, or that the signature code cannot read (a query that overflows the parser),
+    is left out and loses only its own coverage (checking the catalog reports the first)."""
     pairs = []
     for entry in entries:
         try:
             pairs.append((entry, function_lint_signature(entry, model)))
-        except GraphCliError:
+        except Exception:  # advisory: one function must not hide the others
             continue
     return tuple(pairs)
 

@@ -181,7 +181,10 @@ def test_names_point_to_the_type_table_when_it_lists_every_named_type() -> None:
 def test_lookup_before_create_is_said_once_for_a_graph_with_names() -> None:
     """The start block holds the rule; the names block keeps what is specific to the types."""
     named = skill(compiled_model("notes_and_sources"))
-    assert "- Before you create an entity, look its name up (`graph lookup '<name>'" in named
+    assert (
+        "- Before you create an entity with a name, look the name up (`graph lookup '<name>'"
+        in named
+    )
     assert named.count("data.semantic.possible_duplicate") == 1
     assert "search for its name" not in named
     unnamed = skill(compiled_model("inventory"))  # no type has a label role
@@ -192,7 +195,7 @@ def test_consent_names_terminal_states_only_when_a_lifecycle_has_them() -> None:
     with_terminal = skill(compiled_model("inventory"))
     assert (
         "- Ask the user before `retract` and before a `transition` into a terminal state"
-        " (`graph describe type` marks them `terminal`)." in with_terminal
+        " (`graph describe type` lists them under `terminal`)." in with_terminal
     )
     without = skill(compiled_model("staff"))  # lifecycles without terminal states
     assert "- Ask the user before `retract`.\n" in without

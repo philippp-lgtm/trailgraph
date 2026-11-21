@@ -168,11 +168,10 @@ the command keeps the last value.
 References in arguments are full ids, aliases or 8-32 trailing hex digits of
 an id; change set documents allow full ids, aliases and `@local` names only. A
 name given where a reference goes is `usage.invalid_argument` with
-`details.expected` `entity_ref` (and `argument`, `actual`, and `for` or `class`
-when the slot is known): nothing is resolved, and the hint is `graph lookup`
-for the text, with `--for` the slot (the relation of a link target, or
-`<function>.<param>`) or `--type`. An `entity.not_found` for a reference that
-is not a full id gets the same hint.
+`details.expected` `entity_ref` (and `argument`, `actual`, and `for`,
+`for_source` or `class` when the slot is known): nothing is resolved, and the
+hint is `graph lookup` for the text, with `--for` or `--for-source` the
+relation it fills (a link or `--rel` target, a `--in-rel` source) or `--type`.
 Types and relations in read arguments (`find`, `lookup`, `search`,
 `neighbors`, `describe`) are CURIEs or, as in `graph query`, the local name
 when exactly one CURIE has it (`Topic` for `ex:Topic`); an ambiguous local
@@ -1068,9 +1067,8 @@ Run one with `do NAME --param name=value ...`, with `--dry-run` first:
   `action.parameter_type`). A missing, unknown or malformed parameter is a
   usage error (exit 2: `action.parameter_missing`,
   `action.parameter_unknown`, `action.parameter_invalid`).
-- A list parameter may stand for the target of an edge a `create` writes:
-  the expansion has one edge per value (in order, each once), and the
-  dry run checks them all like any other write.
+- A list parameter may stand for the target of an edge a `create` writes
+  (one edge per value); the rules are in the format reference linked below.
 - The preconditions are checked on the entities' current state under the
   graph lock, right before the write, so nothing can change between check
   and commit. A failing one refuses the action with

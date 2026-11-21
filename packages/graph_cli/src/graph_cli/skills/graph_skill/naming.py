@@ -90,10 +90,10 @@ def render_names(doc: Model) -> list[str]:
     lines.append(search)
     these = "one of these types" if listed else "a type with names"
     lines.append(
-        f"- When you create an entity of {these}: if a candidate is the same thing, add the new"
-        f" name to its {ROLE_NAMES['alt_label']} field instead of creating another; fill the"
-        f" {ROLE_NAMES['alt_label']} fields of a new one with the abbreviations and synonyms"
-        " people use."
+        f"- When you create an entity of {these}: if `lookup` finds the same thing under another"
+        f" name, add the new name to its {ROLE_NAMES['alt_label']} field instead of creating"
+        f" another; fill the {ROLE_NAMES['alt_label']} fields of a new one with the"
+        " abbreviations and synonyms people use."
     )
     return lines
 

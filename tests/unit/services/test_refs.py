@@ -277,13 +277,21 @@ def test_a_name_as_a_cli_reference_is_refused_with_its_slot() -> None:
     assert info.value.message.startswith("not an entity reference: 'Some Name'; expected a full id")
     assert info.value.details == {"actual": "Some Name", "expected": "entity_ref"}
     with pytest.raises(GraphCliError) as slot:
-        resolve_ref("Some Name", SNAP, argument="ref", lookup_for="fn.param", of_class="ex:Place")
+        resolve_ref(
+            "Some Name",
+            SNAP,
+            argument="ref",
+            lookup_for="fn.param",
+            lookup_for_source="ex:rel",
+            of_class="ex:Place",
+        )
     assert slot.value.message.startswith("ref: expected a full id, an alias or 8-32 trailing hex")
     assert slot.value.details == {
         "actual": "Some Name",
         "expected": "entity_ref",
         "argument": "ref",
         "for": "fn.param",
+        "for_source": "ex:rel",
         "class": "ex:Place",
     }
     assert invalid_ref("x", argument="target").details["argument"] == "target"

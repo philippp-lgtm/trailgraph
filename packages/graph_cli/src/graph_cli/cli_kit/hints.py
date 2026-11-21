@@ -12,8 +12,6 @@ from collections.abc import Callable, Mapping
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
-from graph_cli.kernel.errors import GraphCliError
-from graph_cli.kernel.ids import parse_id
 
 ADMIN_PROGRAM: Final = "graph-admin"
 
@@ -29,36 +27,33 @@ def _help(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} --help"
 
 
-def _lookup_text(text: str, program: str, slot: str = "") -> str:
-    """``graph lookup`` for a text the caller gave where an entity reference goes."""
-    return f"{program} lookup {shlex.quote(text)} --json{slot}"
+MAX_LOOKUP_TEXT: Final = 200  # a longer text is not a name worth echoing into a command
+
+
+def _lookup_text(text: str, program: str, options: str = "") -> str | None:
+    """``graph lookup`` for a text the caller gave where an entity reference goes: options first
+    and the text after ``--`` when it starts with ``-``. ``graph-admin`` has no ``lookup``, and a
+    text that is not a short name has no useful lookup."""
+    if program == ADMIN_PROGRAM or len(text) > MAX_LOOKUP_TEXT:
+        return None
+    if text.startswith("-"):
+        return f"{program} lookup --json{options} -- {shlex.quote(text)}"
+    return f"{program} lookup {shlex.quote(text)} --json{options}"
 
 
 def _usage(details: Mapping[str, JsonValue], program: str) -> str | None:
     """A name where an entity reference goes: look it up (for the slot it is meant for, when the
-    error names one); any other usage error: the help."""
+    error names one); any other usage error, and a text that cannot be looked up: the help."""
     actual = details.get("actual")
     if details.get("expected") != "entity_ref" or not isinstance(actual, str):
         return _help(details, program)
-    slot, kind = details.get("for"), details.get("class")
-    if isinstance(slot, str):
-        return _lookup_text(actual, program, f" --for {shlex.quote(slot)}")
-    if isinstance(kind, str):
-        return _lookup_text(actual, program, f" --type {shlex.quote(kind)}")
-    return _lookup_text(actual, program)
-
-
-def _not_found(details: Mapping[str, JsonValue], program: str) -> str | None:
-    """A reference that names no entity and is not a full id (an alias, an abbreviation, a
-    name): look the text up. A full id has nothing to look up."""
-    ref = details.get("ref")
-    if not isinstance(ref, str):
-        return None
-    try:
-        parse_id(ref)
-    except GraphCliError:
-        return _lookup_text(ref, program)
-    return None
+    options = ""
+    for key, flag in (("for", "--for"), ("for_source", "--for-source"), ("class", "--type")):
+        value = details.get(key)
+        if isinstance(value, str):
+            options = f" {flag} {shlex.quote(value)}"
+            break
+    return _lookup_text(actual, program, options) or _help(details, program)
 
 
 def _graphs(details: Mapping[str, JsonValue], program: str) -> str | None:
@@ -271,7 +266,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "graph.not_in_project": _graphs,
     "graph.archived": None,
     "graph.readonly": None,
-    "entity.not_found": _not_found,
+    "entity.not_found": None,
     "entity.ambiguous_ref": None,
     "entity.revision_not_found": _history,
     "term.unknown": _term,

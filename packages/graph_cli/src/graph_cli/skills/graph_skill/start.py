@@ -109,18 +109,18 @@ def render_start(doc: Model) -> list[str]:
         " read. A change set for `graph apply` goes into a file in the working directory.",
         *(
             [
-                "- Before you create an entity, look its name up (`graph lookup '<name>' --json`)"
-                " and use the one that exists, never a second one under a similar name: the write"
-                " finding `data.semantic.possible_duplicate` names near spellings, also on a dry"
-                " run."
+                "- Before you create an entity with a name, look the name up (`graph lookup"
+                " '<name>' --json`) and use the one that exists, never a second one under a"
+                " similar name: the write finding `data.semantic.possible_duplicate` names near"
+                " spellings, also on a dry run."
             ]
             if labelled_fields(doc)
             else []
         ),
         "- Ask the user before `retract`"
         + (
-            " and before a `transition` into a terminal state (`graph describe type` marks them"
-            " `terminal`)."
+            " and before a `transition` into a terminal state (`graph describe type` lists them"
+            " under `terminal`)."
             if _terminal_states(doc)
             else "."
         ),
