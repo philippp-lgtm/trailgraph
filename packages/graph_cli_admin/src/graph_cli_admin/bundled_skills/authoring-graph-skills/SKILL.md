@@ -86,7 +86,7 @@ A good skeleton:
 ```markdown
 ---
 name: graph-<graph>
-description: "<What the graph holds, in the words a user would use>. Use when <the situations and requests>. Do not use for <what belongs elsewhere>. Needs the graph-cli skill."
+description: "<What the graph holds, in the words a user would use>. Use when <the situations and requests>. Do not use for <what belongs elsewhere>."
 ---
 
 # Graph `<graph>`: <what it is for>
@@ -126,14 +126,13 @@ The blocks already say what the model says. Write what it cannot:
 
 1. **The description decides when the skill is loaded.** Name what the
    graph holds in the words users use (synonyms, abbreviations), the
-   situations to use it in, and what not to use it for. At most 1024
-   characters; end with "Needs the graph-cli skill." The renderer appends
+   situations to use it in, and what not to use it for. The renderer appends
    "Run `graph start` first and load graph-cli with it." (52 characters with
-   its space) unless the description names `graph start` itself, so keep the
-   description under 970 characters: when the sentence does not fit it is left
-   out and publish warns (`admin.skill_over_budget`, with the length). Write the
-   description on one line (or as a block scalar): one wrapped over lines as a
-   plain or quoted scalar gets no sentence, and publish warns the same way.
+   its space), so do not write that sentence, nor a "Needs the graph-cli
+   skill." of your own: the appended one says it. At most 1024 characters
+   with the sentence, so write at most 972 characters, on one line (or as a
+   block scalar); publish refuses a description that cannot take the
+   sentence (rule `description`, below).
 2. **Rules for you**: how to decide between two types, which values a
    field takes in practice, when to create versus update, what to look up
    before writing (an existing entity with a similar name), what needs the
@@ -175,8 +174,8 @@ The blocks already say what the model says. Write what it cannot:
 
 `graph-admin graph skill render` and `graph-admin graph push` refuse a
 skill that breaks any of these (`admin.skill_invalid`, `details.problems`
-names the file and the rule: `template`, `term`, `command`, `alias`,
-`function`, `action`, next to the tree rules):
+names the file and the rule: `template`, `description`, `term`, `command`,
+`alias`, `function`, `action`, next to the tree rules):
 
 - `name` in the frontmatter equals the directory name `graph-<graph>`;
   regular UTF-8 files only, no dotfiles, no symlinks; `SKILL.md` at most
@@ -184,6 +183,12 @@ names the file and the rule: `template`, `term`, `command`, `alias`,
 - A template renders against the current ontology pin exactly as `graph`
   will render it, and its curated text is checked against the model and
   the `graph` inventory (the rules below).
+- The description of a template takes the sentence the renderer appends
+  (rule `description`): with it, at most 1024 characters, so the curated
+  description has at most 972; and it is on one line or a block scalar, not
+  a plain or quoted scalar wrapped over lines. A description that names
+  `graph start` itself gets no sentence and is not checked for it. A graph
+  release pushed with an unchanged skill checks the published one too.
 - No maintenance vocabulary and no local paths: the skill is for agents
   that use the graph, not for maintainers. No `graph-admin`, no `maint.*`
   or `admin.*` codes, no data root option, no absolute or home paths.

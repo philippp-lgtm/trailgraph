@@ -1,6 +1,6 @@
 ---
 name: graph-company
-description: "Facts about a company: its people (employees, externals and their accounts), its structure (departments, teams, positions, roles, cost centers), its operations (processes, instructions, policies, trainings, tasks) and its legal entities with their shareholdings. Use when the user asks who holds a position or reports to whom, which unit something belongs to, who owns a process or policy, which trainings a role needs, which tasks are open, or which legal entity employs a person or owns another. Do not use for payroll, contracts or the text of documents; an instruction only links to where its text lives. Needs the graph-cli skill."
+description: "Facts about a company: its people (employees, externals and their accounts), its structure (departments, teams, positions, roles, cost centers), its operations (processes, instructions, policies, trainings, tasks) and its legal entities with their shareholdings. Use when the user asks who holds a position or reports to whom, which unit something belongs to, who owns a process or policy, which trainings a role needs, which tasks are open, or which legal entity employs a person or owns another. Do not use for payroll, contracts or the text of documents; an instruction only links to where its text lives."
 ---
 
 # Graph `company`: who does what, where, and for which legal entity

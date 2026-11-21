@@ -328,17 +328,18 @@ def test_render_reports_the_size_and_warns_over_budget(
     assert publish(run_cli, TEMPLATE, "--dry-run").warning_codes == []
 
 
-def test_a_description_that_cannot_take_the_start_sentence_is_warned_about(
+def test_a_description_that_cannot_take_the_start_sentence_is_refused(
     run_cli: CliRunner, graph_id: str, tmp_path: Path
 ) -> None:
-    """Render and publish say why the renderer leaves ``graph start`` out of the description:
-    wrapped over lines as a plain or quoted scalar, or too long for the 1,024 characters."""
+    """Publish refuses a template whose description the renderer cannot give the ``graph
+    start`` sentence (wrapped over lines as a plain or quoted scalar, or too long for the 1,024
+    characters), and render reports why next to the preview."""
     out = tmp_path / "preview"
     out.mkdir()
-    for number, (description, gap, words) in enumerate(
+    for number, (description, words) in enumerate(
         (
-            ('"Items and\n  places."', "wrapped", "wrapped over several lines"),
-            (f'"{"y" * 1_000}"', "too_long", "does not fit"),
+            ('"Items and\n  places."', "wrapped over several lines"),
+            (f'"{"y" * 1_000}"', "has 1000 characters"),
         )
     ):
         broken = copy_template(tmp_path / f"t{number}")
@@ -346,14 +347,14 @@ def test_a_description_that_cannot_take_the_start_sentence_is_warned_about(
         text = skill_md.read_text()
         old = next(line for line in text.splitlines() if line.startswith("description:"))
         skill_md.write_text(text.replace(old, f"description: {description}"))
-        for outcome in (
-            render(run_cli, broken, out, "--force"),
-            publish(run_cli, broken, "--dry-run"),
-        ):
-            assert outcome.code == 0 and outcome.warning_codes == ["admin.skill_over_budget"]
-            (warning,) = outcome.envelope["warnings"]
-            assert words in warning["message"]
-            assert warning["details"]["description_gap"] == gap
+        previewed = render(run_cli, broken, out, "--force")
+        assert (previewed.code, previewed.error["code"]) == (1, "admin.skill_invalid")
+        assert [p["rule"] for p in previewed.data["problems"]] == ["description"]
+        assert previewed.warning_codes == []
+        refused = publish(run_cli, broken)
+        assert (refused.code, refused.error["code"]) == (1, "admin.skill_invalid")
+        (problem,) = refused.error["details"]["problems"]
+        assert problem["rule"] == "description" and words in problem["message"]
 
 
 def test_render_reports_what_publish_would_refuse(

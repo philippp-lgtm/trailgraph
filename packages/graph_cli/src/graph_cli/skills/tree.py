@@ -49,7 +49,7 @@ LEAKS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
 @dataclass(frozen=True, slots=True)
 class Problem:
     """One broken rule; ``rule`` is one of name, file, frontmatter, size, leak, and for
-    graph skill templates template, term, command, alias, function, action."""
+    graph skill templates template, term, command, alias, function, action, description."""
 
     rule: str
     path: str

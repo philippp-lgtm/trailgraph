@@ -62,15 +62,14 @@ admin skill, the one home of the authoring rules. Here is what holds for
 all of them. Each block may be used once; an unknown block name is refused.
 The renderer appends the sentence "Run `graph start` first and load graph-cli with it." to the
 description of a generated skill that does not mention `graph start` yet, so an agent that
-chooses the skill by its description is sent to the first call of a session. The description
-may have 1,024 characters; when the sentence would pass that, it is left out (the render is
-never refused for it) and `graph-admin` warns at render, publish and push
-(`admin.skill_over_budget`, naming the length of the description): shorten the description
-or write the sentence into it. A description wrapped over several lines as a plain or
-quoted scalar is left as written too (the sentence is not added and `graph-admin` warns the
-same way: write the description on one line or the sentence into it); folded and
-literal block scalars take it as one more line. A `static` skill is installed as it is, so it
-gets nothing.
+chooses the skill by its description is sent to the first call of a session. The sentence
+lives in the renderer only; a template does not write it. `graph-admin` refuses to publish or
+push a template whose description cannot take it (too long for the 1,024 characters of a
+description, or wrapped over lines as a plain or quoted scalar), so every published template
+gets it; the rule is in [What publishing checks](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-skills/SKILL.md#what-publishing-checks).
+Installing is never refused for it: a skill published before the rule keeps its description as
+written. Folded and literal block scalars take the sentence as one more line. A `static` skill
+is installed as it is, so it gets nothing.
 The `start` block opens with "If you have not yet in this session: `graph start --json`".
 
 Every generated skill also gets `references/model.md` (every type of the
