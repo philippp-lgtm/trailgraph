@@ -282,8 +282,10 @@ it; the commands above do not notice a catalog-only change.
   the hint is `graph self update` (with `--dir` for a project's copy),
   which refreshes the copies.
 - A read runs and warns `skills.stale`, naming the same command.
-- Meta commands (`whoami`, `describe commands`, `skills ...`) are never
-  checked: they are how a stale copy is found and refreshed.
+- Meta commands (`whoami`, `describe commands`, `start`, `skills ...`) are never
+  checked: they are how a stale copy is found and refreshed. `graph start` refreshes the
+  stale copies of the scopes that have a skill of this program (as `graph self update`,
+  without replacing the program) and reports each; `graph start --check` only reports.
 - Without an installed skill nothing is checked (a person at a shell).
 
 The details list each stale copy (`skill`, `kind`, `scope`, what it was

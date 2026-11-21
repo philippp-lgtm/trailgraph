@@ -954,6 +954,27 @@ Usage: `graph skills install [OPTIONS]`
 | `graph skills install --scope project --dry-run --json` | Show the plan. |
 | `graph skills install --scope project --dir <dir> --project-graphs` | Skill 1 and the skills of every graph the project uses. |
 
+## graph start
+
+First call of a session: what is current, the graphs you reach, what you may use.
+
+Kind: meta. Surface: meta. Action: none. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph start [OPTIONS]`
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+| `--check` | flag | no | no | Only report what is stale; refresh nothing. |
+| `--dir` | directory | no | no | Project directory whose skills to refresh; default: the working one. |
+
+| Example | Summary |
+|---|---|
+| `graph start` | Program and skills (stale copies refreshed), graphs, counts. |
+| `graph start --json` | The same as graph_cli.start/1. |
+| `graph start --graph <graph>` | One graph, with its modules. |
+| `graph start --check` | Only report what is stale; change nothing. |
+
 ## graph supersede
 
 Replace entities by another one; needs --reason.

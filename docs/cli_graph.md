@@ -71,6 +71,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 
 | Command | What it does |
 | --- | --- |
+| `start [--graph G] [--check] [--dir D]` | the first call of a session, in a few lines (at most about 1,500 bytes for five graphs; `--json` is `graph_cli.start/1`): whether this program and the installed skills are current (stale copies are refreshed as `self update` does, the program is never replaced; `--check` only reports), who acts, and per graph you reach its title, your level, the number of modules, types, functions, actions and views you may use, the number you see but may not use (`actions 5 (+2 not allowed)`) and the commands that search them. See [Starting a session](#starting-a-session) |
 | `whoami` | the acting identity (principal, agent, session, project and, over the server, the roles of the token) and what the policy allows: the project scope and, per graph, the level, the actions a deny rule withholds below it, read-only types, write obligations and, for a caller whose level is below `write`, `writes`: what a write allow list lets it write per type and verb (see [Write allow lists](access_control.md#write-allow-lists)) and, for a caller limited to some types, `reads`: the types it sees (see [Read limits](access_control.md#read-limits)) and, for a graph whose ontology marks fields that the caller does not all hold, `markings`: the markings it holds (`[]` for none; see [Markings](access_control.md#markings)); `writes` names no field the caller cannot see |
 | `graphs` | the graphs this project may see and use, with the title that says what each is for and the default language of their values (BCP 47, null when unset) |
 | `describe commands` | every command as data (`graph_cli.inventory/1`): arguments, options, examples, error codes, exit codes |
@@ -107,6 +108,38 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `skills check --scope user\|project` | compare installed skills with what this program installs now; exit 1 unless all are fresh |
 | `self update` | in the remote mode install the server's build of `graph` when it differs, then refresh the agent skills of the project (`--dir`) and the user, adding the skills of the project's graphs; `--check` only reports, `--force` replaces skills edited by hand (see [Self update](server.md#self-update)) |
 | `connect ENDPOINT --code CODE` | set up this machine and a folder (`--dir`) for a server from a one-time enrollment code: the project's token, the remote mode in `config.toml`, a pointer, the program and the project's graph skills; `--label` labels the token, `--force` replaces another endpoint or a stored token (see [Enrollment](server.md#enrollment)) |
+
+## Starting a session
+
+`graph start` is the one call an agent makes first. It is a meta command: the skill check never
+refuses or warns on it (it is how a stale copy is found), it writes nothing but skill files and it
+never replaces the program.
+
+- **Program and skills.** For every scope that has a skill of this program (the project's, found
+  from `--dir` or the working directory, and the user's) it does what `graph self update` does for
+  the skills: refreshes stale copies and installs the skills of the pointer's graphs that are not
+  installed yet. Each copy is `fresh`, `refreshed` (if you loaded it earlier in the session, load it
+  again), `modified` (edited by hand, left alone), `foreign` (not installed by this program, left
+  alone) or `unavailable`; with `--check` nothing is written and the copies that would change are
+  `stale` or `missing`. In the remote mode the program's build is compared with the server's and a
+  different one is named with the hint `graph self update`; a checkout has no build to compare
+  (`unchecked`). Without an installed skill there is nothing to refresh.
+- **Graphs.** One item per graph the project may use (as `graphs`): `name`, `title`, `level` (as in
+  `whoami`), `skill` (the skill to load, `graph-<name>`, null when the graph has none), `counts`
+  (`modules`, `types` and the active `functions`, `actions` and `views` you may use, as
+  [`describe modules`](#commands) counts them) and, only when there are some, `not_allowed`: how many
+  of each kind you see but may not use ([Entries you may not use](#entries-you-may-not-use)). A
+  function, action or view you cannot see is in no number. Nothing is recorded. A graph whose model
+  and catalogs are not open to you (no `read.describe`) has `counts: null`. `hidden_count` is the
+  number of graphs the pointer file leaves out.
+- **`--graph G`** limits the answer to that graph and adds `modules`: each module's id, summary, the
+  number of types and the counts per kind, as `describe modules`.
+- **In the remote mode** the graphs and counts come from the server and the program and skills are
+  judged and refreshed here; the text is rendered from both.
+
+Counts and search hits are what your token may use. The text ends with the search commands to copy
+(`describe search TEXT [--kind ...] [--module M] [--limit N]`, `describe module M`) and the rule that
+a hit marked not allowed is to be reported to the user, not worked around.
 
 ## Graph selection
 
@@ -735,7 +768,8 @@ different types (a department and a cost center, a subject and a topic).
 range, subtypes included, because the entity is about to be its target;
 `--for <function>.<param>` (or `<action>.<param>`) does the same with the class
 of a function's or action's `ref` parameter (it needs the right to run functions
-or the action, otherwise the name is `function.not_found`); `--for-source <relation>` keeps the types
+or the action, otherwise the name is `function.not_found`, also for one you see but
+may not use, [Entries you may not use](#entries-you-may-not-use)); `--for-source <relation>` keeps the types
 of its domain. Both options may be given and narrow `--type` further; when
 no type is left the answer is `usage.invalid_argument`. Nothing is picked
 for the caller: every fitting candidate is listed, and matches of other

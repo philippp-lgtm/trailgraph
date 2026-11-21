@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:ce9a529f8dfa0f2e2f96a2597039bd7ed450e30ac7041bcc799efa01e7d81572"
+  inventory_hash: "sha256:325573c951005e9a4ff1cfa273432f3023b62a71ee1e08bae66dc381c1005e8d"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.28.0"
@@ -204,6 +204,7 @@ Every `--json` call prints one JSON object on stdout.
 | `graph skills check` | meta | Check that installed agent skills equal what this program installs now. |
 | `graph skills emit` | meta | Write the agent skills of this program and named graphs into a directory. |
 | `graph skills install` | meta | Install or refresh the agent skills of this program and its graphs. |
+| `graph start` | meta | First call of a session: what is current, the graphs you reach, what you may use. |
 | `graph supersede` | write | Replace entities by another one; needs --reason. |
 | `graph transition` | write | Move an entity's lifecycle to another state. |
 | `graph unlink` | write | Remove an edge by relation and target, or by edge id. |

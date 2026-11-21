@@ -109,7 +109,8 @@ inventory are built from the same declarations.
 Two command groups of `graph` are packages. The `describe` commands except
 `describe commands` (which stays in `app_cli.commands.meta`) live in
 `app_cli.commands.describe` (`model`: the ontology, `kinetic`: functions,
-actions and views, `shared`: what both use). The read commands live in
+actions and views, `shared`: what both use). `graph start` is `app_cli.commands.start` (the answer, its text and the
+refresh of the skill copies; the remote hook is in `app_cli.remote_hooks`). The read commands live in
 `app_cli.commands.read` (`shared`: what several of them use; `entity`: `get`
 and `view`; `history`: `history` and `changes`; `find`: `find`, `lookup`,
 `search` and `neighbors`; `query`: `query` and `run`). The package's `SPECS`
@@ -160,6 +161,7 @@ clauses (projection, aggregation, sorting, paging, `UNWIND`), `evaluate` and
 | `opening` | `ReadOpen`: `open` (the graph's model and one snapshot, the head or the state `--as-of` names, behind the read limits of the caller) and `rename_hint` (the current name of an old term a refused write names) |
 | `as_of` | the earlier state `--as-of` names: its snapshot, and the warning that says which state is read |
 | `skills` | `ReadSkills`: the published skill of a graph and the inputs a generated skill is rendered with (model documents, names, digest) |
+| `start` | `ReadStart`: what `graph start` counts of each graph the caller reaches (modules, types, the functions, actions and views it may use and the ones it may not) and of each module of one graph; nothing is recorded |
 | `installation` | `ReadInstallation`: the reads that name no graph: `graphs` (the graphs a caller may see) and `whoami` (the caller's grants, read limits and visible types) |
 | `entities` | `ReadEntities`: `get` and `neighbors`, and the actions, functions and views a reader may use next with an entity (`--affordances`); `current_entity`, the revision a ref names |
 | `finding` | `ReadFinding`: `find`, `lookup` and `search`, and how a lookup fits the functions the caller may run (`_use_fit`, `_parameter_fit`) |

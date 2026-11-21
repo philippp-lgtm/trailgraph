@@ -352,6 +352,7 @@ def test_local_and_remote_answers_are_equal(
         ("skills", "check"),
         ("self", "update"),  # runs skills install and check; run_skills
         ("connect",),  # sets up a client from a code: tests/cli/test_app_connect.py
+        ("start",),  # the graphs part is equal, the client part differs: test_start_remote.py
     }
     for mine, theirs in zip(normalized(actual), normalized(expected), strict=True):
         assert mine == theirs, differences(mine, theirs)

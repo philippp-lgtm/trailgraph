@@ -413,15 +413,17 @@ class TestStructure:
         # table (229: generated, the prose is unchanged); the row of `graph view` (230:
         # generated); the sentence on `graph view` in the read step (232); the rows of
         # `graph describe view` and `graph describe views` (234: generated); the clause on
-        # published views in the read step (235)
-        assert len(files["SKILL.md"].splitlines()) <= 235
+        # published views in the read step (235); the row of `graph start` in the command table
+        # (236: generated)
+        assert len(files["SKILL.md"].splitlines()) <= 236
         for name, text in files.items():
             if name.startswith("references/"):
                 # commands.md was at 40 KiB; the two describe action commands add about 1.6 KiB;
                 # `graph view` adds about 1.7 KiB to the 43.5 KiB of before (46 KiB limit);
                 # views add 1.6 KiB: the options of `graph view`, `describe views` and
-                # `describe view`, and the view kind of `describe search` (48 KiB limit)
-                assert len(text.encode()) <= 48 * 1024, name
+                # `describe view`, and the view kind of `describe search` (48 KiB limit);
+                # `graph start` and `--include-not-allowed` add about 1.2 KiB (50 KiB limit)
+                assert len(text.encode()) <= 50 * 1024, name
 
     def test_references_are_linked_both_ways(self) -> None:
         files = committed_files()

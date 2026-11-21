@@ -3695,6 +3695,84 @@
     },
     {
       "path": [
+        "start"
+      ],
+      "kind": "meta",
+      "surface": "meta",
+      "action": null,
+      "summary": "First call of a session: what is current, the graphs you reach, what you may use.",
+      "args": [],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--check",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only report what is stale; refresh nothing."
+        },
+        {
+          "name": "--dir",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Project directory whose skills to refresh; default: the working one."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph start",
+          "summary": "Program and skills (stale copies refreshed), graphs, counts."
+        },
+        {
+          "command": "graph start --json",
+          "summary": "The same as graph_cli.start/1."
+        },
+        {
+          "command": "graph start --graph <graph>",
+          "summary": "One graph, with its modules."
+        },
+        {
+          "command": "graph start --check",
+          "summary": "Only report what is stale; change nothing."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "hooked"
+    },
+    {
+      "path": [
         "supersede"
       ],
       "kind": "write",
