@@ -65,11 +65,6 @@ class Catalogs:
     denied: Denied
 
 
-def functions_of(state: CommandState, view: GraphRead) -> tuple[FunctionEntry, ...] | None:
-    """The graph's functions the caller may use (``read.function``), else ``None``."""
-    return context(state).reader.functions(view.actor, view.entry)
-
-
 def split_functions(
     state: CommandState, view: GraphRead
 ) -> tuple[tuple[FunctionEntry, ...] | None, tuple[Classified[FunctionEntry], ...]]:
