@@ -13,7 +13,7 @@ from support.txbuilder import actor
 from graph_cli.access_control.authorize import authorize
 from graph_cli.access_control.compiler import BASE_OBLIGATION, compile_policy, layer_of_source
 from graph_cli.access_control.documents import document_problems
-from graph_cli.access_control.effective import graph_level
+from graph_cli.access_control.effective import effective_level, graph_level, withheld_actions
 from graph_cli.access_control.policy import BUILTIN_POLICY_SET, policy_set
 from graph_cli.kernel.actor import ActorContext, Assurance, ClientInfo, Entrypoint, Facet
 from graph_cli.kernel.authz import AuthzContext
@@ -431,3 +431,39 @@ def test_a_graph_policy_needs_its_graph() -> None:
     with pytest.raises(GraphCliError) as info:
         compile_policy(GRAPH_POLICY, file="p.yaml", graphs=GRAPHS)
     assert info.value.code == "policy.invalid"
+
+
+DENY_ONE_READ = b"""\
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {principal: {name: tester}, graphs: "*", level: write}
+no_project: {"*": write}
+deny:
+  - {id: no_function, agent_type: [explore, builder], action: ["read.function"]}
+  - {id: no_writes, agent_type: [explore], action: ["write.*"]}
+"""
+
+
+def test_the_effective_level_survives_one_denied_action_the_ladder_level_does_not() -> None:
+    """``graph_level`` needs every action of a level, so one denied read action drops a caller
+    who reads and writes the graph to ``none``; ``effective_level`` says what it can do, and
+    ``withheld_actions`` names what is missing below it."""
+    policy = policy_set(
+        compile_policy(DENY_ONE_READ, file="installation.yaml", graphs=GRAPHS).document
+    )
+    writer = who(agent_type="builder")
+    assert graph_level(writer, EXAMPLE, policy) == "none"
+    assert effective_level(writer, EXAMPLE, policy) == "write"
+    assert withheld_actions(writer, EXAMPLE, policy) == ["read.function"]
+    reader = who(agent_type="explore")
+    assert graph_level(reader, EXAMPLE, policy) == "none"
+    assert effective_level(reader, EXAMPLE, policy) == "read"
+    assert withheld_actions(reader, EXAMPLE, policy) == ["read.function"]
+
+
+def test_the_effective_level_is_the_ladder_level_when_the_ladder_is_met_or_nothing_is() -> None:
+    policy = policy_set(installation())
+    assert effective_level(who("example_project"), EXAMPLE, policy) == "write"
+    assert effective_level(who("example_project"), OTHER, policy) == "read"
+    assert effective_level(who("another_project"), EXAMPLE, policy) == "none"

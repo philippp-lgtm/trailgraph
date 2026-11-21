@@ -71,7 +71,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 
 | Command | What it does |
 | --- | --- |
-| `start [--graph G] [--check] [--dir D]` | the first call of a session, in a few lines (at most about 1,500 bytes for five graphs; `--json` is `graph_cli.start/1`): whether this program and the installed skills are current (stale copies are refreshed as `self update` does, the program is never replaced; `--check` only reports), who acts, and per graph you reach its title, your level, the number of modules, types, functions, actions and views you may use, the number you see but may not use (`actions 5 (+2 not allowed)`) and the commands that search them. See [Starting a session](#starting-a-session) |
+| `start [--graph G] [--check] [--dir D]` | the first call of a session, in a few lines (at most about 1,500 bytes for five graphs; `--json` is `graph_cli.start/1`): whether this program and the installed skills are current (stale copies are refreshed as `self update` does, the program is never replaced; `--check` only reports), who acts, and per graph you reach its title, your level (and what a deny rule withholds below it), the number of modules, types, functions, actions and views you may use, the number you see but may not use (`actions 5 (+2 not allowed)`) and the commands that search them. See [Starting a session](#starting-a-session) |
 | `whoami` | the acting identity (principal, agent, session, project and, over the server, the roles of the token) and what the policy allows: the project scope and, per graph, the level, the actions a deny rule withholds below it, read-only types, write obligations and, for a caller whose level is below `write`, `writes`: what a write allow list lets it write per type and verb (see [Write allow lists](access_control.md#write-allow-lists)) and, for a caller limited to some types, `reads`: the types it sees (see [Read limits](access_control.md#read-limits)) and, for a graph whose ontology marks fields that the caller does not all hold, `markings`: the markings it holds (`[]` for none; see [Markings](access_control.md#markings)); `writes` names no field the caller cannot see |
 | `graphs` | the graphs this project may see and use, with the title that says what each is for and the default language of their values (BCP 47, null when unset) |
 | `describe commands` | every command as data (`graph_cli.inventory/1`): arguments, options, examples, error codes, exit codes |
@@ -124,8 +124,11 @@ never replaces the program.
   `stale` or `missing`. In the remote mode the program's build is compared with the server's and a
   different one is named with the hint `graph self update`; a checkout has no build to compare
   (`unchecked`). Without an installed skill there is nothing to refresh.
-- **Graphs.** One item per graph the project may use (as `graphs`): `name`, `title`, `level` (as in
-  `whoami`), `skill` (the skill to load, `graph-<name>`, null when the graph has none), `counts`
+- **Graphs.** One item per graph the project may use (as `graphs`): `name`, `title`, `level` (what
+  you can do: `write` or `read` when any write or read action is allowed, `none` when none is, so
+  one denied read action does not read as no access), `withheld` (the actions a deny rule takes away
+  below it, as `whoami` lists them; the text shows `read; no read.function`, with `+N` for more),
+  `skill` (the skill to load, `graph-<name>`, null when the graph has none), `counts`
   (`modules`, `types` and the active `functions`, `actions` and `views` you may use, as
   [`describe modules`](#commands) counts them) and, only when there are some, `not_allowed`: how many
   of each kind you see but may not use ([Entries you may not use](#entries-you-may-not-use)). A

@@ -6177,6 +6177,12 @@
                     "write"
                   ]
                 },
+                "withheld": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
                 "skill": {
                   "anyOf": [
                     {
@@ -6285,6 +6291,7 @@
                 "name",
                 "title",
                 "level",
+                "withheld",
                 "skill",
                 "counts"
               ]

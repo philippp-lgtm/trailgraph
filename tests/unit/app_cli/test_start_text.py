@@ -16,7 +16,8 @@ def graph(n: int, *, refused: bool = True) -> dict[str, Any]:
     item: dict[str, Any] = {
         "name": f"example_graph_name_{n:02d}",
         "title": "A title that is far longer than the text will show for any graph",
-        "level": "write",
+        "level": "read",
+        "withheld": ["read.function", "read.query", "read.history"],
         "skill": f"graph-example-graph-name-{n:02d}",
         "counts": {"modules": 50, "types": 321, "functions": 200, "actions": 100, "views": 100},
     }
@@ -88,6 +89,16 @@ def test_a_graph_the_caller_cannot_open_says_so_and_a_normal_one_is_plain() -> N
     plain["graphs"] = [graph(1, refused=False)]
     line = next(ln for ln in render(plain).splitlines() if ln.startswith("  example_graph"))
     assert "not allowed" not in line and "functions 200" in line
+
+
+def test_the_level_names_what_a_deny_rule_takes_away_below_it() -> None:
+    plain = answer(1)
+    plain["graphs"] = [{**graph(1), "level": "read", "withheld": []}]
+    assert "(read):" in render(plain)
+    one = answer(1)
+    one["graphs"] = [{**graph(1), "level": "read", "withheld": ["read.function"]}]
+    assert "(read; no read.function):" in render(one)
+    assert "(read; no read.function +2):" in render(answer(1))
 
 
 def test_the_counts_name_what_may_not_be_used_next_to_what_may() -> None:

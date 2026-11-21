@@ -267,7 +267,10 @@ def test_a_reader_without_rights_gets_not_allowed_counts_and_no_hidden_name(
     assert plain.data["graphs"][0]["counts"]["actions"] == 2
     reader = start(run_cli, project, env=EXPLORE)
     example = by_name(reader.data)["example_graph"]
-    assert example["level"] == "none"  # whoami's ladder: read.function is withheld
+    # read.function is withheld, but the graph stays readable: never "none" for that
+    assert example["level"] == "read" and example["withheld"] == ["read.function"]
+    assert "(read; no read.function)" in run_cli("graph", "start", cwd=project, env=EXPLORE).stdout
+    assert by_name(plain.data)["example_graph"]["withheld"] == []
     assert example["counts"]["functions"] == 0 and example["counts"]["actions"] == 0
     assert example["not_allowed"]["functions"] == example["not_allowed"]["actions"] == 2
     assert (

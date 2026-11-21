@@ -1,8 +1,9 @@
 """What ``graph start`` tells about a graph: how much of it the caller may use (plan S2).
 
-One item per graph the caller reaches: its title, the caller's level, the number of modules and
-types the caller sees, the number of active functions, actions and views it may use, and the number
-it sees but may not use (only when there are any). Nothing is recorded: counting takes no decision,
+One item per graph the caller reaches: its title, the caller's level and what a deny rule
+withholds below it (as ``whoami``), the number of modules and types the caller sees, the number
+of active functions, actions and views it may use, and the number it sees but may not use (only
+when there are any). Nothing is recorded: counting takes no decision,
 like a listing. A hidden function, action or view is in no number (the classification never holds
 one), so a limited reader learns nothing from the counts.
 """
@@ -11,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from graph_cli.access_control.effective import graph_level
+from graph_cli.access_control.effective import effective_level, withheld_actions
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
@@ -45,10 +46,12 @@ class ReadStart(ReadInstallation, ReadCatalogs):
         return shown, len(visible) - len(shown)
 
     def _start_graph(self, actor: ActorContext, entry: GraphEntry) -> dict[str, JsonValue]:
+        policy = self._policy.current(entry.id)
         item: dict[str, JsonValue] = {
             "name": entry.name,
             "title": entry.title,
-            "level": graph_level(actor, entry.id, self._policy.current(entry.id)),
+            "level": effective_level(actor, entry.id, policy),
+            "withheld": list(withheld_actions(actor, entry.id, policy)),
         }
         # the model, its skill and its catalogs are read with read.describe
         if not self._may(actor, entry, "read.describe"):

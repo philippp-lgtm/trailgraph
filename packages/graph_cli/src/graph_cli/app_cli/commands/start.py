@@ -37,6 +37,8 @@ START_SCHEMA: Final = "graph_cli.start/1"
 CHECK: Final = ParamSpec("--check", "flag", "Only report what is stale; refresh nothing.")
 TEXT_GRAPHS: Final = 5  # graphs the text names; the JSON has them all
 TITLE_WIDTH: Final = 20
+TITLE_GRAPHS: Final = 3  # titles are named for up to this many graphs; the names are enough beyond
+WITHHELD_SHOWN: Final = 1  # withheld rights named per graph; the rest counted
 SKILL_STATES: Final = (
     "fresh",
     "refreshed",
@@ -68,6 +70,7 @@ OUTPUT: Final = obj(
                     "name": STRING,
                     "title": NULLABLE_STRING,
                     "level": enum("none", "read", "write"),
+                    "withheld": array(STRING),
                     "skill": NULLABLE_STRING,
                     "counts": {"anyOf": [COUNTS, {"type": "null"}]},
                 },
@@ -291,10 +294,20 @@ def _counts(item: Mapping[str, JsonValue]) -> str:
     return ", ".join(parts)
 
 
-def _graph_line(item: Mapping[str, JsonValue]) -> str:
-    title = f' "{_short(str(item["title"]), TITLE_WIDTH)}"' if item.get("title") else ""
+def _level(item: Mapping[str, JsonValue]) -> str:
+    """``read``, or ``read; no read.function`` when a deny rule takes rights below it away."""
+    withheld = [str(a) for a in as_list(item.get("withheld") or [], "withheld")]
+    if not withheld:
+        return str(item["level"])
+    names = ", ".join(withheld[:WITHHELD_SHOWN])
+    more = f" +{len(withheld) - WITHHELD_SHOWN}" if len(withheld) > WITHHELD_SHOWN else ""
+    return f"{item['level']}; no {names}{more}"
+
+
+def _graph_line(item: Mapping[str, JsonValue], *, titles: bool) -> str:
+    title = f' "{_short(str(item["title"]), TITLE_WIDTH)}"' if titles and item.get("title") else ""
     skill = "" if item.get("skill") else " (no skill)"
-    return f"  {item['name']}{title} ({item['level']}): {_counts(item)}{skill}"
+    return f"  {item['name']}{title} ({_level(item)}): {_counts(item)}{skill}"
 
 
 def render(data: JsonObject) -> str:
@@ -318,7 +331,8 @@ def render(data: JsonObject) -> str:
         lines.append(f"Graphs: none reachable; {PROGRAM} whoami shows what your token may do")
     else:
         lines.append("Graphs (skill: graph-NAME, - for _):")
-        lines += [_graph_line(g) for g in graphs[:TEXT_GRAPHS]]
+        titles = len(graphs) <= TITLE_GRAPHS
+        lines += [_graph_line(g, titles=titles) for g in graphs[:TEXT_GRAPHS]]
         if len(graphs) > TEXT_GRAPHS:
             lines.append(f"  and {len(graphs) - TEXT_GRAPHS} more: {PROGRAM} graphs")
     hidden = data.get("hidden_count")
