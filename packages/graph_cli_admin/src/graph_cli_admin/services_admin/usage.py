@@ -21,12 +21,16 @@ callers never inflate a distinct count.
 
 One part is installation-wide: the *sessions* and how many of them began with ``graph start``
 (the one call the skills tell an agent to make first). A session here is a session id of the
-actor (a line with only a session name, or none, belongs to no session and is not counted); its
-first command is the ``command`` of its earliest line in the whole log (file order breaks a tie
-of timestamps), whatever the command or its outcome, and a line is only there for a command that
-opened the installation, so ``describe commands`` and ``--help`` are not first commands. With
+actor together with its agent id when it has one (a subagent shares the session id of its parent
+and has an id of its own, and the skills tell every agent to start, so each counts on its own;
+without an agent id the session stands alone). A line with only a session name, or none, belongs
+to no session and is not counted. The first command of a session is the ``command`` of its
+earliest line in the whole log (file order breaks a tie of timestamps), whatever the command or
+its outcome, and a line is only there for a command that opened the installation, so ``describe
+commands`` and ``--help`` are not first commands. With
 ``--since`` a session counts when its first line is on or after it, however late the rest.
-``--graph`` does not narrow it.
+``--graph`` does not narrow it. Only commands the access log records are seen (in the remote mode
+those that reach a command route of the server), and the part is empty unless the log is on.
 
 Each list holds at most ``CAP`` entries; when it was cut, a sibling ``<list>_more`` names how
 many were left out (absent otherwise, as for the affordances).
@@ -126,7 +130,7 @@ class _Graph:
 
 @dataclass(slots=True)
 class _Session:
-    """The earliest line of one session id: when, where in the file, which command."""
+    """The earliest line of one session and agent: when, where in the file, which command."""
 
     first: datetime
     order: int
@@ -136,7 +140,7 @@ class _Session:
 @dataclass(slots=True)
 class Aggregate:
     graphs: dict[str, _Graph] = field(default_factory=dict)
-    sessions: dict[str, _Session] = field(default_factory=dict)
+    sessions: dict[tuple[str, str], _Session] = field(default_factory=dict)
     skipped: int = 0
     # run and query lines with no graph: they failed before one was open (an error envelope
     # names none), so no graph can be charged with them
@@ -157,10 +161,14 @@ def _session(actor: object) -> str:
     return NO_SESSION
 
 
-def _session_id(actor: object) -> str | None:
-    """The actor's session id; ``None`` for a name only or none (no session to count)."""
-    value = _mapping(_mapping(actor).get("session")).get("id")
-    return value if isinstance(value, str) and value else None
+def _session_key(actor: object) -> tuple[str, str] | None:
+    """The actor's session id and agent id (``""`` without one); ``None`` for a session with a
+    name only or none (no session to count)."""
+    session = _mapping(_mapping(actor).get("session")).get("id")
+    if not isinstance(session, str) or not session:
+        return None
+    agent = _mapping(_mapping(actor).get("agent")).get("id")
+    return session, agent if isinstance(agent, str) else ""
 
 
 def _stamp(line: Mapping[str, object]) -> datetime | None:
@@ -222,9 +230,9 @@ def aggregate(
 def _first_command(
     found: Aggregate, line: Mapping[str, object], when: datetime, order: int
 ) -> None:
-    """Remember the earliest line of the line's session, over the whole log (``since`` and
-    ``graphs`` do not apply: a session belongs to the window its first line is in)."""
-    session, command = _session_id(line.get("actor")), line.get("command")
+    """Remember the earliest line of the line's session and agent, over the whole log (``since``
+    and ``graphs`` do not apply: a session belongs to the window its first line is in)."""
+    session, command = _session_key(line.get("actor")), line.get("command")
     if session is None or not isinstance(command, str):
         return
     known = found.sessions.get(session)

@@ -19,6 +19,7 @@ def line(
     command: str,
     *,
     session: str | None = "s1",
+    agent: str | None = None,
     ts: str = "2026-11-02T10:00:00.000Z",
     graph: str | None = G1,
     name: str = "example_graph",
@@ -32,6 +33,8 @@ def line(
     actor: dict[str, Any] = {"principal": {"assurance": "asserted", "id": "someone"}}
     if session is not None:
         actor["session"] = {"assurance": "asserted", "id": session}
+    if agent is not None:
+        actor["agent"] = {"assurance": "asserted", "id": agent}
     out: dict[str, Any] = {
         "schema": "graph_cli.access/1",
         "ts": ts,
@@ -326,3 +329,24 @@ def test_the_sessions_part_names_no_session_and_the_text_says_it() -> None:
     assert "Sessions" not in usage.render(base)  # an older answer has no such part
     empty = usage.render({**base, "sessions": sessions([])})
     assert "Sessions: 0, first command was start in 0" in empty and "%" not in empty
+
+
+def test_each_agent_of_a_session_counts_on_its_own() -> None:
+    """A subagent shares the session id of its parent and has an agent id of its own; the skills
+    tell every agent to start, so the report asks it of each. Without an agent id the session
+    stands alone (the main agent, a harness that names none)."""
+    lines = [
+        line("get", session="a", ts=ts(0), graph=None),  # the main agent: no agent id
+        line("start", session="a", agent="sub-1", ts=ts(1), graph=None),
+        line("get", session="a", agent="sub-2", ts=ts(2), graph=None),
+        line("start", session="a", agent="sub-2", ts=ts(3), graph=None),  # not its first
+        line("start", session="b", agent="main", ts=ts(0), graph=None),
+    ]
+    assert sessions(lines) == {"count": 4, "first_start": 2, "first_start_share": 50}
+    # the same agent id under two sessions is two agents; an empty agent id is none
+    twice = [
+        line("start", session="a", agent="x", ts=ts(0), graph=None),
+        line("get", session="b", agent="x", ts=ts(0), graph=None),
+        line("get", session="c", agent="", ts=ts(0), graph=None),
+    ]
+    assert sessions(twice)["count"] == 3
