@@ -88,6 +88,15 @@ def parameter_value(text: str) -> Value:
     return loaded
 
 
+def is_number_text(text: str) -> bool:
+    """Whether a ``--param`` text is a JSON number or a non-empty list of numbers, so that
+    ``parameter_value`` binds a number and the text as written may matter (``text_params``)."""
+    loaded = parameter_value(text)
+    if isinstance(loaded, list):
+        return bool(loaded) and all(as_number(item) is not None for item in loaded)
+    return as_number(loaded) is not None
+
+
 def plain_json(value: Value) -> JsonValue:
     """A value without nodes or relationships as JSON: decimals as strings."""
     if isinstance(value, Decimal):

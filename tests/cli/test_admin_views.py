@@ -348,6 +348,17 @@ def test_a_deprecated_function_behind_a_view_is_a_warning_not_a_refusal(
     assert admin(run_cli, "audit", "verify").code == 0
 
 
+def test_a_function_a_published_view_runs_is_exempt_from_the_single_ref_warning(
+    run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
+) -> None:
+    functions = folder(tmp_path, "items_in_location.yaml", name="fns", source=FUNCTIONS)
+    first = publish_functions(run_cli, functions)
+    assert first.warning_codes == ["admin.function_single_ref"]  # no view runs it yet
+    assert publish(run_cli, folder(tmp_path, "location_overview.yaml")).code == 0
+    again = publish_functions(run_cli, functions, "--dry-run")
+    assert again.code == 0 and again.warnings == []  # a view hands it one entity
+
+
 def test_publishing_actions_and_functions_without_views_answers_as_before(
     run_cli: CliRunner, root: Path, graph_id: str
 ) -> None:

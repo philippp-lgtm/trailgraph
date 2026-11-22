@@ -73,7 +73,9 @@ def test_the_start_block_carries_the_working_rules() -> None:
         "Never cut an answer short",
         "`graph <command> --help` lists the options",
         "with `--dry-run`, then run them without",
-        "Say why in `--reason` (in English, whatever language the values are in)",
+        "Say why in `--reason`, with how you learned it (in English, whatever language the"
+        " values are in), never in a field value",
+        "Ask the user before `retract`",
         "`--expect <rev>`",
         "A change set for `graph apply` goes into a file in the working directory",
         "Read `data.findings` of every write",
@@ -170,10 +172,34 @@ def test_names_point_to_the_type_table_when_it_lists_every_named_type() -> None:
     )
     assert "`nas:Topic`: `label` (main name)" not in listed
     assert "`label` (required, unique, main name); `synonyms` (many, other names)" in listed
-    assert "Before you create an entity of a type with names" in listed
+    assert "When you create an entity of a type with names" in listed
     partial = skill(model)  # nas:Book and nas:WebPage have no row of their own
     assert "`nas:Topic`: `label` (main name), `synonyms` (other names)" in partial
-    assert "Before you create an entity of one of these types" in partial
+    assert "When you create an entity of one of these types" in partial
+
+
+def test_lookup_before_create_is_said_once_for_a_graph_with_names() -> None:
+    """The start block holds the rule; the names block keeps what is specific to the types."""
+    named = skill(compiled_model("notes_and_sources"))
+    assert (
+        "- Before you create an entity with a name, look the name up (`graph lookup '<name>'"
+        in named
+    )
+    assert named.count("data.semantic.possible_duplicate") == 1
+    assert "search for its name" not in named
+    unnamed = skill(compiled_model("inventory"))  # no type has a label role
+    assert "look its name up" not in unnamed and "possible_duplicate" not in unnamed
+
+
+def test_consent_names_terminal_states_only_when_a_lifecycle_has_them() -> None:
+    with_terminal = skill(compiled_model("inventory"))
+    assert (
+        "- Ask the user before `retract` and before a `transition` into a terminal state"
+        " (`graph describe type` lists them under `terminal`)." in with_terminal
+    )
+    without = skill(compiled_model("staff"))  # lifecycles without terminal states
+    assert "- Ask the user before `retract`.\n" in without
+    assert "terminal" not in without
 
 
 def test_write_once_fields_are_named_once() -> None:

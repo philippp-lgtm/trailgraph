@@ -329,6 +329,8 @@ def test_the_functions_publish_run_and_appear_in_the_skill(
         "missing_required_trainings",
         "policies_for_unit",
         "reporting_chain",
+        "required_trainings",
+        "shareholders_of",
         "vacant_positions",
     ]
     checked = admin(
@@ -358,6 +360,16 @@ def test_the_functions_publish_run_and_appear_in_the_skill(
     assert run("policies_for_unit", unit="TEAM-0004")
     assert [r["entity"] for r in run("employer_of", person="EMP-0003")] == ["Marrowdale Holding AG"]
     assert run("vacant_positions", unit="DEPT-0001")
+    missing = run("missing_required_trainings", unit="DEPT-0003")
+    person = app(run_cli, "lookup", missing[0]["person"], "--type", "ppl:Person", env=ENV)
+    assert person.code == 0, person.envelope
+    alias = person.data["items"][0]["alias"]
+    needed = run("required_trainings", person=alias)
+    assert {"training": missing[0]["training"], "completed_on": None}.items() <= next(
+        r for r in needed if r["training"] == missing[0]["training"]
+    ).items()
+    stakes = run("shareholders_of", entity="LE-0001")
+    assert stakes and all(r["entity"] == stakes[0]["entity"] for r in stakes)
 
     out = tmp_path / "preview"
     out.mkdir()
@@ -367,7 +379,7 @@ def test_the_functions_publish_run_and_appear_in_the_skill(
     text = (out / "graph-company" / "SKILL.md").read_text()
     assert (
         "Named functions:" in text
-        and "6 named functions" not in text
+        and "8 named functions" not in text
         and "`reporting_chain(position: ref org:Position)`" in text
     )
 

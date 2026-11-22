@@ -115,3 +115,29 @@ def test_the_body_is_parsed_strictly(served: tuple[ServerApp, str]) -> None:
     facet = raw(app, token, "whoami", '{"actor": {"agent": {"id": 1.5}}}')
     assert facet.status == 200, facet.json
     assert [w["code"] for w in facet.json["warnings"]] == ["actor.facet_malformed"]
+
+
+def test_a_number_or_its_text_finds_text_that_looks_like_a_number(
+    served: tuple[ServerApp, str],
+) -> None:
+    app, token = served
+    for name, code in (("First", "2.1"), ("Second", "2.10")):
+        made = run(
+            app,
+            token,
+            "create",
+            {"type": "inv:Location", "set": {"name": name, "code": code}, **GRAPH},
+        )
+        assert made.status == 200, made.json
+    text = "MATCH (l:Location) WHERE l.code = $n RETURN l.name AS name"
+
+    def names(reply: Reply) -> list[str]:
+        assert reply.status == 200, reply.json
+        return [item["name"] for item in reply.json["data"]["items"]]
+
+    body = '{"args": {"text": "%s", "param": {"n": %s}, "graph": "example_graph"}}'
+    for given, expected in (("2.10", ["Second"]), ('"2.10"', ["Second"]), ("2.1", ["First"])):
+        assert names(raw(app, token, "query", body % (text, given))) == expected
+        # the same as the CLI form of the request
+    cli = run(app, token, "query", {"text": text, "--param": ["n=2.10"], **GRAPH})
+    assert names(cli) == ["Second"]

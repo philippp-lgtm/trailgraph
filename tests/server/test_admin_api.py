@@ -655,6 +655,83 @@ def test_render_and_pull_answer_their_files_instead_of_a_server_path(
     assert data["path"] is None and sorted(data["pulled"]) == data["files"], data
 
 
+def test_a_template_is_linted_on_the_server_like_locally(
+    installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """The recipe lint runs where the skill is checked: server-side, with the functions the
+    server's graph has, so a remote render warns exactly as a local one."""
+    template = tmp_path / "graph-example-graph"
+    shutil.copytree(FIXTURES / "skills" / "template" / "graph-example-graph", template)
+    (template / "SKILL.md").write_text(
+        (template / "SKILL.md").read_text() + "\n```sh\ngraph describe types --json\n"
+        "graph query 'MATCH (i:Item)-[:located_in]->(l:Location) WHERE l.alias = $loc"
+        " RETURN i.name, i.quantity' --param loc=LOC-0001\n"
+        "graph query 'MATCH (i:Item) WHERE i.nope = 1 RETURN i'\n```\n"
+    )
+    app = served(installation, tmp_path)
+    root = installation["tokens"]["root"]
+    functions = command(
+        app,
+        "graph/functions/publish",
+        root,
+        args={"ref": "example_graph", "dir": upload_tree(app, root, FUNCTIONS)},
+    )
+    assert functions.status == 200, functions.json
+    rendered = command(
+        app,
+        "graph/skill/render",
+        root,
+        args={
+            "ref": "example_graph",
+            "dir": upload_tree(app, root, template),
+            "--out": {"files": {}, "name": "out"},
+        },
+    )
+    assert rendered.status == 200, rendered.json
+    assert [w["code"] for w in rendered.json["warnings"]] == [
+        "admin.skill_recipe_covered",
+        "admin.skill_generic_example",
+        "admin.skill_recipe_broken",
+    ]
+
+
+def test_a_push_of_functions_through_the_api_lints_the_published_skill(
+    run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """The R6 lint of a push that publishes functions only runs on the server, against the
+    published template and the pushed functions."""
+    template = tmp_path / "graph-example-graph"
+    shutil.copytree(FIXTURES / "skills" / "template" / "graph-example-graph", template)
+    (template / "SKILL.md").write_text(
+        (template / "SKILL.md").read_text()
+        + "\n```sh\ngraph query 'MATCH (i:Item)-[:located_in]->(l:Location) WHERE l.alias = $loc"
+        " RETURN i.name, i.quantity' --param loc=LOC-0001\n```\n"
+    )
+    published = admin(run_cli, "graph", "skill", "publish", "example_graph", str(template))
+    assert published.code == 0, published.envelope
+    workspace = tmp_path / "workspace"
+    assert admin(run_cli, "graph", "pull", "example_graph", str(workspace)).code == 0
+    (workspace / "functions").mkdir()
+    shutil.copy(FUNCTIONS / "items_in_location.yaml", workspace / "functions")
+    app = served(installation, tmp_path)
+    root = installation["tokens"]["root"]
+    pushed = command(
+        app,
+        "graph/push",
+        root,
+        args={
+            "ref": "example_graph",
+            "dir": upload_tree(app, root, workspace),
+            "--dry-run": True,
+        },
+    )
+    assert pushed.status == 200, pushed.json
+    assert [w["code"] for w in pushed.json["warnings"]] == [
+        "admin.function_single_ref",
+        "admin.skill_recipe_covered",
+    ]
+
+
 def test_a_hand_edited_scope_is_found(run_cli: CliRunner, installation: dict[str, Any]) -> None:
     file = installation["root"] / "tokens" / "tokens.json"
     document = json.loads(file.read_text())
@@ -960,6 +1037,14 @@ def test_remote_graph_admin_answers_as_locally(
     assert error["code"] == "remote.unauthorized" and "GRAPH_CLI_ADMIN_TOKEN" in error["message"]
     assert scoped.returncode == 3, scoped.stdout + scoped.stderr
     assert "remote.unauthorized" in scoped.stderr and "scope app" in scoped.stderr
+    published = [
+        o
+        for o in actual
+        if isinstance(o[0], list) and o[0][:3] == ["graph", "functions", "publish"] and o[1] == 0
+    ]  # the warning of the check crosses the admin API with the answer
+    assert any(
+        w["code"] == "admin.function_single_ref" for o in published for w in o[2]["warnings"]
+    )
     assert covered(expected) == {s.path for s in all_specs() if s.remote != "local"} - {
         ("describe", "commands"),  # the same code on both sides: the client's inventory
         ("self", "update"),  # installs this program: tests/unit/catalog/test_dist.py

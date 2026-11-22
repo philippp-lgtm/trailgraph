@@ -11,11 +11,16 @@ import re
 
 from support.skills import ADMIN_SKILLS_DIR
 
+from graph_cli.kernel.error_codes import ErrorCategory
 from graph_cli.skills import graph_skill, template, tree
 from graph_cli.skills.graph_skill.description import START_SENTENCE
+from graph_cli_admin.services_admin import skill_lint
+from graph_cli_admin.services_admin.error_codes import ADMIN_CODES
 
 SKILL = (ADMIN_SKILLS_DIR / "authoring-graph-skills" / "SKILL.md").read_text()
 FLAT = " ".join(SKILL.split())  # the prose wraps
+LINT = (ADMIN_SKILLS_DIR / "authoring-graph-skills" / "references" / "recipe_lint.md").read_text()
+LINT_FLAT = " ".join(LINT.split())
 ROW = re.compile(r"^\| `(\w+)` \|", re.MULTILINE)
 
 
@@ -45,3 +50,17 @@ def test_the_skill_states_the_budgets_and_limits() -> None:
     assert f"at most {tree.MAX_DESCRIPTION - len(START_SENTENCE) - 1} characters" in FLAT
     assert f"at most {graph_skill.FEATURED_LIMIT} of them" in FLAT
     assert f"at most {graph_skill.ACTIONS_FEATURED_LIMIT} of them" in FLAT
+
+
+def test_the_skill_names_every_skill_warning() -> None:
+    codes = {spec.code: spec for spec in ADMIN_CODES}
+    for code in (
+        "admin.skill_over_budget",
+        "admin.skill_recipe_covered",
+        "admin.skill_generic_example",
+        "admin.skill_recipe_broken",
+    ):
+        assert code in codes and codes[code].category is ErrorCategory.WARNING, code
+        assert f"`{code}`" in SKILL, code
+    assert f"up to {skill_lint.MAX_LISTED} findings" in FLAT
+    assert f"at most {skill_lint.MAX_LISTED}, `details.more` counts the rest" in LINT_FLAT

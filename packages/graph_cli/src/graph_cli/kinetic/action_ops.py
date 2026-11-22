@@ -21,7 +21,7 @@ from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.changeset import OP_ACTIONS
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kinetic.action_context import CheckContext
-from graph_cli.kinetic.action_format import OpScan, is_dynamic_unlink, path_text
+from graph_cli.kinetic.action_format import EDGE_TARGET, OpScan, is_dynamic_unlink, path_text
 from graph_cli.kinetic.action_slots import SlotChecks
 from graph_cli.ontology_layer.connecting import connecting
 from graph_cli.ontology_layer.model import AttributeDef, CompiledModel
@@ -133,7 +133,8 @@ class OpChecks:
         param = self.ctx.declared_param(use)
         if param is None:
             return None
-        if param.type != "ref" or param.many != (role == "entities"):
+        spread = param.many and role == "entity" and use.field == EDGE_TARGET
+        if param.type != "ref" or (param.many != (role == "entities") and not spread):
             wanted = "a list of references" if role == "entities" else "one reference"
             self.ctx.add(
                 "action.type_mismatch",
@@ -276,6 +277,7 @@ class OpChecks:
             copy["rel"] = found
             normalized.append(copy)
             self.edge(path_text(base), found, source, target)
+            self.spread_target((*base, "target"), found)
             self.slots.value_map(
                 index,
                 edge,
@@ -287,6 +289,24 @@ class OpChecks:
             )
         if normalized:
             out["edges"] = normalized
+
+    def spread_target(self, path: tuple[str | int, ...], rel: str) -> None:
+        """A list parameter as the target of a created edge writes one edge per value; a
+        relation that allows one target per source cannot take that."""
+        use = self.ctx.uses.get(path)
+        param = None if use is None else self.ctx.declared_param(use)
+        bound = self.ctx.model.relations[rel].out
+        if param is None or not param.many or bound.max != 1:
+            return
+        self.ctx.add(
+            "action.type_mismatch",
+            path_text(path),
+            f"parameter {param.name!r} is {param.type_text}, which writes one {rel} edge per "
+            f"value; {rel} allows one target per source (out {bound.min}..1): "
+            "take one reference",
+            parameter=param.name,
+            relation=rel,
+        )
 
     def update(self, index: int, op: JsonObject) -> None:
         end = self.end(index, op, "id")

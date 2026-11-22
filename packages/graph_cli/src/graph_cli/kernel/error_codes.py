@@ -960,6 +960,12 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         False,
         "A data migration is committed but not pinned; reads use its version.",
     ),
+    ErrorSpec(
+        "query.number_for_text",
+        _C.WARNING,
+        False,
+        "A query compares a text field with a number, which never equals text.",
+    ),
     ErrorSpec("function.deprecated", _C.WARNING, False, "The function is deprecated."),
     ErrorSpec("action.deprecated", _C.WARNING, False, "The action is deprecated."),
     ErrorSpec("view.function_deprecated", _C.WARNING, False, "A view uses a deprecated function."),

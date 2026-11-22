@@ -31,6 +31,7 @@ from graph_cli.kinetic.action_format import (
     Use,
     is_dynamic_unlink,
     scan_op,
+    spread_edges,
     substitute,
 )
 from graph_cli.kinetic.params import json_value, text_value
@@ -144,7 +145,7 @@ def expand(
 
     ops: list[JsonValue] = []
     for index, template in enumerate(entry.ops):
-        instance = substitute(template, scan_op(template, index).uses, value_of)
+        instance = spread_edges(substitute(template, scan_op(template, index).uses, value_of))
         if is_dynamic_unlink(instance):
             ops.extend(_unlinks(instance, snapshot))
         else:

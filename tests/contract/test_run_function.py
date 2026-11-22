@@ -93,7 +93,7 @@ def test_a_run_equals_the_query_of_its_normalized_text(svc: ServiceEnv) -> None:
     ran, page, warnings = reader.run(
         view, "items_in_location", [("location", str(location.id))], limit=50, offset=0
     )
-    expected, expected_page, _ = reader.query(
+    expected, expected_page, *_ = reader.query(
         view,
         reader.parse_query(function.query),
         QuerySpec({"location": str(location.id)}, False, False, 50, 0),

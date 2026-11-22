@@ -34,11 +34,12 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from types import MappingProxyType
-from typing import Literal
+from typing import Final, Literal
 from uuid import UUID
 
 from graph_cli.access_control.documents import CURIE_RE, NAME_RE
 from graph_cli.kernel.actions import Action
+from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.changeset import (
     ChangeSet,
     CreateOp,
@@ -198,17 +199,61 @@ class _Resolver:
         return next((e.rel for e in revision.edges if e.edge_id == edge_id), None)
 
 
-def resolve_ref(text: str, snapshot: Snapshot) -> tuple[EntityId, tuple[WarningRecord, ...]]:
+REF_FORMS: Final = "a full id, an alias or 8-32 trailing hex digits"
+
+
+def invalid_ref(
+    text: str,
+    *,
+    argument: str | None = None,
+    lookup_for: str | None = None,
+    lookup_for_source: str | None = None,
+    of_class: str | None = None,
+) -> GraphCliError:
+    """A CLI argument that is not an entity reference (a name, say). ``details.expected`` is
+    ``entity_ref`` (the forms are in the message), which makes the hint ``graph lookup`` for the
+    text. ``lookup_for`` (a relation the entity is the target of), ``lookup_for_source`` (a
+    relation it is the source of) and ``of_class`` say which slot the entity is for, so the
+    lookup keeps the candidates that fit. No name is resolved here."""
+    details: dict[str, JsonValue] = {"actual": text, "expected": "entity_ref"}
+    if argument is not None:
+        details["argument"] = argument
+    if lookup_for is not None:
+        details["for"] = lookup_for
+    if lookup_for_source is not None:
+        details["for_source"] = lookup_for_source
+    if of_class is not None:
+        details["class"] = of_class
+    message = (
+        f"{argument}: expected {REF_FORMS}"
+        if argument is not None
+        else f"not an entity reference: {text!r}; expected {REF_FORMS}"
+    )
+    return GraphCliError("usage.invalid_argument", message, details=details)
+
+
+def resolve_ref(
+    text: str,
+    snapshot: Snapshot,
+    *,
+    argument: str | None = None,
+    lookup_for: str | None = None,
+    lookup_for_source: str | None = None,
+    of_class: str | None = None,
+) -> tuple[EntityId, tuple[WarningRecord, ...]]:
     """One reference from a CLI argument: full id, alias or abbreviation (B1.9).
 
-    A full id is returned as given (the caller checks existence where it matters).
+    A full id is returned as given (the caller checks existence where it matters). Anything
+    else is ``usage.invalid_argument`` (``invalid_ref``): a name is not resolved.
     """
     ref = parse_entity_ref(text, allow_abbrev=True)
     if ref is None:
-        raise GraphCliError(
-            "usage.invalid_argument",
-            f"not an entity reference: {text!r}",
-            details={"expected": "a full id, an alias or 8-32 trailing hex digits", "actual": text},
+        raise invalid_ref(
+            text,
+            argument=argument,
+            lookup_for=lookup_for,
+            lookup_for_source=lookup_for_source,
+            of_class=of_class,
         )
     resolver = _Resolver(snapshot, NO_BINDINGS, True, {})
     found = resolver.ref(ref, "", subject=False)
@@ -236,7 +281,7 @@ def entity_params(
     ids: list[Value] = []
     for text in texts:
         assert isinstance(text, str)
-        entity, found = resolve_ref(text, snapshot)
+        entity, found = resolve_ref(text, snapshot)  # ``bind`` refused any name before
         warnings += found
         revision = snapshot.get(entity)
         if revision is None:

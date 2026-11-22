@@ -519,6 +519,70 @@ def test_a_precondition_on_a_list_or_an_unknown_parameter_is_refused() -> None:
     assert codes(sources) == ["action.precondition_on_invalid"]
 
 
+# A list parameter as the target of a created edge
+
+
+POSITIONS = param("positions", "type: ref; class: org:Position; many: true")
+UNITS = param("units", "type: ref; class: org:OrgUnit; many: true")
+UNIT = param("unit", "type: ref; class: org:OrgUnit")
+
+
+def test_a_list_parameter_may_be_the_target_of_a_created_edge() -> None:
+    ops = (
+        "  - op: create\n    type: ppl:Employee\n    attrs: {name: Mara}\n"
+        "    edges:\n      - {rel: org:holds, target: $positions}\n"
+    )
+    document, problems = compile_actions(probe(ops, POSITIONS), MODEL)
+    assert problems == []
+    (edge,) = document["actions"][0]["ops"][0]["edges"]
+    assert edge == {"rel": "org:holds", "target": "$positions"}  # the template keeps the list
+    # one reference still works, and a mix of both on one op
+    one = "    edges:\n      - {rel: org:holds, target: $position}\n"
+    assert codes(probe(ops.split("    edges")[0] + one, POSITION)) == []
+    both = (
+        "    edges:\n      - {rel: org:holds, target: $positions}\n"
+        "      - {rel: org:holds, target: $position}\n"
+    )
+    assert codes(probe(ops.split("    edges")[0] + both, POSITIONS + POSITION)) == []
+
+
+def test_a_list_target_is_checked_against_the_range_like_one_reference() -> None:
+    ops = (
+        "  - op: create\n    type: ppl:Employee\n    attrs: {name: Mara}\n"
+        "    edges:\n      - {rel: org:holds, target: $units}\n"
+    )
+    assert codes(probe(ops, UNITS)) == ["action.op_impossible"]
+
+
+def test_a_relation_with_one_target_refuses_a_list_parameter() -> None:
+    ops = (
+        "  - op: create\n    type: org:Position\n    attrs: {title: Lead}\n"
+        "    edges:\n      - {rel: org:in_unit, target: $units}\n"
+    )
+    (problem,) = compile_actions(probe(ops, UNITS), MODEL)[1]
+    assert problem.code == "action.type_mismatch"
+    assert problem.path == "ops[0].edges[0].target"
+    assert problem.details["parameter"] == "units"
+    assert "org:in_unit allows one target per source (out 1..1)" in problem.message
+    one = "    edges:\n      - {rel: org:in_unit, target: $unit}\n"
+    assert codes(probe(ops.split("    edges")[0] + one, UNIT)) == []
+
+
+def test_a_list_parameter_stays_refused_at_the_other_entity_positions() -> None:
+    link = "  - {op: link, id: $person, rel: org:holds, target: $positions}\n"
+    (problem,) = compile_actions(probe(link, PERSON + POSITIONS), MODEL)[1]
+    assert problem.code == "action.type_mismatch"
+    assert "one reference" in problem.message
+    update = "  - {op: update, id: $positions, set: {title: x}}\n"
+    assert codes(probe(update, POSITIONS)) == ["action.type_mismatch"]
+    optional = param("position", "type: ref; class: org:Position; required: false")
+    ops = (
+        "  - op: create\n    type: ppl:Employee\n    attrs: {name: Mara}\n"
+        "    edges:\n      - {rel: org:holds, target: $position}\n"
+    )
+    assert codes(probe(ops, optional)) == ["action.optional_position"]  # still refused
+
+
 # Limits
 
 

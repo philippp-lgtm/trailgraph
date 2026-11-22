@@ -34,7 +34,7 @@ def test_a_graph_with_everything_allowed_has_no_not_allowed_count(env: ServiceEn
     assert found["counts"] == {
         "modules": found["counts"]["modules"],  # type: ignore[index]
         "types": found["counts"]["types"],  # type: ignore[index]
-        "functions": 7,
+        "functions": 9,
         "actions": 4,
         "views": 5,  # the deprecated legacy view is not counted, as in describe views
     }

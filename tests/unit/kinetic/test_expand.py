@@ -254,6 +254,48 @@ def test_a_create_template_drops_an_absent_attribute_and_keeps_the_rest() -> Non
     assert dict(due.ops[0].attrs) == {"title": "Prepare the checklist", "due_on": "2026-04-01"}
 
 
+SPREAD = """\
+schema: graph_cli.action/1
+name: onboard_employee
+module: people
+summary: Add an employee who holds several positions.
+use_when: Testing.
+params:
+  name:
+    type: string
+    summary: A name.
+  positions:
+    type: ref
+    class: org:Position
+    many: true
+    summary: The positions the person holds.
+ops:
+  - op: create
+    type: ppl:Employee
+    attrs: {name: $name}
+    edges:
+      - {rel: org:holds, target: $positions, qualifiers: {since: "2026-03-01"}}
+examples:
+  - request: A request.
+"""
+
+
+def test_a_list_target_expands_to_one_edge_per_value_in_order_without_repeats() -> None:
+    document, problems = compile_actions({"onboard_employee.yaml": SPREAD}, MODEL)
+    assert [p.to_json() for p in problems] == []
+    (entry,) = load_action_entries(document)
+    given = [entity("zed"), entity("amy"), entity("zed"), entity("bo")]
+    cs = expand(entry, {"name": "Mara", "positions": given}, DictSnapshot())
+    (op,) = cs.ops
+    assert isinstance(op, CreateOp)
+    assert [str(e.target) for e in op.edges] == [entity("zed"), entity("amy"), entity("bo")]
+    assert {(e.rel, dict(e.qualifiers)["since"]) for e in op.edges} == {("org:holds", "2026-03-01")}
+    one = expand(entry, {"name": "Mara", "positions": [entity("amy")]}, DictSnapshot())
+    assert [str(e.target) for e in one.ops[0].edges] == [entity("amy")]  # type: ignore[attr-defined]
+    none = expand(entry, {"name": "Mara", "positions": []}, DictSnapshot())
+    assert none.ops[0].edges == ()  # type: ignore[attr-defined]
+
+
 def test_a_missing_required_value_is_a_caller_bug() -> None:
     error = refusal(
         lambda: expand(action("assign_position"), {"person": entity("a")}, DictSnapshot())

@@ -84,7 +84,8 @@ The declaration keys and the types are those of the function files
   element of a list, an alias, a precondition's `on`) it is refused. A
   dropped entry never drops a whole op: an action has no conditional ops.
 - A `ref` stands only where an entity reference goes, never as a value. A
-  `many` `ref` stands for a whole `targets` list and nowhere else.
+  `many` `ref` stands for a whole `targets` list and, in a `create`, for
+  the `target` of an edge (below); nowhere else.
 - A `default` fits the declared type; a `ref` has no default.
 - Examples carry no parameter values at all.
 
@@ -120,6 +121,43 @@ parameter fits `string`, `text` and `iri` fields; an `enum` parameter
 the text form of the value. A `$` string anywhere else (a type, a relation,
 an attribute name, a state, a key) is refused, and there is no escape for a
 literal text that starts with `$`.
+
+**A list of targets.** In a `create`, `edges[].target` may be a `many`
+`ref` parameter: the edge is written once per value, with the same `rel` and
+`qualifiers`, in the order given and without repeats; an empty list writes
+no edge. Publishing refuses it (`action.type_mismatch`) for a relation that
+allows one target per source (`out` maximum 1: give a single `ref`), and
+`link` and `unlink` take one `target` only.
+
+```yaml
+schema: graph_cli.action/1
+name: onboard_employee
+module: people
+summary: Add an employee who holds several positions from a date.
+use_when: >-
+  A person joins and takes over positions at once; for one position added to an
+  existing employee use assign_position.
+params:
+  name:
+    type: string
+    summary: The name of the employee.
+  number:
+    type: string
+    summary: The employee number.
+  positions:
+    type: ref
+    class: org:Position
+    many: true
+    summary: The positions the employee holds.
+ops:
+  - op: create
+    type: ppl:Employee
+    attrs: {name: $name, employee_number: $number, status: onboarding}
+    edges:
+      - {rel: org:holds, target: $positions, qualifiers: {since: "2026-03-01"}}
+examples:
+  - request: Add the new recruiter, who takes over two open positions.
+```
 
 **Refused keys.** `expect_rev`, `target_rev` and `edge_id` depend on the
 state when the action runs; `reason`, `idempotency_key`, `expect_seq` and

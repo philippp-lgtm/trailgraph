@@ -20,6 +20,7 @@ from graph_cli.kinetic.action_format import (
     Use,
     is_dynamic_unlink,
     scan_op,
+    spread_edges,
     substitute,
 )
 from graph_cli.kinetic.bind import placeholder
@@ -53,7 +54,7 @@ class TemplateCheck:
         built: list[JsonValue] = []
         for index, op in enumerate(ops):
             scan = scan_op(op, index)
-            instance = substitute(op, scan.uses, value_of)
+            instance = spread_edges(substitute(op, scan.uses, value_of))
             if is_dynamic_unlink(instance):
                 instance = {"op": "unlink", "id": instance["id"], "edge_id": _FAKE_EDGE}
             built.append(instance)

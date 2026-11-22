@@ -38,7 +38,7 @@ def current_entity(
 ) -> tuple[EntityId, Revision, list[WarningRecord], list[str], list[str]]:
     """The entity ``ref`` names and its current revision, the warnings (alias notices, and
     superseded or retracted) and the ids of the entities that superseded and retracted it."""
-    entity, ref_warnings = resolve_ref(ref, view.snapshot)
+    entity, ref_warnings = resolve_ref(ref, view.snapshot, argument="ref")
     current = view.snapshot.get(entity)
     if current is None:
         raise GraphCliError(
@@ -152,7 +152,7 @@ class ReadEntities(ReadCatalogs):
         full: bool = False,
     ) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
         shown = check_fields(view.model, (), fields)
-        start, warnings = resolve_ref(ref, view.snapshot)
+        start, warnings = resolve_ref(ref, view.snapshot, argument="ref")
         if view.snapshot.get(start) is None:
             raise GraphCliError(
                 "entity.not_found", f"no entity {ref}", details={"ref": ref, "id": str(start)}

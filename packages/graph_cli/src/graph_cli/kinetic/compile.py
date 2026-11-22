@@ -23,9 +23,9 @@ invariant, K5).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
-from typing import Final, Literal
+from collections import Counter
+from collections.abc import Callable, Mapping, Sequence
+from typing import Final
 
 from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_document
 from graph_cli.kernel.errors import GraphCliError
@@ -43,20 +43,19 @@ from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.vocabulary import BUILTIN_MODULES, SYSTEM_FIELDS
 from graph_cli.query.cypher import parameters, render
 from graph_cli.query.cypher.ast import (
-    Binary,
-    Expr,
     HasLabels,
-    MapExpr,
     NodePattern,
     Parameter,
     PatternPart,
-    Property,
     Query,
     RelPattern,
-    Variable,
+    Return,
+    With,
 )
+from graph_cli.query.cypher.compare import Comparison, comparisons
 from graph_cli.query.cypher.parser import parse
 from graph_cli.query.cypher.resolve import SYSTEM_BASES, FieldUse, ResolvedQuery, VarInfo, resolve
+from graph_cli.query.cypher.text_params import TEXT_BASES
 from graph_cli.query.cypher.values import Value
 from graph_cli.query.cypher.walk import clause_expressions, clause_patterns
 
@@ -74,10 +73,7 @@ FITS: Final[dict[str, frozenset[str]]] = {
     "datetime": frozenset({"datetime"}),
     "ref": frozenset({"string"}),
 }
-_TEXT_BASES: Final = frozenset({"string", "text", "iri"})
 REF_FIELDS: Final = frozenset({"id", "alias"})
-_COMPARISONS: Final = frozenset({"=", "<>", "<", "<=", ">", ">="})
-_TEXT_OPS: Final = frozenset({"starts_with", "ends_with", "contains"})
 
 
 def compile_catalog(
@@ -175,6 +171,54 @@ def resolve_stored(text: str, defn: FunctionDef, model: CompiledModel) -> Resolv
     return _resolve_with_placeholders(parsed, defn, model, paging)
 
 
+def single_refs(
+    document: JsonObject, model: CompiledModel, exempt: frozenset[str] = frozenset()
+) -> list[tuple[str, str, str]]:
+    """The single-value ``ref`` parameters of the active functions of a compiled catalog that a
+    list would serve as well: ``(function, parameter, class)`` in catalog order.
+
+    A parameter qualifies when it is a ``ref`` without ``many`` and every use of it in the
+    stored query is an ``=`` comparison with a field (or an inline map entry): the function
+    can then take a list and use ``IN``, and answers several entities in one run. A parameter
+    that is also returned, ordered against or compared otherwise is left alone. Skipped are
+    functions in ``exempt`` (those a view runs, which hands them one entity), deprecated
+    functions, a function with more than one single-value ``ref`` (a question about a pair:
+    lists would mean a cross product), a function whose stored query has a ``LIMIT`` (a
+    pick per entity cannot be batched) and a function whose stored query does not resolve
+    against ``model`` (checking the catalog reports that).
+    """
+    found: list[tuple[str, str, str]] = []
+    for item in req_list(document, "functions"):
+        entry = as_object(item, "functions")
+        defn = FunctionDef.from_json(entry, req_str(entry, "source_query"))
+        refs = [p for p in defn.params if p.type == "ref" and not p.many]
+        if defn.status != "active" or defn.name in exempt or len(refs) != 1:
+            continue
+        try:
+            resolved = resolve_stored(req_str(entry, "query"), defn, model)
+        except GraphCliError:
+            continue
+        if any(
+            isinstance(c, With | Return) and c.projection.limit is not None
+            for c in resolved.query.clauses
+        ):
+            continue
+        compared: dict[str, list[Comparison]] = {}
+        for use in comparisons(resolved.query):
+            if isinstance(use.value, Parameter):
+                compared.setdefault(use.value.name, []).append(use)
+        occurrences = Counter(use.name for use in parameters(resolved.query))
+        for param in refs:
+            mine = compared.get(param.name, [])
+            if (
+                mine
+                and len(mine) == occurrences[param.name]
+                and all(c.shape == "value" and c.op == "=" for c in mine)
+            ):
+                found.append((defn.name, param.name, param.of_class or ""))
+    return found
+
+
 def _check_stored(defn: FunctionDef, text: str, model: CompiledModel) -> Problem | None:
     try:
         _resolve_with_placeholders(parse(text), defn, model)
@@ -191,17 +235,6 @@ def _check_stored(defn: FunctionDef, text: str, model: CompiledModel) -> Problem
 
 def _normalized(resolved: ResolvedQuery) -> str:
     return "\n".join(render.clause(c) for c in resolved.query.clauses)
-
-
-@dataclass(frozen=True, slots=True)
-class _Compare:
-    """A parameter compared with a field: ``field = $p`` and the other forms."""
-
-    parameter: Parameter
-    variable: str | None
-    field: str
-    shape: Literal["value", "in_param", "in_field", "text"]
-    node: NodePattern | None  # the pattern node the field belongs to, for an anonymous one
 
 
 class _Compile:
@@ -401,8 +434,10 @@ class _Compile:
 
     def type_fit(self, resolved: ResolvedQuery) -> None:
         fields = {(f.variable, f.field): f for f in resolved.fields}
-        for use in _comparisons(resolved.query):
-            param = self.declared.get(use.parameter.name)
+        for use in comparisons(resolved.query):
+            if not isinstance(use.value, Parameter):
+                continue
+            param = self.declared.get(use.value.name)
             if param is None:
                 continue
             used = fields.get((use.variable, use.field)) if use.variable is not None else None
@@ -420,8 +455,8 @@ class _Compile:
                     parameter=param.name,
                     field=use.field,
                     datatypes=list(used.datatypes),
-                    line=use.parameter.pos.line,
-                    column=use.parameter.pos.column,
+                    line=use.value.pos.line,
+                    column=use.value.pos.column,
                 )
 
     def misfit(self, param: ParamDef, shape: str, used: FieldUse) -> str | None:
@@ -438,7 +473,7 @@ class _Compile:
         elif shape == "text":
             if param.many or param.type != "string":
                 return "text matching takes a string parameter"
-            if used.many or not set(used.datatypes) & _TEXT_BASES:
+            if used.many or not set(used.datatypes) & TEXT_BASES:
                 return f"the field is {_describe_field(used)}, not text"
             return None
         elif param.many != used.many:
@@ -646,48 +681,3 @@ def _end_types(node: NodePattern, classes: frozenset[str] | None) -> list[JsonVa
 def _end_name(node: NodePattern, classes: frozenset[str] | None) -> str:
     names = _end_types(node, classes)
     return "|".join(str(n) for n in names) if names else "any type"
-
-
-def _comparisons(query: Query) -> Iterator[_Compare]:
-    for clause in query.clauses:
-        for e in clause_expressions(clause):
-            if isinstance(e, Binary):
-                yield from _binary(e)
-        for part in clause_patterns(clause):
-            for node in part.nodes:
-                yield from _property_map(node.variable, node.properties, node)
-            for rel in part.rels:
-                yield from _property_map(rel.variable, rel.properties, None)
-
-
-def _field_of(e: Expr) -> tuple[str, str] | None:
-    if isinstance(e, Property) and isinstance(e.subject, Variable):
-        return e.subject.name, e.key
-    return None
-
-
-def _binary(e: Binary) -> Iterator[_Compare]:
-    if e.op in _COMPARISONS:
-        for side, other in ((e.left, e.right), (e.right, e.left)):
-            target = _field_of(side)
-            if target is not None and isinstance(other, Parameter):
-                yield _Compare(other, *target, "value", None)
-    elif e.op == "in":
-        target = _field_of(e.left)
-        if target is not None and isinstance(e.right, Parameter):
-            yield _Compare(e.right, *target, "in_param", None)
-        target = _field_of(e.right)
-        if target is not None and isinstance(e.left, Parameter):
-            yield _Compare(e.left, *target, "in_field", None)
-    elif e.op in _TEXT_OPS:
-        target = _field_of(e.left)
-        if target is not None and isinstance(e.right, Parameter):
-            yield _Compare(e.right, *target, "text", None)
-
-
-def _property_map(
-    variable: str | None, properties: MapExpr | None, node: NodePattern | None
-) -> Iterator[_Compare]:
-    for key, value in () if properties is None else properties.entries:
-        if isinstance(value, Parameter):
-            yield _Compare(value, variable, key, "value", node)

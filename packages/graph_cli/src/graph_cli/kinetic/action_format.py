@@ -74,6 +74,7 @@ PLACEHOLDER_RE: Final = re.compile(r"^\$[a-z][a-z0-9_]{0,31}$")
 PRECONDITION_ID_RE: Final = PARAM_RE
 MAX_PRECONDITION_SUMMARY: Final = 200
 DIRECTIONS: Final = ("out", "in")
+EDGE_TARGET: Final = "edges.target"  # ``Use.field`` of the target of an edge a create writes
 
 _TOP_KEYS: Final = (
     "schema",
@@ -523,7 +524,7 @@ class _Scan:
             rel = edge.get("rel")
             self.rel = rel if isinstance(rel, str) else None
             if "target" in edge:
-                self._entity(edge["target"], (*where, "target"), "edges.target")
+                self._entity(edge["target"], (*where, "target"), EDGE_TARGET)
             self.values("qualifiers", rel=self.rel, container=edge, base=where)
             self.rel = None
 
@@ -605,6 +606,27 @@ def substitute(
         else:
             raise GraphCliError("internal.error", f"{path_text(use.path)} is not a position")
     return out
+
+
+def spread_edges(instance: JsonObject) -> JsonObject:
+    """The op with every ``edges[].target`` that holds a list (a ``many`` parameter) replaced by
+    one edge per value: same ``rel`` and ``qualifiers``, values in order, each once. Only a
+    ``create`` has such edges; any other op, or one without a list target, is returned as is.
+    An empty list writes no edge."""
+    edges = instance.get("edges")
+    if instance.get("op") != "create" or not isinstance(edges, list):
+        return instance
+    if not any(isinstance(e, dict) and isinstance(e.get("target"), list) for e in edges):
+        return instance
+    spread: list[JsonValue] = []
+    for edge in edges:
+        target = edge.get("target") if isinstance(edge, dict) else None
+        if not isinstance(edge, dict) or not isinstance(target, list):
+            spread.append(edge)
+            continue
+        for value in dict.fromkeys(str(v) for v in target):
+            spread.append({**copy.deepcopy(edge), "target": value})
+    return {**instance, "edges": spread}
 
 
 # ---- the parser ------------------------------------------------------------------------

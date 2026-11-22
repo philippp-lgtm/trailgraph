@@ -28,7 +28,10 @@ sends agents to ``graph start``. A template whose rendered ``SKILL.md`` exceeds 
 budget of its graph, or whose curated text exceeds its own budget
 (``graph_cli.skills.graph_skill.measure``), gets the warning ``admin.skill_over_budget`` from
 ``render``, ``publish`` and ``graph push``, with the sizes and the largest blocks; it is not
-refused.
+refused. The same commands run the recipe lint on the curated text (``skill_lint``):
+``admin.skill_recipe_covered``, ``admin.skill_generic_example`` and ``admin.skill_recipe_broken``,
+advisory too. A push that publishes functions but neither releases nor publishes the skill lints
+the published template against the pushed functions (``lint_files``).
 
 ``render`` writes what ``graph skills install`` would install (without the
 marker) into a preview directory; read-only for the data root, like
@@ -58,6 +61,7 @@ from graph_cli.skills.graph_skill.description import start_sentence_problem
 from graph_cli.skills.names import check_names
 from graph_cli.skills.template import kind_of, parse_template
 from graph_cli.skills.tree import Problem, read_tree, validate, write_tree
+from graph_cli_admin.services_admin import skill_lint
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import pinned_model
 from graph_cli_admin.services_admin.release import check_state
@@ -78,16 +82,21 @@ class Checked:
     """A source directory judged against a graph: its kind, the files the slot keeps, what
     ``graph skills install`` would write from them, and the problems of the curated text
     (``description``, ``term``, ``command``, ``alias``; a template only) and the size of its
-    ``SKILL.md`` (a template only)."""
+    ``SKILL.md`` (a template only), and the lint warnings of the curated text (a template only)."""
 
     kind: str
     files: dict[str, bytes]
     rendered: dict[str, bytes]
     problems: list[Problem] = field(default_factory=list)
     size: Size | None = None
+    lint: tuple[WarningRecord, ...] = ()
 
     def warnings(self, entry: GraphEntry, name: str) -> tuple[WarningRecord, ...]:
-        """``admin.skill_over_budget`` when the rendered skill is over a budget."""
+        """``admin.skill_over_budget`` when the rendered skill is over a budget, then the
+        lint warnings."""
+        return (*self._budget(entry, name), *self.lint)
+
+    def _budget(self, entry: GraphEntry, name: str) -> tuple[WarningRecord, ...]:
         size = self.size
         if size is None or not size.over:
             return ()
@@ -158,13 +167,8 @@ def check_files(
     if views is None:
         shown = ctx.catalog.read_views(entry.id)
         views = shown.compiled if shown is not None and shown.count else None
-    described = describe_model(
-        entry,
-        model if model is not None else pinned_model(ctx.catalog, entry),
-        functions,
-        actions,
-        views,
-    )
+    compiled = model if model is not None else pinned_model(ctx.catalog, entry)
+    described = describe_model(entry, compiled, functions, actions, views)
     graph = graph_block(entry)
     rendered, render_problems = render_checked(
         files, described, graph, name=name, directory=directory
@@ -183,7 +187,32 @@ def check_files(
             *check_names(template, described, graph, inventory),
         ],
         measure(template, described, graph),
+        skill_lint.lint(entry, template, described, compiled, functions, inventory),
     )
+
+
+def lint_files(
+    entry: GraphEntry,
+    files: dict[str, bytes],
+    *,
+    model: CompiledModel,
+    functions: JsonObject | None,
+    actions: JsonObject | None,
+    views: JsonObject | None,
+    inventory: Mapping[str, JsonValue],
+) -> tuple[WarningRecord, ...]:
+    """The lint warnings of an already published template against catalogs that are about to
+    change (a push of functions alone); nothing for a static skill or one that does not parse."""
+    if kind_of(files) != GENERATED:
+        return ()
+    template, problems = parse_template(files)
+    if template is None or problems:
+        return ()
+    try:
+        described = describe_model(entry, model, functions, actions, views)
+    except Exception:  # advisory: a catalog that does not describe leaves the lint out
+        return ()
+    return skill_lint.lint(entry, template, described, model, functions, inventory)
 
 
 def current_slot(session: MaintenanceSession) -> SkillSlot | None:

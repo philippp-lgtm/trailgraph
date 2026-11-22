@@ -166,7 +166,12 @@ the command keeps the last value.
 ## References, filters and writes
 
 References in arguments are full ids, aliases or 8-32 trailing hex digits of
-an id; change set documents allow full ids, aliases and `@local` names only.
+an id; change set documents allow full ids, aliases and `@local` names only. A
+name given where a reference goes is `usage.invalid_argument` with
+`details.expected` `entity_ref` (and `argument`, `actual`, and `for`,
+`for_source` or `class` when the slot is known): nothing is resolved, and the
+hint is `graph lookup` for the text, with `--for` or `--for-source` the
+relation it fills (a link or `--rel` target, a `--in-rel` source) or `--type`.
 Types and relations in read arguments (`find`, `lookup`, `search`,
 `neighbors`, `describe`) are CURIEs or, as in `graph query`, the local name
 when exactly one CURIE has it (`Topic` for `ex:Topic`); an ambiguous local
@@ -885,6 +890,18 @@ Semantics follow openCypher: three-valued null logic, a missing property is
 null, comparisons across types are null, a relationship is used once per
 `MATCH`. Where graph_cli differs:
 
+- A `--param` value that parses as JSON is bound as JSON, with one
+  exception: a number (or a JSON list of numbers) that the query compares
+  only with text fields is bound as the text as written, so `--param n=2.10`
+  matches the text `"2.10"` and not the number 2.1. That holds when every
+  use of the parameter is `=`, `<>`, `IN`, `STARTS WITH`, `ENDS WITH`,
+  `CONTAINS` or an inline map against fields whose base type is text
+  (string, text, IRI, enum, lifecycle state); any other use, such as
+  `RETURN $n`, `<` or a numeric field, keeps the number. Fields of
+  anonymous nodes and relationships are not looked up. `--explain` shows the
+  bound text. A number written in the query is never rewritten: comparing it
+  with a text-only field warns `query.number_for_text`, naming the variable,
+  field and literal; quote the literal.
 - Numbers with a fraction are exact decimals, and so are decimal
   attributes; JSON output shows them as strings, as `get` shows decimal
   attributes. There is no NaN: a division by zero is `query.invalid_value`.
@@ -1050,6 +1067,8 @@ Run one with `do NAME --param name=value ...`, with `--dry-run` first:
   `action.parameter_type`). A missing, unknown or malformed parameter is a
   usage error (exit 2: `action.parameter_missing`,
   `action.parameter_unknown`, `action.parameter_invalid`).
+- A list parameter may stand for the target of an edge a `create` writes
+  (one edge per value); the rules are in the format reference linked below.
 - The preconditions are checked on the entities' current state under the
   graph lock, right before the write, so nothing can change between check
   and commit. A failing one refuses the action with

@@ -25,6 +25,11 @@ the catalog: publishing functions that would break a view (a function or a bound
 gone, a parameter of another type) is refused with ``admin.views_broken``; fix the view first
 or push both together.
 
+Publishing warns, never refuses, with ``admin.function_single_ref`` (one record per publish) about
+active functions whose single-value ``ref`` is only compared with ``=``: a ``many: true`` ref and
+``IN`` would answer several entities per run. Functions that a published view runs are exempt (a
+view hands them one entity). The warning also covers ``graph push`` (``single_ref_warnings``).
+
 ``show`` is read-only for the data root, like ``graph show``: no lock, no
 event, authorized ``maint.graph_configure``.
 """
@@ -32,14 +37,16 @@ event, authorized ``maint.graph_configure``.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
-from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot
 from graph_cli.kernel.ports.storage import MaintenanceSession
-from graph_cli.kinetic.compile import compile_catalog
+from graph_cli.kinetic.compile import compile_catalog, single_refs
 from graph_cli.kinetic.entries import load_entries
 from graph_cli.kinetic.format import FILE_SUFFIX, Problem
+from graph_cli.kinetic.view_entries import load_view_entries
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli_admin.services_admin import authored_views, kinetic_slots
 from graph_cli_admin.services_admin.catalog_follow import ProblemHints
@@ -48,6 +55,7 @@ from graph_cli_admin.services_admin.kinetic_slots import Checked, Published
 from graph_cli_admin.services_admin.release import FUNCTIONS_DAMAGED
 
 DAMAGED = FUNCTIONS_DAMAGED
+MAX_LISTED: Final = 20
 
 __all__ = [
     "DAMAGED",
@@ -59,6 +67,7 @@ __all__ = [
     "read_dir",
     "refuse",
     "show",
+    "single_ref_warnings",
     "slot_of",
     "write",
 ]
@@ -132,6 +141,39 @@ def published_views(ctx: AdminContext, entry: GraphEntry) -> KineticSlot | None:
         return None
 
 
+def single_ref_warnings(
+    entry: GraphEntry, model: CompiledModel, slot: KineticSlot, views: KineticSlot | None
+) -> tuple[WarningRecord, ...]:
+    """``admin.function_single_ref`` for the function catalog ``slot`` judged against ``model``:
+    one record naming up to ``MAX_LISTED`` of the functions (``function``, ``parameter``,
+    ``class``) and how many more there are. ``views`` is the view catalog the graph will have;
+    the functions its views run are left out."""
+    exempt = (
+        frozenset(f for view in load_view_entries(views.compiled) for f in view.functions)
+        if views is not None
+        else frozenset()
+    )
+    found = single_refs(slot.compiled, model, exempt)
+    if not found:
+        return ()
+    listed: list[JsonValue] = [
+        {"function": function, "parameter": parameter, "class": cls}
+        for function, parameter, cls in found[:MAX_LISTED]
+    ]
+    first = ", ".join(f"{function}({parameter})" for function, parameter, _ in found[:3])
+    more = " and more" if len(found) > 3 else ""
+    return (
+        WarningRecord(
+            "admin.function_single_ref",
+            f"{len(found)} active function(s) of graph {entry.name} take one reference per run "
+            f"and only compare it with =: {first}{more}. A parameter with many: true and "
+            "IN answers several entities in one call; `graph-admin usage report` shows which "
+            "functions agents run often",
+            {"graph": entry.name, "functions": listed, "more": max(len(found) - MAX_LISTED, 0)},
+        ),
+    )
+
+
 def publish(
     ctx: AdminContext, *, graph_ref: str, source: Path, reason: str | None, dry_run: bool
 ) -> Published:
@@ -152,6 +194,9 @@ def publish(
         source=source,
         reason=reason,
         dry_run=dry_run,
+        warn=lambda entry, model, slot: single_ref_warnings(
+            entry, model, slot, published_views(ctx, entry)
+        ),
     )
 
 

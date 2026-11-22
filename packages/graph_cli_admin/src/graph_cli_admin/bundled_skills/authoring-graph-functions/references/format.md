@@ -121,6 +121,17 @@ push) and reports all problems together as `admin.functions_invalid`. The
 | the namespace | `function.name_taken` (the name is a published action of the graph; functions and actions share one namespace) |
 | size | `function.query_too_long` (2,000 characters), `function.too_many_functions` (1,000 per graph) |
 
+Warned, not refused: `admin.function_single_ref`, one record per publish (also on a dry run, when
+nothing changes and in a push that publishes functions). It lists, up to 20, the active functions
+(`details.functions`: `function`, `parameter`, `class`; `details.more` counts the rest) with a
+single-value `ref` parameter that the stored query only compares with `=` or an inline map entry
+(a parameter that is also returned, ordered or compared another way is left out). A `many: true`
+parameter and `IN` would serve a batch in one run. Left out: deprecated functions, the functions
+that a published view runs (`touches.functions` of the view catalog; of the pushed one in a push,
+a view hands them one entity), functions with more than one single-value `ref` (a question about
+a pair; lists would mean a cross product) and functions whose query has a `LIMIT` (a pick per
+entity cannot be batched). `graph-admin usage report` shows which functions agents run often.
+
 Not checked: enum literals and `labels()`/`type()` string literals inside
 the query text; a mistake there returns no rows instead of an error.
 

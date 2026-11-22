@@ -122,6 +122,28 @@ def test_link_and_unlink(run_cli: CliRunner, root: Path, roles: Roles, factory: 
     assert app(run_cli, "unlink", a, env=ENV).code == 2
 
 
+def test_a_name_as_the_target_of_a_link_hints_at_lookup_for_the_relation(
+    run_cli: CliRunner, root: Path, roles: Roles, factory: OpsFactory
+) -> None:
+    rel = roles.term("acyclic_relation")
+    cls = factory.concrete(factory.model.relations[rel].domain[0])
+    a = cli_create(run_cli, factory, cls, "a")["a"]
+    named = app(run_cli, "link", a, rel, "Some Name", env=ENV)
+    assert (named.code, named.error["code"]) == (2, "usage.invalid_argument")
+    assert named.error["details"] == {
+        "argument": "target",
+        "actual": "Some Name",
+        "expected": "entity_ref",
+        "for": rel,
+    }
+    assert named.error["hint"] == f"graph lookup 'Some Name' --json --for {rel}"
+    edge = app(run_cli, "create", cls, "--edge", f"{rel}=Some Name", "--dry-run", env=ENV)
+    assert edge.error["details"]["argument"] == "--edge"
+    assert edge.error["hint"] == f"graph lookup 'Some Name' --json --for {rel}"
+    subject = app(run_cli, "link", "Some Name", rel, a, env=ENV)  # the subject has no relation slot
+    assert subject.error["hint"] == "graph lookup 'Some Name' --json"
+
+
 def _manifest(root: Path) -> Path:
     (graph_dir,) = list((root / "graphs").iterdir())
     return graph_dir / "manifest.toml"

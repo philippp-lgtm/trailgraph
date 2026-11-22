@@ -10,7 +10,7 @@ from support.snapshots import DictSnapshot, edge, eid, revision
 from graph_cli.kernel.changeset import ChangeSet, EdgeSpec, LinkOp, UpdateOp, parse_changeset
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import AbbrevRef, EntityId, TermRef
-from graph_cli.services.refs import resolve_refs
+from graph_cli.services.refs import invalid_ref, resolve_ref, resolve_refs
 
 ROOM = revision("room", "ex:Place", {"name": "R"}, alias="LOC-0002")
 DESK = revision("desk", "ex:Thing", {"name": "D"}, alias="ITEM-0001")
@@ -268,3 +268,33 @@ def test_terms_outside_the_resource_grammar_are_left_out() -> None:
         )
     )
     assert resolve_refs(bad, TERM_SNAP).fine == (("write.update", "ex:Thing", "attr", "good"),)
+
+
+def test_a_name_as_a_cli_reference_is_refused_with_its_slot() -> None:
+    with pytest.raises(GraphCliError) as info:
+        resolve_ref("Some Name", SNAP)
+    assert info.value.code == "usage.invalid_argument"
+    assert info.value.message.startswith("not an entity reference: 'Some Name'; expected a full id")
+    assert info.value.details == {"actual": "Some Name", "expected": "entity_ref"}
+    with pytest.raises(GraphCliError) as slot:
+        resolve_ref(
+            "Some Name",
+            SNAP,
+            argument="ref",
+            lookup_for="fn.param",
+            lookup_for_source="ex:rel",
+            of_class="ex:Place",
+        )
+    assert slot.value.message.startswith("ref: expected a full id, an alias or 8-32 trailing hex")
+    assert slot.value.details == {
+        "actual": "Some Name",
+        "expected": "entity_ref",
+        "argument": "ref",
+        "for": "fn.param",
+        "for_source": "ex:rel",
+        "class": "ex:Place",
+    }
+    assert invalid_ref("x", argument="target").details["argument"] == "target"
+    assert (
+        resolve_ref("ITEM-0001", SNAP, argument="ref")[0] == DESK.id
+    )  # a reference is not refused

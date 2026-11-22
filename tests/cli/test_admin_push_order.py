@@ -387,3 +387,38 @@ def test_the_warnings_of_one_push_come_in_the_order_release_actions_views_skill(
     assert precondition["details"]["kind"] == "precondition"  # the pushed catalog, not the release
     again = push(run_cli, source, "--dry-run")  # nothing is left to publish or to judge
     assert again.warning_codes == []
+
+
+def test_a_push_warns_about_pushed_functions_with_a_one_value_ref_unless_a_pushed_view_runs_them(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create_graph(run_cli, "example_graph", version="1.0.0")
+    source = pull(run_cli, tmp_path / "work")
+    put(source, "functions", FUNCTIONS / "valid", "items_in_location.yaml")
+    first = push(run_cli, source, "--dry-run")
+    assert first.code == 0, first.envelope
+    assert first.warning_codes == ["admin.function_single_ref"]
+    [warning] = first.warnings
+    assert warning["details"]["functions"] == [
+        {"function": "items_in_location", "parameter": "location", "class": "inv:Location"}
+    ]
+    put(source, "views", VIEWS / "valid", "location_overview.yaml")
+    with_view = push(run_cli, source)  # the pushed view runs the function: it takes one entity
+    assert with_view.code == 0, with_view.envelope
+    assert with_view.warning_codes == []
+
+
+def test_a_push_of_functions_alone_leaves_out_those_a_published_view_runs(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create_graph(run_cli, "example_graph", version="1.0.0")
+    source = pull(run_cli, tmp_path / "work")
+    put(source, "functions", FUNCTIONS / "valid", "items_in_location.yaml")
+    put(source, "views", VIEWS / "valid", "location_overview.yaml")
+    assert push(run_cli, source).code == 0
+    function = source / "functions" / "items_in_location.yaml"
+    function.write_text(function.read_text().replace("summary:", "summary: Changed.\n#", 1))
+    again = push(run_cli, source)  # the views are not pushed: the published one decides
+    assert again.code == 0, again.envelope
+    assert again.data["functions"]["published"] is True
+    assert again.warning_codes == []

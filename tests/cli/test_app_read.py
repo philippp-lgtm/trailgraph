@@ -54,6 +54,33 @@ def test_get(run_cli: CliRunner, root: Path, roles: Roles) -> None:
     assert text.returncode == 0 and entity["id"] in text.stdout and text.stderr == ""
 
 
+def test_a_name_where_a_reference_goes_hints_at_lookup(
+    run_cli: CliRunner, root: Path, roles: Roles
+) -> None:
+    """No name is resolved; the error names the argument and the hint is the lookup."""
+    found = app(run_cli, "find", "--type", roles.term("lifecycle_type"), "--limit", "1", env=ENV)
+    entity = found.data["items"][0]
+    for command in ("get", "neighbors", "history"):
+        named = app(run_cli, command, "Some Name", env=ENV)
+        assert (named.code, named.error["code"]) == (2, "usage.invalid_argument"), command
+        assert named.error["details"] == {
+            "argument": "ref",
+            "actual": "Some Name",
+            "expected": "entity_ref",
+        }
+        assert named.error["hint"] == "graph lookup 'Some Name' --json", command
+    quoted = app(run_cli, "get", "it's", env=ENV)
+    assert quoted.error["hint"] == "graph lookup 'it'\"'\"'s' --json"
+    unknown = app(run_cli, "get", "ZZZZ-0099", env=ENV)  # an alias nobody has
+    assert (unknown.code, unknown.error["code"]) == (1, "entity.not_found")
+    assert unknown.error["hint"] is None  # an alias is no name: a lookup would not find it
+    full = app(run_cli, "get", "0192f3c0-11aa-7e01-b2c3-d4e5f6a7b8c9", env=ENV)
+    assert full.error["code"] == "entity.not_found" and full.error["hint"] is None
+    other = app(run_cli, "get", entity["id"], "--affordances", "--rev", "1", env=ENV)
+    assert other.error["code"] == "usage.invalid_argument"
+    assert other.error["hint"] == "graph --help"  # not a reference: the help stays
+
+
 def test_superseded_read_warns(run_cli: CliRunner, root: Path) -> None:
     superseded = app(
         run_cli, "find", "--where", "record_status=superseded", "--include-inactive", env=ENV
@@ -256,6 +283,11 @@ def test_find_rel_matches_any_listed_target(run_cli: CliRunner, root: Path, role
     assert matching(first) and matching(second) and either != matching(first)
     empty = app(run_cli, "find", "--type", cls, "--rel", f"{rel}={first},", env=ENV)
     assert (empty.code, empty.error["code"]) == (2, "usage.invalid_argument")
+    named = app(run_cli, "find", "--type", cls, "--rel", f"{rel}=Some Name", env=ENV)
+    assert named.error["details"]["argument"] == "--rel" and named.error["details"]["for"] == rel
+    assert named.error["hint"] == f"graph lookup 'Some Name' --json --for {rel}"
+    source = app(run_cli, "find", "--type", cls, "--in-rel", f"{rel}=Some Name", env=ENV)
+    assert source.error["hint"] == f"graph lookup 'Some Name' --json --for-source {rel}"
 
 
 def test_find_errors(run_cli: CliRunner, root: Path, roles: Roles) -> None:

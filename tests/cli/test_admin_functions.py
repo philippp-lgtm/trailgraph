@@ -121,6 +121,53 @@ def test_republishing_the_same_files_changes_nothing(
     assert tree_hash(root) == before
 
 
+SINGLE_REF = {"function": "items_in_location", "parameter": "location", "class": "inv:Location"}
+
+
+def test_a_one_value_ref_compared_with_equals_warns_with_the_function_and_class(
+    run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
+) -> None:
+    dry = publish(run_cli, FUNCTIONS, "--dry-run")
+    assert dry.code == 0 and dry.warning_codes == ["admin.function_single_ref"]  # also on a dry run
+    outcome = publish(run_cli, FUNCTIONS)
+    assert outcome.code == 0 and outcome.data["published"] is True
+    [warning] = outcome.warnings
+    assert warning["code"] == "admin.function_single_ref"
+    assert warning["details"] == {
+        "graph": "example_graph",
+        "functions": [SINGLE_REF],
+        "more": 0,
+    }
+    assert "items_in_location(location)" in warning["message"]
+    assert "usage report" in warning["message"]
+    same = publish(run_cli, folder(tmp_path, *(p.name for p in FUNCTIONS.glob("*.yaml"))))
+    assert same.data["published"] is False
+    assert same.warning_codes == ["admin.function_single_ref"]  # a state, also when unchanged
+
+
+def test_functions_without_a_one_value_ref_publish_without_the_warning(
+    run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
+) -> None:
+    outcome = publish(run_cli, folder(tmp_path, "items_by_condition.yaml"))
+    assert outcome.code == 0 and outcome.warnings == []
+
+
+def test_a_list_ref_and_a_deprecated_function_do_not_warn(
+    run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
+) -> None:
+    target = folder(tmp_path, "items_in_location.yaml")
+    path = target / "items_in_location.yaml"
+    text = path.read_text()
+    path.write_text(
+        text.replace(
+            "    class: inv:Location\n", "    class: inv:Location\n    many: true\n"
+        ).replace("l.id = $location", "l.id IN $location")
+    )
+    assert publish(run_cli, target, "--dry-run").warnings == []
+    path.write_text(text.replace("featured: true", "featured: true\nstatus: deprecated"))
+    assert publish(run_cli, target, "--dry-run").warnings == []
+
+
 def test_republishing_changed_files_names_both_hashes(
     run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
 ) -> None:

@@ -332,3 +332,9 @@ def test_cover_check_is_fast_for_a_catalog_of_fifty() -> None:
         covers(query_signature(resolved), pairs, MODEL)
         times.append(time.perf_counter() - started)
     assert statistics.median(times) < 0.005
+
+
+def test_the_live_rule_anchors_on_references_only_not_on_names() -> None:
+    # recipe lint (``kinetic.recipes``) accepts a name anchor for a maintainer; a hint must not
+    assert names(f"{MEMBERS} WHERE u.name = 'x' RETURN p.name") == []
+    assert names(f"{MEMBERS} WHERE u.alias = 'x' RETURN p.name")[0] == "members_of_unit"

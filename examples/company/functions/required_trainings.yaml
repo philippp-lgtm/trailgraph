@@ -1,0 +1,35 @@
+schema: graph_cli.function/1
+name: required_trainings
+module: operations
+summary: Every training the given people need through the roles of their positions, and whether they did it.
+use_when: >-
+  Which trainings a person (or several people) needs, has completed or still lacks, through which
+  position and role a training is required, and when it was completed. One person's full training
+  list; for the gaps of a whole department or team use missing_required_trainings.
+params:
+  person:
+    type: ref
+    class: ppl:Person
+    many: true
+    summary: The people to check; repeat the parameter for several.
+query: |
+  MATCH (p:Person)-[:holds]->(q:Position)-[:carries]->(r:Role)<-[:required_for]-(t:Training)
+  WHERE p.id IN $person
+  OPTIONAL MATCH (p)-[c:completed]->(t)
+  RETURN DISTINCT p.name AS person, t.title AS training, q.title AS position, r.name AS role,
+    c.on AS completed_on
+  ORDER BY person, training
+returns:
+  - column: person
+    summary: Name of the person.
+  - column: training
+    summary: Title of the required training.
+  - column: position
+    summary: Title of the position whose role requires it.
+  - column: role
+    summary: Name of that role.
+  - column: completed_on
+    summary: Date the person completed the training; empty when not completed (or no date was recorded).
+examples:
+  - question: Which trainings does this employee need, and which are done?
+featured: true

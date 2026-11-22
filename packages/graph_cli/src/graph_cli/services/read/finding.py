@@ -52,13 +52,19 @@ class ReadFinding(ReadCatalogs):
         shown = check_fields(view.model, spec.types, fields)
 
         def resolve(
-            pairs: Sequence[tuple[str, Sequence[str]]],
+            pairs: Sequence[tuple[str, Sequence[str]]], *, outgoing: bool
         ) -> tuple[tuple[str, tuple[EntityId, ...]], ...]:
             resolved = []
             for rel, texts in pairs:
                 entities: list[EntityId] = []
                 for text in texts:
-                    entity, found = resolve_ref(text, view.snapshot)
+                    entity, found = resolve_ref(
+                        text,
+                        view.snapshot,
+                        argument="--rel" if outgoing else "--in-rel",
+                        lookup_for=rel if outgoing else None,
+                        lookup_for_source=None if outgoing else rel,
+                    )
                     warnings.extend(found)
                     entities.append(entity)
                 resolved.append((rel, tuple(sorted(set(entities)))))
@@ -67,8 +73,8 @@ class ReadFinding(ReadCatalogs):
         spec = FindSpec(
             types=spec.types,
             where=spec.where,
-            rels=(*spec.rels, *resolve(rel_refs)),
-            in_rels=(*spec.in_rels, *resolve(in_rel_refs)),
+            rels=(*spec.rels, *resolve(rel_refs, outgoing=True)),
+            in_rels=(*spec.in_rels, *resolve(in_rel_refs, outgoing=False)),
             include_inactive=spec.include_inactive,
             sort=spec.sort,
             limit=spec.limit,

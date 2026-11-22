@@ -769,7 +769,7 @@ Usage: `graph query [TEXT] [OPTIONS]`
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
 | `--file` | file | no | no | Read the query from this file. |
-| `--param` | assignment | no | yes | name=value binds $name; the value is JSON when it parses, else text. |
+| `--param` | assignment | no | yes | name=value binds $name; the value is JSON when it parses, else text (a number compared only with text fields is bound as written). |
 | `--include-inactive` | flag | no | no | Include superseded and retracted entities. |
 | `--explain` | flag | no | no | Show the resolved query; run nothing. |
 | `--limit` | integer | no | no | Rows per page, at most 500. Default: `50`. |

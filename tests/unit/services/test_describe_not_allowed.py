@@ -76,14 +76,14 @@ def test_a_list_counts_what_the_caller_may_not_use_and_lists_it_on_request(
 ) -> None:
     seen = Seen(env, NO_FUNCTIONS)
     plain = seen.call("describe_functions", seen.functions, denied=seen.denied.functions)
-    assert plain["functions"] == [] and plain["not_allowed"] == 7
+    assert plain["functions"] == [] and plain["not_allowed"] == 9
     marked = seen.call(
         "describe_functions",
         seen.functions,
         denied=seen.denied.functions,
         include_not_allowed=True,
     )
-    assert len(marked["functions"]) == 7 and "not_allowed" in marked
+    assert len(marked["functions"]) == 9 and "not_allowed" in marked
     assert all(
         f["allowed"] is False and f["missing"] == [{"action": "read.function", "resource": "graph"}]
         for f in marked["functions"]

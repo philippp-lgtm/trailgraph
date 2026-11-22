@@ -89,6 +89,59 @@ def test_a_dry_run_then_the_write(run_cli: CliRunner, root: Path) -> None:
     assert intent["request"]["command"] == "do" and intent["request"]["action"] == action  # type: ignore[index]
 
 
+ONBOARD = """\
+schema: graph_cli.action/1
+name: onboard_employee
+module: people
+summary: Add an employee who holds some positions.
+use_when: A person joins and takes over positions at once.
+params:
+  name:
+    type: string
+    summary: The name of the employee.
+  number:
+    type: string
+    summary: The employee number.
+  positions:
+    type: ref
+    class: org:Position
+    many: true
+    summary: The positions the employee holds.
+ops:
+  - op: create
+    type: ppl:Employee
+    attrs: {name: $name, employee_number: $number, status: onboarding}
+    edges:
+      - {rel: org:holds, target: $positions, qualifiers: {since: "2026-03-01"}}
+examples:
+  - request: Add a new employee who takes over two positions.
+"""
+
+
+def test_a_list_parameter_writes_one_edge_per_value(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    source = tmp_path / "list_actions"
+    source.mkdir()
+    for path in VALID.glob("*.yaml"):
+        (source / path.name).write_bytes(path.read_bytes())
+    (source / "onboard_employee.yaml").write_text(ONBOARD)
+    assert admin(run_cli, "graph", "actions", "publish", "company", str(source)).code == 0
+    first, second = create(run_cli, "org:Position", "one"), create(run_cli, "org:Position", "two")
+    params = ("--param", "name=Mara Example", "--param", "number=E-100")
+    params += ("--param", f"positions={first}")
+    params += ("--param", f"positions={second}", "--param", f"positions={first}")
+    dry = do(run_cli, "onboard_employee", *params, "--dry-run")
+    assert dry.code == 0, dry.envelope
+    assert dry.data["dry_run"] is True and dry.data["entities"][0]["ops"] == ["create"]
+    assert app(run_cli, "find", "--type", "ppl:Employee", env=ENV).data["items"] == []
+    written = do(run_cli, "onboard_employee", *params, "--reason", "new recruiter")
+    assert written.code == 0, written.envelope
+    found = app(run_cli, "neighbors", written.data["id"], "--rel", "org:holds", env=ENV)
+    assert [i["edge"]["target"] for i in found.data["items"]] == [first, second]  # once each
+    assert {i["edge"]["qualifiers"]["since"] for i in found.data["items"]} == {"2026-03-01"}
+
+
 def test_a_refused_precondition_names_it_and_the_hint_shows_the_action(
     run_cli: CliRunner, root: Path
 ) -> None:

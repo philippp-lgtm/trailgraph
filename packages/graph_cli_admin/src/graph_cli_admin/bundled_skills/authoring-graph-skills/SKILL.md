@@ -134,20 +134,23 @@ The blocks already say what the model says. Write what it cannot:
    block scalar); publish refuses a description that cannot take the
    sentence (rule `description`, below).
 2. **Rules for you**: how to decide between two types, which values a
-   field takes in practice, when to create versus update, what to look up
-   before writing (an existing entity with a similar name), what needs the
-   user's consent (state changes, retractions), language and wording of
-   values. Name where the line between subject matter and the work on the
-   data runs in this graph, with an example of each (the `graph-cli`
-   skill says the work goes into `--reason`, not into entities). One rule
-   per bullet, imperative, with the reason when it is not obvious.
+   field takes in practice, when to create versus update, language and
+   wording of values, and the cases of this graph where the general rules
+   bite: which lookup finds the entity before a write, which changes need
+   consent beyond a retraction or a move into a terminal state. The `start`
+   block already says to look a name up before a create, to say why in
+   `--reason` and to ask before `retract` and a terminal `transition`; do
+   not repeat that. Name where the line between subject matter and the work
+   on the data runs in this graph, with an example of each. One rule per
+   bullet, imperative, with the reason when it is not obvious.
 3. **Recipes**: the three to six questions agents ask most that no
    function answers, each as one `graph` command (`graph find`, `graph
    lookup`, `graph neighbors`, `graph query`), and one write as `graph
    apply` or `graph create` when no action carries it. A question that
    recurs is a candidate for a function (`authoring-graph-functions`), not
-   for a longer recipe list. More go into `references/recipes.md`, linked
-   from `SKILL.md`.
+   for a longer recipe list; publish warns about a recipe a function answers
+   and about an example that names nothing of the graph (recipe lint, below).
+   More recipes go into `references/recipes.md`, linked from `SKILL.md`.
 4. **Keep it short.** Every generated skill has a budget: `SKILL.md` after
    rendering at most 20,000 bytes (2,400 more with published functions,
    1,950 more with actions), and the curated text of `SKILL.md` at most
@@ -215,6 +218,14 @@ of `SKILL.md` and of the curated text, both budgets and the bytes of each
 block, largest first. A single-module graph lists its whole model in
 `SKILL.md`, so it reaches the budget as its model grows: move text into
 references, or split the model into modules.
+
+**Recipe lint, warned and never refused** (`render`, `publish`, `graph-admin graph push`;
+one record per code, up to 20 findings with file and line): `admin.skill_recipe_covered`
+(a `graph query` recipe a published function answers; the finding gives the `graph run`
+call), `admin.skill_generic_example` (a fenced `graph` example that names nothing of the
+graph; the `graph-cli` skill and the `start` block hold it) and `admin.skill_recipe_broken`
+(a recipe that fails against the model). Rules and what to do with a finding:
+[references/recipe_lint.md](references/recipe_lint.md).
 
 When a later ontology release removes a name the curated text uses, agents
 get the warning `skills.source_unknown_names`: fix the text and push. The

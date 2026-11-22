@@ -27,6 +27,35 @@ def _help(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} --help"
 
 
+MAX_LOOKUP_TEXT: Final = 200  # a longer text is not a name worth echoing into a command
+
+
+def _lookup_text(text: str, program: str, options: str = "") -> str | None:
+    """``graph lookup`` for a text the caller gave where an entity reference goes: options first
+    and the text after ``--`` when it starts with ``-``. ``graph-admin`` has no ``lookup``, and a
+    text that is not a short name has no useful lookup."""
+    if program == ADMIN_PROGRAM or len(text) > MAX_LOOKUP_TEXT:
+        return None
+    if text.startswith("-"):
+        return f"{program} lookup --json{options} -- {shlex.quote(text)}"
+    return f"{program} lookup {shlex.quote(text)} --json{options}"
+
+
+def _usage(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """A name where an entity reference goes: look it up (for the slot it is meant for, when the
+    error names one); any other usage error, and a text that cannot be looked up: the help."""
+    actual = details.get("actual")
+    if details.get("expected") != "entity_ref" or not isinstance(actual, str):
+        return _help(details, program)
+    options = ""
+    for key, flag in (("for", "--for"), ("for_source", "--for-source"), ("class", "--type")):
+        value = details.get(key)
+        if isinstance(value, str):
+            options = f" {flag} {shlex.quote(value)}"
+            break
+    return _lookup_text(actual, program, options) or _help(details, program)
+
+
 def _graphs(details: Mapping[str, JsonValue], program: str) -> str | None:
     """Where the selectable graphs are listed (B12.5)."""
     return f"{program} graph list" if program == ADMIN_PROGRAM else f"{program} graphs"
@@ -228,7 +257,7 @@ def _publish(details: Mapping[str, JsonValue], program: str) -> str | None:
 
 
 _BASE: Final[dict[str, Hint | None]] = {
-    "usage.invalid_argument": _help,
+    "usage.invalid_argument": _usage,
     "usage.unknown_command": _help,
     "usage.missing_argument": _help,
     "usage.invalid_input": None,

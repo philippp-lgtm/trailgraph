@@ -192,7 +192,7 @@ def _command_problems(
     problems = []
     for match in COMMAND_RE.finditer(piece.text):
         line = piece.line + piece.text.count("\n", 0, match.start())
-        words = _words(match.group(1))
+        words = command_words(match.group(1))
         if not words or not COMMAND_WORD_RE.match(words[0]):
             continue  # "graph" as a word, or global options only
         command = max((p for p in commands if tuple(words[: len(p)]) == p), key=len, default=None)
@@ -223,7 +223,7 @@ def _command_problems(
     return problems
 
 
-def _words(text: str) -> list[str]:
+def command_words(text: str) -> list[str]:
     """The words of one command line, up to the first shell operator."""
     try:
         words = shlex.split(text, posix=True)
@@ -272,7 +272,7 @@ def _name_problems(
     """``graph <command> <name>`` in code where ``name`` is not in ``published``."""
     problems = []
     for match in COMMAND_RE.finditer(piece.text):
-        words = _words(match.group(1))
+        words = command_words(match.group(1))
         if len(words) < 2 or words[0] != command or not FUNCTION_NAME_RE.match(words[1]):
             continue  # not this command, or a placeholder, flag or other non-name
         if words[1] in published:
