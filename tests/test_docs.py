@@ -4,8 +4,10 @@ options those commands take, the layer diagram of docs/architecture.md matches t
 layers contract of import-linter, every screenshot marker has its image, every terminal
 transcript names only real `graph` commands and options, the reference block of
 docs/configuration.md names exactly the keys of `config.toml` with their real defaults, its
-tables name exactly the environment variables the code reads, and the route tables of
-docs/server.md name exactly the paths of the OpenAPI goldens.
+tables name exactly the environment variables the code reads, the route tables of
+docs/server.md name exactly the paths of the OpenAPI goldens, every error code, finding code
+and policy action a document names exists, and every policy example of
+docs/access_control.md compiles.
 
 Covers the tracked Markdown documentation (the root README, CONTRIBUTING.md, the
 example's README, docs/ and the hand-written admin skills that ship with graph-admin).
@@ -15,7 +17,9 @@ and `tests/cli/test_admin_init.py` keep equal to `describe commands` of each pro
 Screenshots and transcripts are produced by `scripts/docs_screenshots.py`; this module only
 checks that they are in place. The variables the code reads are the string constants of the
 packages' sources that look like `GRAPH_CLI_*`, `AWS_*`, `CLAUDE_*`, `XDG_*` or `UV_*`, less
-`ENV_NOT_DOCUMENTED`; a variable with another prefix is not seen. Each check has a positive
+`ENV_NOT_DOCUMENTED`; a variable with another prefix is not seen. A code span is taken for
+a code when it has the shape of one and starts like a registered code or action, unless it
+names a file, a module (or a name in one) or is listed in `NOT_CODES`. Each check has a positive
 control, so a broken scanner cannot pass silently.
 """
 
@@ -26,13 +30,21 @@ import shlex
 import tomllib
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
 from harness import REPO_ROOT
 from support.fixtures import GOLDENS
 from support.skills import ADMIN_SKILLS_DIR
 
+from graph_cli.access_control.compiler import compile_policy
 from graph_cli.catalog.config import _KEYS, _OPEN_TABLES, S3_KEYS, Config, parse_config
+from graph_cli.catalog.registries import all_finding_codes
+from graph_cli.kernel.actions import ACTIONS
+from graph_cli.kernel.error_codes import ERROR_CODE_RE, ERROR_CODES
+from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.ids import GraphId
+from graph_cli_admin.services_admin.error_codes import ADMIN_CODES
 
 DOCS_DIR = REPO_ROOT / "docs"
 INDEX = DOCS_DIR / "README.md"
@@ -78,6 +90,42 @@ SERVER_DOC = DOCS_DIR / "server.md"
 ROUTE = re.compile(r"^(GET|POST|PUT|PATCH|DELETE) (/\S*)$")
 COMMAND_ROUTE = re.compile(r"^(/v1/(?:admin/)?commands/).+$")
 HTTP_METHODS = ("get", "post", "put", "patch", "delete")
+# File name endings that make a dotted code span a file, not a code.
+FILE_SUFFIXES = frozenset(
+    {"css", "html", "json", "jsonl", "lock", "md", "py", "sh", "toml", "yaml"}
+)
+# Dotted spans shaped like codes that name fields of an answer or a record instead.
+NOT_CODES = frozenset(
+    {
+        "actor.roles",
+        "data.action",
+        "data.columns",
+        "data.entities",
+        "data.findings",
+        "data.fit",
+        "data.function",
+        "data.items",
+        "data.plan",
+        "data.program.executable",
+        "data.results",
+        "data.size",
+        "graph.seq",
+        "migration.to",
+        "view.hash",
+    }
+)
+# A code span opened and closed by the same number of backticks (CommonMark).
+CODE_SPAN_RUN = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)", re.DOTALL)
+# A fenced block, also one indented in a list item.
+FENCED_BLOCK = re.compile(r"^( *)```.*?^\1```", re.MULTILINE | re.DOTALL)
+POLICY_DOC = DOCS_DIR / "access_control.md"
+YAML_BLOCK = re.compile(r"^( *)```yaml\n(.*?)^\1```", re.MULTILINE | re.DOTALL)
+POLICY_SCHEMA_LINE = "schema: graph_cli.policy/1"
+# The graphs the policy examples name.
+EXAMPLE_GRAPHS = {
+    "example_graph": GraphId(UUID(int=1)),
+    "other_graph": GraphId(UUID(int=2)),
+}
 
 
 def _documents() -> list[Path]:
@@ -310,6 +358,69 @@ def _openapi_golden(name: str) -> dict[str, Any]:
     return found
 
 
+def _spans(text: str) -> list[str]:
+    """The code spans outside fenced blocks."""
+    return [span.strip() for _, span in CODE_SPAN_RUN.findall(FENCED_BLOCK.sub("", text))]
+
+
+def _known_names() -> set[str]:
+    """Every error and finding code of both programs and every policy action."""
+    return (
+        set(ERROR_CODES)
+        | {spec.code for spec in ADMIN_CODES}
+        | set(all_finding_codes())
+        | set(ACTIONS)
+    )
+
+
+def _is_module(span: str, root: Path) -> bool:
+    """The span, or a dotted prefix of it with two parts or more, names a module or a
+    package of the sources (`query.cypher.parameters` is a name in `query.cypher`)."""
+    parts = span.split(".")
+    tops = [p for p in root.glob("*/src/*") if p.is_dir()]
+    return any(
+        (top / Path(*parts[:n])).is_dir() or (top / Path(*parts[:n])).with_suffix(".py").is_file()
+        for n in range(len(parts), 1, -1)
+        for top in tops
+    )
+
+
+def _unknown_codes(text: str, known: set[str], root: Path) -> list[str]:
+    """The code spans of a text that are no known code or action, in order."""
+    prefixes = {name.split(".")[0] for name in known}
+    return [
+        span
+        for span in _spans(text)
+        if ERROR_CODE_RE.fullmatch(span)
+        and span.split(".")[0] in prefixes
+        and span not in known
+        and span not in NOT_CODES
+        and span.rpartition(".")[2] not in FILE_SUFFIXES
+        and not _is_module(span, root)
+    ]
+
+
+def _policy_examples(text: str) -> list[str]:
+    """The YAML blocks that are a complete policy document (they start with its schema),
+    dedented when they sit in a list item."""
+    return [
+        "\n".join(line.removeprefix(indent) for line in body.splitlines()) + "\n"
+        for indent, body in YAML_BLOCK.findall(text)
+        if body.lstrip().startswith(POLICY_SCHEMA_LINE)
+    ]
+
+
+def _compile_example(source: str) -> str:
+    """The layer of a compiled policy example; a graph policy for `example_graph`."""
+    compiled = compile_policy(
+        source.encode(),
+        file="example.yaml",
+        graphs=EXAMPLE_GRAPHS,
+        graph=EXAMPLE_GRAPHS["example_graph"],
+    )
+    return compiled.layer
+
+
 def test_documents_exist() -> None:
     assert INDEX in _documents()
     assert all(path.is_file() for path in _documents())
@@ -416,6 +527,28 @@ def test_route_tables_match_openapi() -> None:
     admin = _openapi_routes(_openapi_golden("admin"))
     assert _doc_routes(_section(text, "API")) == app
     assert _doc_routes(_section(text, "Admin API")) == admin - app
+
+
+def test_documents_name_only_known_codes() -> None:
+    known = _known_names()
+    found = {
+        str(path.relative_to(REPO_ROOT)): unknown
+        for path in _documents()
+        if (unknown := _unknown_codes(path.read_text(), known, SOURCES))
+    }
+    assert found == {}
+
+
+def test_not_codes_are_still_used() -> None:
+    used = {span for path in _documents() for span in _spans(path.read_text())}
+    assert sorted(NOT_CODES - used) == []
+    assert sorted(NOT_CODES & _known_names()) == []
+
+
+def test_policy_examples_compile() -> None:
+    examples = _policy_examples(POLICY_DOC.read_text())
+    assert len(examples) >= 2
+    assert {_compile_example(source) for source in examples} == {"installation", "graph"}
 
 
 def test_positive_controls() -> None:
@@ -533,3 +666,26 @@ def test_positive_controls() -> None:
         ("POST", "/v1/commands/{path}"),
         ("POST", "/v1/admin/commands/{path}"),
     }
+
+    known = _known_names()
+    assert {"config.invalid", "integrity.audit.chain_broken", "write.create"} <= known
+    codes = (
+        "`config.invalid` `config.invalidd` `write.creat` `config.toml` `storage.files.manifest`"
+        " `query.cypher.parameters` `graph.seq` `kernel.unknown_thing` `pdf.encrypted` `a.b c`"
+    )
+    assert _unknown_codes(codes, known, SOURCES) == ["config.invalidd", "write.creat"]
+    assert _spans("``(:`a`)`` `b.c`\n```\n`x.y`\n```\n  ```\n  `z.w`\n  ```\n") == ["(:`a`)", "b.c"]
+
+    policies = (
+        "```yaml\nschema: graph_cli.policy/1\nid: graph\ndeny:\n"
+        '  - {id: d, role: [r], action: ["write.*"]}\n```\n'
+        "- item:\n\n  ```yaml\n  schema: graph_cli.policy/1\n  id: installation\n"
+        "  grants: []\n  ```\n"
+        "```yaml\nid: graph\n```\n"
+    )
+    examples = _policy_examples(policies)
+    assert len(examples) == 2
+    assert examples[1].startswith("schema: graph_cli.policy/1\nid: installation\n")
+    assert _compile_example(examples[0]) == "graph"
+    with pytest.raises(GraphCliError):
+        _compile_example(examples[0].replace("deny:", "denyy:"))
