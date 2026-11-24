@@ -146,7 +146,7 @@ Update the documentation in the same change as the code:
 | a `graph-admin` command or option | update the inventory golden; `docs/cli_graph_admin.md`: a row in the command overview for a new command (checked), the cross-command rules when they change; the admin skills that name it (`maintaining-graphs`; command lines are checked) |
 | a `config.toml` key, pointer key or environment variable | `docs/configuration.md`: a key and its default in the reference block of "`config.toml`", a variable in the table of "Environment variables" (both checked) |
 | an HTTP route or parameter, a `[server]` setting, a token or enrollment rule, the container | `docs/server.md` (a route in the table of "API" or "Admin API", checked against the OpenAPI goldens; the OpenAPI documents are generated, see [Generated files](#generated-files)); `docs/configuration.md` for a setting |
-| a policy rule, action or identity source | `docs/access_control.md`, and `docs/security_model.md` if what is prevented or detected changes |
+| a policy rule, action or identity source | `docs/access_control.md` (its policy examples must compile), and `docs/security_model.md` if what is prevented or detected changes |
 | a key, base type, facet or check of `graph_cli.ir/1`, a change level of `ontology diff`, or when a check runs | `bundled_skills/ontology-best-practices/references/` of `graph_cli_admin` (`ir_format.md` is checked against the parser; the change levels and check timing are not) |
 | a key, type, limit or check of `graph_cli.function/1`, or a rule publishing applies to functions | `bundled_skills/authoring-graph-functions/references/format.md` of `graph_cli_admin` (the format has one home there; `docs/cli_graph.md` and `docs/cli_graph_admin.md` describe behavior and link to it) |
 | a key, type, limit or check of `graph_cli.action/1`, or a rule publishing applies to actions | `bundled_skills/authoring-graph-actions/references/format.md` of `graph_cli_admin` (the format has one home there; `docs/cli_graph.md` and `docs/cli_graph_admin.md` describe behavior and link to it) |
@@ -154,6 +154,7 @@ Update the documentation in the same change as the code:
 | a block, size budget or publish check of graph skills | `bundled_skills/authoring-graph-skills/SKILL.md` of `graph_cli_admin` (the rules have one home there; `docs/skills.md` describes the concept and links to it; `tests/skills/test_graph_skills_skill.py` pins blocks, reserved files and budgets) |
 | a layer, package or module | `docs/architecture.md` (or `storage.md`, `audit.md`) and the import contracts |
 | an on-disk format or a verification check | `docs/storage.md` or `docs/audit.md` |
+| an error code, finding code or policy action renamed or removed | every document that names it (checked) |
 | an example graph's files or setup | `examples/<name>/README.md`; `tests/cli/test_company_example.py` keeps the example buildable |
 | a way to run graph_cli, a core concept or a foundational design decision | `docs/deployment_options.md`, `docs/overview.md` or `docs/design_decisions.md` |
 | install steps or the quickstart | `README.md`; run the quickstart on a throwaway data root |
@@ -168,8 +169,11 @@ its image and every image in `docs/images/` is a used, small PNG, that
 the transcripts run only real `graph` commands with options they take, that
 the reference block of `docs/configuration.md` names exactly the keys of
 `config.toml` with their real defaults and its tables exactly the
-environment variables the code reads, and that the route tables of
-`docs/server.md` name exactly the paths of the OpenAPI documents.
+environment variables the code reads, that the route tables of
+`docs/server.md` name exactly the paths of the OpenAPI documents, that every
+error code, finding code and policy action a document names in a code span
+exists (a dotted span that names a field instead goes into `NOT_CODES`), and
+that every policy example in `docs/access_control.md` compiles.
 
 ## Generated files
 
