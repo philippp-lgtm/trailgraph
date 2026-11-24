@@ -204,7 +204,7 @@ graph skills install --scope project --dir <project>
 
 `render` writes `<preview>/graph-<graph>/` exactly as `graph skills
 install` would (without the marker), with this checkout's program, and
-reports what publish would refuse (exit 1, the preview is written anyway);
+reports what publish would refuse as an error (the preview is written anyway);
 it changes nothing in the data root. `<preview>` must exist; an existing
 `<preview>/graph-<graph>/` is replaced only with `--force`. Without the
 authored copy at hand (another
