@@ -93,6 +93,11 @@ A graph skill that tells agents what the graph holds is published with
 
 ## Documentation
 
+New here? The [overview](docs/overview.md) explains what graph_cli is for and
+how its parts fit together, [deployment options](docs/deployment_options.md)
+how to run it and [design decisions](docs/design_decisions.md) why it is
+built this way.
+
 See [`docs/README.md`](docs/README.md) for the full documentation: the
 command references, configuration, access control, stored files, agent
 skills and the internals. To work on graph_cli itself, see

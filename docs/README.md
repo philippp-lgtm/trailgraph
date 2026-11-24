@@ -2,6 +2,16 @@
 
 Start with the [project README](../README.md) (install, quickstart).
 
+## The big picture
+
+- [Overview](overview.md): what graph_cli is, what it can be used for, the
+  core concepts and how the parts fit together
+- [Deployment options](deployment_options.md): running it on one machine or
+  as a server with remote clients, the container, where stored files can
+  live
+- [Design decisions](design_decisions.md): the foundational choices behind
+  graph_cli, why they were made and what they cost
+
 ## Using `graph`
 
 - [`graph`: the application CLI](cli_graph.md): commands, output and exit

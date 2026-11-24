@@ -25,19 +25,25 @@ JSON Schema export and data validation.
 Dependencies point down only. Enforced by import-linter
 (`[tool.importlinter]` in `pyproject.toml`) and checked by the test suite.
 
-| Layer | `graph_cli` subpackage |
-| --- | --- |
-| CLI | `app_cli` |
-| Skill generators | `skills` |
-| CLI infrastructure | `cli_kit` |
-| Registry and wiring | `catalog` |
-| Extensions | `extensions` |
-| Services | `services` |
-| Cross-cutting (independent of each other) | `audit`, `access_control`, `temporal_knowledge`, `storage` |
-| Named read functions and write actions; source planners; file extractors | `kinetic`, `sources`, `extractors` (independent of each other) |
-| Query model | `query` |
-| Schema IR | `ontology_layer` |
-| Kernel | `kernel` |
+Each box is one layer of `graph_cli`: its role, then its subpackages. A layer
+may import the layers below it; packages in one box are independent of each
+other. The test suite checks this diagram against the layers contract.
+
+```mermaid
+flowchart TB
+    L1["CLI<br>app_cli"]
+    L2["Skill generators<br>skills"]
+    L3["CLI infrastructure<br>cli_kit"]
+    L4["Registry and wiring<br>catalog"]
+    L5["Extensions<br>extensions"]
+    L6["Services<br>services"]
+    L7["Cross-cutting<br>audit, access_control, temporal_knowledge, storage"]
+    L8["Named read functions and write actions; source planners; file extractors<br>kinetic, sources, extractors"]
+    L9["Query model<br>query"]
+    L10["Schema IR<br>ontology_layer"]
+    L11["Kernel<br>kernel"]
+    L1 --> L2 --> L3 --> L4 --> L5 --> L6 --> L7 --> L8 --> L9 --> L10 --> L11
+```
 
 `graph_cli_admin` depends on `graph_cli`; `graph_cli` never imports
 `graph_cli_admin`. `graph_cli_server` depends on `graph_cli`,

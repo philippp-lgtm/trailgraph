@@ -1,6 +1,7 @@
-"""The documentation holds together: links resolve, the index lists every document and
-the command overviews of `graph` and `graph-admin` name exactly the commands each has,
-with options those commands take.
+"""The documentation holds together: links resolve, the index lists every document, the
+command overviews of `graph` and `graph-admin` name exactly the commands each has, with
+options those commands take, and the layer diagram of docs/architecture.md matches the
+layers contract of import-linter.
 
 Covers the tracked Markdown documentation (the root README, CONTRIBUTING.md, the
 example's README, docs/ and the hand-written admin skills that ship with graph-admin).
@@ -12,6 +13,7 @@ Each check has a positive control, so a broken scanner cannot pass silently.
 
 import json
 import re
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +34,10 @@ COMMAND_WORD = re.compile(r"[a-z][a-z_-]*")
 OPTION = re.compile(r"(?<![\w-])--[a-z][a-z-]*")
 # The command overview of each program and the golden of its inventory.
 OVERVIEWS = (("cli_graph.md", "app"), ("cli_graph_admin.md", "admin"))
+MERMAID_BLOCK = re.compile(r"^```mermaid\n(.*?)^```", re.MULTILINE | re.DOTALL)
+LAYER_NODE = re.compile(r'^\s*L(\d+)\["([^"]*)"\]\s*$', re.MULTILINE)
+LAYER_EDGE_LINE = re.compile(r"^\s*L\d+(?:\s*-->\s*L\d+)+\s*$", re.MULTILINE)
+LAYERS_CONTRACT = "graph_cli layers"
 
 
 def _documents() -> list[Path]:
@@ -112,6 +118,33 @@ def _overview(doc: str) -> str:
     return _section((DOCS_DIR / doc).read_text(), "Commands")
 
 
+def _diagram_layers(section: str) -> list[list[str]]:
+    """The layers of the one Mermaid block in a section, top down: per node `L<n>` the
+    subpackages after the label's `<br>`. Nodes must be numbered 1..n and joined top down
+    by one chain of edges, else the diagram does not say what the contract says."""
+    blocks = MERMAID_BLOCK.findall(section)
+    assert len(blocks) == 1, "expected one mermaid block"
+    nodes = {int(n): label for n, label in LAYER_NODE.findall(blocks[0])}
+    order = sorted(nodes)
+    assert order == list(range(1, len(order) + 1)), f"layer nodes not numbered 1..n: {order}"
+    chain = [
+        int(n) for line in LAYER_EDGE_LINE.findall(blocks[0]) for n in re.findall(r"L(\d+)", line)
+    ]
+    assert chain == order, f"edges do not chain the layers top down: {chain}"
+    return [sorted(p.strip() for p in nodes[n].rpartition("<br>")[2].split(",")) for n in order]
+
+
+def _contract_layers() -> list[list[str]]:
+    config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+    (contract,) = (
+        c for c in config["tool"]["importlinter"]["contracts"] if c["name"] == LAYERS_CONTRACT
+    )
+    return [
+        sorted(p.strip().removeprefix("graph_cli.") for p in layer.split("|"))
+        for layer in contract["layers"]
+    ]
+
+
 def test_documents_exist() -> None:
     assert INDEX in _documents()
     assert all(path.is_file() for path in _documents())
@@ -157,6 +190,11 @@ def test_command_overview_names_only_real_options(doc: str, golden: str) -> None
     assert unknown == []
 
 
+def test_layer_diagram_matches_import_contract() -> None:
+    section = _section((DOCS_DIR / "architecture.md").read_text(), "Layers")
+    assert _diagram_layers(section) == _contract_layers()
+
+
 def test_positive_controls() -> None:
     page = DOCS_DIR / "README.md"
     text = "[a](missing.md#x) [b](cli_graph.md#no-such-heading) [c](#nowhere)\n"
@@ -181,3 +219,15 @@ def test_positive_controls() -> None:
     ]
     assert _overview_rows(table)[-1] == ([("diff",)], {"--against", "--graph", "--module"})
     assert _section("# T\n\n## A\nx\n## B\ny\n", "A") == "x"
+    diagram = (
+        "```mermaid\nflowchart TB\n"
+        '    L1["Top<br>a"]\n    L2["Middle<br>b, c"]\n    L3["Bottom<br>d"]\n'
+        "    L1 --> L2 --> L3\n```\n"
+    )
+    assert _diagram_layers(diagram) == [["a"], ["b", "c"], ["d"]]
+    with pytest.raises(AssertionError, match="edges"):
+        _diagram_layers(diagram.replace("L1 --> L2 --> L3", "L1 --> L3 --> L2"))
+    with pytest.raises(AssertionError, match="numbered"):
+        _diagram_layers(diagram.replace("L3[", "L4[").replace("--> L3", "--> L4"))
+    assert _diagram_layers(diagram.replace("b, c", "c")) != [["a"], ["b", "c"], ["d"]]
+    assert ["kernel"] in _contract_layers()
