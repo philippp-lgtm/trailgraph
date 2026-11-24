@@ -110,8 +110,8 @@ graph. Any of these is `connect.refused` and the code stays unused. Then it:
 
 An admin code (`--scope admin`) stores `admin_token` instead and sets up
 `graph-admin` (with the admin token, the `graph-admin` wheel), with the
-graphs the project maintains in the pointer: `graph-admin graph pull|push`
-then work in that folder for the project's graphs. It installs no skills
+graphs the project maintains in the pointer: `graph-admin graph pull` and
+`graph-admin graph push` then work in that folder for the project's graphs. It installs no skills
 and no app token; a project admin who also uses `graph` there gets a
 second, app code.
 
@@ -425,10 +425,12 @@ An admin token bound to a project (`token create NAME --scope admin
 --project P`) is a [project admin](access_control.md#project-admins): it
 needs no `maintainers` entry, and passes instead when its project's scope
 says `maintain` for at least one graph (`token create` warns otherwise).
-It runs only the commands on one graph (`graph show|check|pull|push|
-reindex`, `graph skill publish|render`, `graph functions publish|show`, `graph actions publish|show`,
-`ontology release|diff`, `files verify`) and `graph list`, and sees only the graphs it maintains; every
-other command is refused with `access.ceiling`.
+It runs only the commands on one graph (`graph-admin graph show`, `check`,
+`pull`, `push` and `reindex`, `graph-admin graph skill publish` and `render`,
+`graph-admin graph functions publish` and `show`, `graph-admin graph actions
+publish` and `show`, `graph-admin ontology release` and `diff`,
+`graph-admin files verify`) and `graph-admin graph list`, and sees only the
+graphs it maintains; every other command is refused with `access.ceiling`.
 
 Answers, errors and problem details follow the [app API](#api). No
 `graph-admin` command takes an idempotency key, so `Idempotency-Key` is
@@ -440,7 +442,7 @@ ontology, a skill) takes `{"files": {"<relative path>": "sha256:<hex>"},
 "name": "<dir>"}`, every file an upload of the same token. Relative paths
 have no empty, `.` or `..` parts; at most 1000 files. The server builds the
 directory under the name's last part and removes it after the command;
-answers name the client's arguments, never the server's copy. `graph skill
+answers name the client's arguments, never the server's copy. `graph-admin graph skill
 render` takes `--out` as an empty directory and answers `path: null` with
 `rendered`, its files by name in base64. `init` and `view` run only where
 the data lives.
@@ -478,7 +480,7 @@ proxy that refuses requests without one lets it through.
 - `file path` downloads the stored file into this machine's
   [file cache](files.md#file-cache) and answers that path; `--origin` and
   `file check` look at the origins on this machine, as locally.
-- `skills emit|install|check` run here; a graph skill comes from the
+- `graph skills emit`, `graph skills install` and `graph skills check` run here; a graph skill comes from the
   server, rendered for the graph's current ontology, and must be allowed by
   this project's pointer.
 
@@ -494,20 +496,20 @@ as `graph` does.
 - Ontology, skill and function directories and policy files are read here and
   uploaded: every regular file below a directory; a symlink or another
   file kind is refused.
-- `graph skill render` checks `--out` here and writes the preview into it.
-- `graph pull` writes the files the server answers into `DIR`, with the
-  checks it makes locally; `graph push` uploads only the base file,
+- `graph-admin graph skill render` checks `--out` here and writes the preview into it.
+- `graph-admin graph pull` writes the files the server answers into `DIR`, with the
+  checks it makes locally; `graph-admin graph push` uploads only the base file,
   `ontology/` and `skill/` of `DIR` and writes the new base into it.
-- `describe commands`, `ontology validate` and `skills install|check` run
-  here; `workspace sync` runs here and reaches the graphs through `graph
-  list` and `graph pull`; `init`, `view` and `--data-root` are refused
+- `graph-admin describe commands`, `graph-admin ontology validate`,
+  `graph-admin skills install` and `graph-admin skills check` run here; `workspace sync` runs here and reaches the graphs through
+  `graph-admin graph list` and `graph-admin graph pull`; `init`, `view` and `--data-root` are refused
   (`admin.remote_mode`).
 - The server compares its build of `graph-admin` with this one, as for
   `graph` ([Builds](#builds)).
 - Writes are never retried. A lost answer is `remote.outcome_unknown`:
-  check the state (`graph show`, `token list`, `policy show`) before
+  check the state (`graph-admin graph show`, `token list`, `policy show`) before
   running the command again. A release is the exception: `ontology release`
-  and `graph push` name the command to run again, which is safe, because a
+  and `graph-admin graph push` name the command to run again, which is safe, because a
   release that was applied is found installed and changes nothing, and one
   that was interrupted is finished (also a data migration, which commits
   once and is never applied twice). A command that writes nothing (every
@@ -548,7 +550,7 @@ writers wait for the graph's lock up to `lock_timeout_s` and then get the
 retryable `backend.lock_timeout`, so run a large migration in a quiet
 moment. If an answer is lost anyway, wait and run the same release again:
 it waits for the lock of the running migration, then finds it done or
-finishes it, and applies nothing twice; `graph show` and `audit verify`
+finishes it, and applies nothing twice; `graph-admin graph show` and `audit verify`
 confirm the result.
 
 ## Container

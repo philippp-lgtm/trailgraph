@@ -170,7 +170,7 @@ hashes; `token create` and `token revoke` append an installation event
 (`change.token{name, hash_prefix}`, a created token also with project and
 expiry, an admin token with `scope: admin`, a token with
 [roles](access_control.md#roles) with `roles`, sorted) before they replace
-the file, never the token itself. `token role add|remove` appends
+the file, never the token itself. `graph-admin token role add` and `graph-admin token role remove` append
 `maint.token_update` with `change.token{name, hash_prefix, roles}`, where
 `roles` is the token's **full set after the change** (empty when the last
 role was taken off), so replaying it is an assignment; a change that changes
@@ -252,7 +252,7 @@ object store, `s3`) is a configuration of the graph: switching it is a
 before and after, the object store's id from its marker, and the number
 and bytes of the stored files the switch covered), the manifest replaced
 by one rename, then an installation event that anchors the intent. A graph
-is always created `local`: `graph create` with `[files] store = "s3"`
+is always created `local`: `graph-admin graph create` with `[files] store = "s3"`
 records the switch right after the genesis (`blobs` and `bytes` 0).
 `graph-admin files move` records the same switch after its copies:
 `blobs` and `bytes` count every stored file the switch covered (each file a

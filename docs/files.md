@@ -8,8 +8,10 @@ agent reads a stored file itself and writes what it finds through the
 normal write commands. What the bytes declare about themselves (size,
 type, page count, pixel size, table shape, database schema) graph_cli
 extracts deterministically as [metadata](#metadata). The commands are
-`graph file add|path|check` (see [`graph`](cli_graph.md)) and `graph-admin
-files verify|gc|move|extract|extractors|store check` (see
+`graph file add`, `graph file path` and `graph file check` (see
+[`graph`](cli_graph.md)) and `graph-admin files verify`, `graph-admin files gc`,
+`graph-admin files move`, `graph-admin files extract`,
+`graph-admin files extractors` and `graph-admin files store check` (see
 [`graph-admin`](cli_graph_admin.md)).
 
 ## Model

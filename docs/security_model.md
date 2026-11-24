@@ -70,8 +70,9 @@ prevents depends on what is verified:
   server token: the server reads them from the token record, a client cannot
   assert them, and a local invocation has none, so a rule naming a role holds
   only with the server. Assigning roles is maintenance
-  (`maint.token_update`, `token role add|remove`, `--role` of `token create`
-  and `enroll create`), so whoever holds an admin token can widen what an app
+  (`maint.token_update`, `graph-admin token role add` and
+  `graph-admin token role remove`, `--role` of `graph-admin token create`
+  and `graph-admin enroll create`), so whoever holds an admin token can widen what an app
   token may do within what the policy grants to roles; an app token cannot
   assign any, and a project admin is kept from it by its ceiling. A role
   change counts from the next request, as a revoke does, and every change is

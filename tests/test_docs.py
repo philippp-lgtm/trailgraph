@@ -6,8 +6,9 @@ transcript names only real `graph` commands and options, the reference block of
 docs/configuration.md names exactly the keys of `config.toml` with their real defaults, its
 tables name exactly the environment variables the code reads, the route tables of
 docs/server.md name exactly the paths of the OpenAPI goldens, every error code, finding code
-and policy action a document names exists, and every policy example of
-docs/access_control.md compiles.
+and policy action a document names exists, every policy example of
+docs/access_control.md compiles, and every command line of the human documents names a real
+command with options it takes (written in full: `graph-admin graph push`, not `graph push`).
 
 Covers the tracked Markdown documentation (the root README, CONTRIBUTING.md, the
 example's README, docs/ and the hand-written admin skills that ship with graph-admin).
@@ -34,6 +35,7 @@ from uuid import UUID
 
 import pytest
 from harness import REPO_ROOT
+from support.command_lines import command_line_problems
 from support.fixtures import GOLDENS
 from support.skills import ADMIN_SKILLS_DIR
 
@@ -421,6 +423,21 @@ def _compile_example(source: str) -> str:
     return compiled.layer
 
 
+def _without_overview_paths(text: str) -> str:
+    """The text with the first column of a command overview emptied: it holds command paths
+    of its program (`graph create` there is `graph-admin graph create`), checked by the
+    overview tests."""
+    _, found, rest = text.partition("\n## Commands\n")
+    if not found:
+        return text
+    section = rest.split("\n## ", 1)[0]
+    emptied = "\n".join(
+        "|" + line.split(" | ", 1)[1] if line.startswith("| `") and " | " in line else line
+        for line in section.splitlines()
+    )
+    return text.replace(section, emptied)
+
+
 def test_documents_exist() -> None:
     assert INDEX in _documents()
     assert all(path.is_file() for path in _documents())
@@ -549,6 +566,18 @@ def test_policy_examples_compile() -> None:
     examples = _policy_examples(POLICY_DOC.read_text())
     assert len(examples) >= 2
     assert {_compile_example(source) for source in examples} == {"installation", "graph"}
+
+
+def test_human_documents_name_real_command_lines() -> None:
+    """Commands are written in full (`graph-admin graph push`, not `graph push`); the admin
+    skills have the same check in `tests/skills/test_admin_skills.py`."""
+    found = {
+        str(path.relative_to(REPO_ROOT)): problems
+        for path in _documents()
+        if not path.is_relative_to(ADMIN_SKILLS_DIR)
+        and (problems := command_line_problems(_without_overview_paths(path.read_text())))
+    }
+    assert found == {}
 
 
 def test_positive_controls() -> None:
@@ -689,3 +718,13 @@ def test_positive_controls() -> None:
     assert _compile_example(examples[0]) == "graph"
     with pytest.raises(GraphCliError):
         _compile_example(examples[0].replace("deny:", "denyy:"))
+
+    overview = (
+        "# T\n\n## Commands\n\n| `graph push REF` | warns like `graph skill publish` |\n"
+        "## Other\n\n| `graph push` | x |\n"
+    )
+    assert command_line_problems(_without_overview_paths(overview)) == [
+        "graph skill publish: no such command",
+        "graph push: no such command",
+    ]
+    assert _without_overview_paths("no overview") == "no overview"

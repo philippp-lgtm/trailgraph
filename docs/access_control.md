@@ -259,7 +259,7 @@ when a deny rule (a `deny` entry of a graph policy, `types: {T: none}` or `read`
 such as `prefix:*` that the new name leaves) matches the old type or term and no deny rule
 matches the new one for the same actions. Apply a graph policy that names both the old and
 the new term first (a policy may name terms the pinned release does not have yet), release,
-then remove the old names. `ontology diff --graph` and `graph check --ontology` show the same
+then remove the old names. `ontology diff --graph` and `graph-admin graph check --ontology` show the same
 before the release (`admin.policy_renamed_term_affected`, `references`). An unfinished
 migration is completed even if the policy fails this check.
 
@@ -441,11 +441,11 @@ sees everything, because rights add up.
   names no grant for a marking some graph's pinned model uses warns
   `admin.marking_ungranted` there as well, so a policy change that drops such a
   grant is not silent until the next release. `ontology release`,
-  `graph push` and `ontology diff --graph` warn `admin.marking_ungranted` (a
+  `graph-admin graph push` and `ontology diff --graph` warn `admin.marking_ungranted` (a
   marking the new version uses that no installed grant names: only maintainer
   surfaces show those attributes), `admin.marking_blocks_create`,
   `admin.marking_in_expression` (a rule, lifecycle guard or action precondition
-  names a marked attribute; `graph actions publish` warns it for the
+  names a marked attribute; `graph-admin graph actions publish` warns it for the
   preconditions it publishes: its refusals are a covert channel, see the
   [security model](security_model.md#field-visibility)), `admin.marking_removed`
   (a marking was removed from an attribute, and the values, history included,
@@ -498,16 +498,16 @@ graph admin gives them to tokens:
 `scopes.<project>.<graph>: maintain` lets an admin token bound to the
 project (`graph-admin token create NAME --scope admin --project P`) run
 the graph-level maintenance of that graph: `ontology release` (release
-and pin), `graph skill publish`, `graph functions publish`, `graph actions publish`
-and `graph push` (`graph_configure`),
-`graph check` and `files verify` (`audit_verify`) and `graph reindex` (`files extract` is
+and pin), `graph-admin graph skill publish`, `graph-admin graph functions publish`, `graph-admin graph actions publish`
+and `graph-admin graph push` (`graph_configure`),
+`graph-admin graph check` and `files verify` (`audit_verify`) and `graph-admin graph reindex` (`files extract` is
 decided as `maint.reindex` too, but the admin API serves it to maintainers only);
-reads that show the graph's configuration (`graph show`, `graph pull`,
-`graph skill render`, `graph functions show`, `graph actions show`, `ontology
+reads that show the graph's configuration (`graph-admin graph show`, `graph-admin graph pull`,
+`graph-admin graph skill render`, `graph-admin graph functions show`, `graph-admin graph actions show`, `ontology
 diff --graph`) need `graph_configure` too. Check and release findings quote the
 graph's data, so `maintain`
-includes `read.get` on the graph, and `graph check`, `ontology release`
-and a `graph push` that releases also authorize it for a project admin: a
+includes `read.get` on the graph, and `graph-admin graph check`, `ontology release`
+and a `graph-admin graph push` that releases also authorize it for a project admin: a
 deny rule on reads (by project, for example) holds there too. Everything
 else stays with the `maintainers`: creating, archiving
 and restoring graphs, migrations, purges and repairs, policies, tokens
@@ -523,7 +523,7 @@ any other action, or any resource but a graph, is `access.ceiling`, and
 of the policy's allow rules only those naming its project count, so the
 `maintainers` (and the built-in policy, which lets every maintenance
 caller maintain) never reach it. Over the admin API it sees only the
-graphs it maintains: `graph list` lists those, any other graph is
+graphs it maintains: `graph-admin graph list` lists those, any other graph is
 `graph.not_found` as if it did not exist (the refusal is audited),
 warnings about other graphs' manifests are left out, and every other
 command is refused. `graph-admin policy explain --graph G

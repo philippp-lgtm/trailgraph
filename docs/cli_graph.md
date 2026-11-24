@@ -392,7 +392,7 @@ validation findings, refusals and dry runs are described in
 [Architecture: write pipeline](architecture.md#write-pipeline).
 
 A `data.referential.domain_violation` or `data.referential.range_violation`
-finding (also in `graph check`) carries `connecting`, computed from the
+finding (also in `graph-admin graph check`) carries `connecting`, computed from the
 ontology alone: `direct` lists the relations that accept the two types in
 either direction, and only when there are none, `paths` lists up to three
 chains of two relations over an intermediate class (each hop is `{relation,
@@ -1025,7 +1025,7 @@ A graph that has no functions shows nothing about them in any `describe`
 command.
 
 Maintainers write functions as one YAML file each and publish them with
-`graph-admin` ([`graph functions publish`](cli_graph_admin.md#commands)). The
+[`graph-admin graph functions publish`](cli_graph_admin.md#commands). The
 file format, the types of parameters and the checks publishing applies are
 described once, in the format reference of the `authoring-graph-functions`
 admin skill ([`references/format.md`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md)); the
@@ -1106,7 +1106,7 @@ shows nothing about them in any `describe` command.
 When no action fits, use the primitives.
 
 Maintainers write actions as one YAML file each and publish them with
-`graph-admin` ([`graph actions publish`](cli_graph_admin.md#commands)). The
+[`graph-admin graph actions publish`](cli_graph_admin.md#commands). The
 file format, the checks publishing applies and the rules for preconditions
 are described once, in the format reference of the `authoring-graph-actions`
 admin skill ([`references/format.md`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-actions/references/format.md)); the

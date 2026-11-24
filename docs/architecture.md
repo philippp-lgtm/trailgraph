@@ -100,10 +100,10 @@ name (`cli_kit.argv.request_args`, `api_args`) and returns the server's answer a
 `app_cli.remote_hooks` adds the client work of the hooked commands
 (uploads, downloads, origins), and the skills commands take graph skills
 from the server. `maintenance_cli.remote` does the same for `graph-admin`:
-it uploads file and directory parameters and writes the files of `graph
-skill render` and `graph pull` into their directories. `workspace sync`
-runs on the client and calls the handlers of `graph list` and `graph pull`
-the mode selects, so it needs no route of its own.
+it uploads file and directory parameters and writes the files of
+`graph-admin graph skill render` and `graph-admin graph pull` into their
+directories. `graph-admin workspace sync` runs on the client and calls the
+handlers of `graph-admin graph list` and `graph-admin graph pull` the mode selects, so it needs no route of its own.
 
 ## CLIs
 
@@ -297,9 +297,9 @@ parameter, and `ontology_layer.connecting` supplies the hint of an impossible
 relationship pattern.
 
 The layers above use it in these places: `services.read` and `services.describe`
-load the published catalogs next to the model (`describe functions|function`,
-`describe actions|action`, `run`, the search kinds `function` and `action`,
-`lookup --for`); `services.actions` and `services.write` run an action for the
+load the published catalogs next to the model (`graph describe functions`,
+`graph describe function`, `graph describe actions`, `graph describe action`, `graph run`, the search kinds `function` and `action`,
+`graph lookup --for`); `services.actions` and `services.write` run an action for the
 `do` command of `app_cli` (the visible action, binding, then expansion and
 preconditions under the graph lock); `skills` receive the
 compiled catalog as one more document and render the `functions` block and
@@ -346,7 +346,7 @@ nothing is filtered and nothing is paid.
 | `graph_cli_admin.services_admin.migration` | the migration of a release for the maintenance tools: parse and judge `migration.yaml` against the old and new model (`migration.invalid`, `admin.migration_unexpected`, `admin.migration_from_mismatch`), plan the data change with the stamp of its tx, judge the migrated overlay (`admin.migration_required`), describe it for the answers; `services_admin.release` writes it, `check` and `sources_push` use it |
 | `temporal_knowledge.name_map` | `NameMap`: the renames and re-keyings between consecutive pinned versions (`Hop`s from the two compiled models and the installed `migration.yaml`) composed from a revision's version to the pin; `MappedSnapshot` and the mapped revisions are built on it in `services.names` |
 | `app_cli.rename_hints` | `term.unknown` for an old name says what it is called now (message and `details.renamed`), around every command; the old name is never accepted |
-| `graph_cli_admin.services_admin.catalog_follow` | published function and action catalogs across a release with renames: `follow` decides nothing to do, republish (same sources, new compiled document) or refuse; `write` is the catalog switch shared with `graph <kind> publish` and `graph push` |
+| `graph_cli_admin.services_admin.catalog_follow` | published function and action catalogs across a release with renames: `follow` decides nothing to do, republish (same sources, new compiled document) or refuse; `write` is the catalog switch shared with `graph <kind> publish` and `graph-admin graph push` |
 | `graph_cli_admin.services_admin.renamed_terms` | what a release that renames terms does to policy and catalogs: `hazards` (deny rules that would apply to nothing, `admin.policy_renamed_term`) and `references` (where functions, actions and policy name each renamed term) |
 | `ontology_layer.data_validator` | `CallerView`: on the write path, validation judges the whole graph and the view only decides what a finding may say (concealed findings, unknown type and relation answers over the filtered model) |
 
