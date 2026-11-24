@@ -31,6 +31,7 @@ POSIX only, local filesystems only.
 
 ```
 <data root>/
+  .lock                       the registry lock (creating graphs, their names)
   audit/                      installation audit stream (events-<first seq>.jsonl segments)
   policy/installation.json    installed installation policy
   tokens/                     tokens.json, enrollments.json
@@ -344,7 +345,7 @@ fixed key order.
 format_version = 2
 requires = ["blobs.s3"]
 
-# [graph] and [ontology] as in format 1
+# [graph], [ontology], [alias.prefixes] and [extensions] as in format 1
 
 [store]
 backend = "files"

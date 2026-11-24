@@ -153,7 +153,7 @@ Update the documentation in the same change as the code:
 | a key, section kind, limit, bound or check of `graph_cli.view/1`, or a rule publishing applies to views | `bundled_skills/authoring-graph-views/references/format.md` of `graph_cli_admin` (the format has one home there; `docs/cli_graph.md` describes the commands and the behavior of a call and links to it) |
 | a block, size budget or publish check of graph skills | `bundled_skills/authoring-graph-skills/SKILL.md` of `graph_cli_admin` (the rules have one home there; `docs/skills.md` describes the concept and links to it; `tests/skills/test_graph_skills_skill.py` pins blocks, reserved files and budgets) |
 | a layer, package or module | `docs/architecture.md` (or `storage.md`, `audit.md`) and the import contracts |
-| an on-disk format or a verification check | `docs/storage.md` or `docs/audit.md` |
+| an on-disk format or a verification check | `docs/storage.md` or `docs/audit.md`; `tests/cli/test_storage_doc.py` checks that the directory tree of `storage.md` names every path of a real data root and that its manifest example matches the golden |
 | an error code, finding code or policy action renamed or removed | every document that names it (checked) |
 | an example graph's files or setup | `examples/<name>/README.md`; `tests/cli/test_company_example.py` keeps the example buildable |
 | a way to run graph_cli, a core concept or a foundational design decision | `docs/deployment_options.md`, `docs/overview.md` or `docs/design_decisions.md` |
