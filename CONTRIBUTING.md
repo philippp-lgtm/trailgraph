@@ -156,7 +156,7 @@ Update the documentation in the same change as the code:
 | an on-disk format or a verification check | `docs/storage.md` or `docs/audit.md` |
 | an example graph's files or setup | `examples/<name>/README.md`; `tests/cli/test_company_example.py` keeps the example buildable |
 | a way to run graph_cli, a core concept or a foundational design decision | `docs/deployment_options.md`, `docs/overview.md` or `docs/design_decisions.md` |
-| install steps or the quickstart | `README.md`; run the quickstart on a throwaway data root |
+| install steps or the quickstart | `README.md`; `tests/cli/test_readme_quickstart.py` runs the quickstart's blocks on a throwaway data root and knows only the commands it uses (`uv run graph-admin`, `graph`, `mkdir -p`, a pointer file) |
 
 `uv run pytest tests/test_docs.py` checks that every link and anchor
 resolves, that `docs/README.md` lists every document and that the command
