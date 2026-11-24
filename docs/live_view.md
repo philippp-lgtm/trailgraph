@@ -249,7 +249,7 @@ see. The proxy
   `/functions`, `/policies`, `/events` and `/trail`, with their query parameters
   (`graph`, `id`);
 - sends `Host: localhost` or `127.0.0.1` (with any port or none), not
-  the public name, else the view answers 403;
+  the public name, else the view refuses the request;
 - adds the token as the query parameter `t`, replacing any `t` the
   browser sent (the page then sends an empty one, which the view
   ignores), so the token never reaches the browser;

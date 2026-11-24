@@ -30,6 +30,7 @@ from graph_cli.kernel.clock import format_timestamp
 
 ACCESS_SCHEMA: Final = "graph_cli.access/1"
 ACCESS_FILE: Final = "access.jsonl"
+FILE_MODE: Final = 0o600
 
 
 def access_record(
@@ -120,7 +121,8 @@ class AccessLogFile:
         line = canonical_bytes(dict(record)) + b"\n"
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_CLOEXEC, 0o600)
+            flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_CLOEXEC
+            fd = os.open(self.path, flags, FILE_MODE)
             try:
                 os.write(fd, line)  # one write per line: O_APPEND keeps lines whole
             finally:

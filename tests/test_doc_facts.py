@@ -4,21 +4,25 @@
   occur in the document (whitespace collapsed), and the numbers in it, read in order, must
   equal the values computed from the constants. A limit changed in code then fails here
   until the document follows.
-- The coverage scan reads the prose of each document in `SCANNED` (fenced blocks, code
-  spans, HTML comments and link targets left out) and fails on every number that no fact
-  and no `NOT_FACTS` entry covers. A number that is not worth a check is removed from the
-  document or replaced by a link to its home (CONTRIBUTING.md "Documentation"). Standard
-  names (`RFC 3339`, `SHA-256`, `UTF-8` ...), versions, dates and the markers of ordered
-  lists are not numbers. Number words ("five graphs") are not scanned.
+- The coverage scan reads the prose of the root README and of every document in docs/
+  (`SCANNED`; fenced blocks, code spans, HTML comments and link targets left out) and
+  fails on every number that no fact and no `NOT_FACTS` entry covers. A number that is
+  not worth a check is removed from the document or replaced by a link to its home
+  (CONTRIBUTING.md "Documentation"). Standard names (`RFC 3339`, `SHA-256`, `UTF-8`
+  ...), versions, dates and the markers of ordered lists are not numbers. Number words
+  ("five graphs") are not scanned.
 - An exit code (`exit 2`, `the exit code is 0`) is checked without a table: it must be the
   exit code of the error code or category the text gives it to, the first one in the same
   parentheses, else the nearest before it in the same sentence, else the nearest after it.
   An exit code with no error code in its sentence needs a fact; `0` is always success.
+- A format number (`format 2`, `formats 1 and 2`) must name a format of the manifest or the
+  index the code reads; a released format keeps its number, so nothing more can go stale.
 - Every fact and every exemption must still occur, so the tables cannot rot.
 
 Each scanner has a positive control, so a broken scan cannot pass silently.
 """
 
+import json
 import re
 from dataclasses import dataclass
 
@@ -26,21 +30,28 @@ import pytest
 from harness import REPO_ROOT
 
 from graph_cli.app_cli.commands.read import find
-from graph_cli.catalog import config, file_cache, spill
+from graph_cli.audit import verify
+from graph_cli.catalog import access_log, config, enrollments, file_cache, spill
 from graph_cli.cli_kit.exit_codes import EXIT_BY_CATEGORY, EXIT_OK
 from graph_cli.extractors import detect, media_types, sqlite, table, text
-from graph_cli.kernel import changeset, ids, records
+from graph_cli.kernel import actor, changeset, ids, records
 from graph_cli.kernel.error_codes import ERROR_CODES, ErrorCategory
 from graph_cli.kinetic import card, view_format
 from graph_cli.ontology_layer import affordances
 from graph_cli.query import search
-from graph_cli.query.cypher import execute
+from graph_cli.query.cypher import execute, shape
 from graph_cli.skills import tree
 from graph_cli.skills.graph_skill import catalogs
 from graph_cli.sources import reconcile
-from graph_cli.storage.files import manifest, s3_blobs
+from graph_cli.storage.files import blobs, index, manifest, s3_blobs, store_marker
 from graph_cli.temporal_knowledge import changes
+from graph_cli_admin.maintenance_cli import view_server
+from graph_cli_admin.maintenance_cli.commands import view as view_command
+from graph_cli_admin.services_admin import view as live_view
 from graph_cli_admin.services_admin.error_codes import ADMIN_CODES
+from graph_cli_server import app as server_app
+from graph_cli_server import enroll, http_status
+from graph_cli_server import main as server_main
 
 FENCED_BLOCK = re.compile(r"^( *)```.*?^\1```", re.MULTILINE | re.DOTALL)
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -59,7 +70,8 @@ NOT_NUMBERS = re.compile(
     r"|\b\d{4}-\d{2}-\d{2}(?:T[\d:.]+(?:Z|[+-]\d{2}:\d{2})?)?"
     r"|\b[Ss]kill 1\b"  # the name of the app skill (docs/skills.md)
 )
-EXIT = re.compile(r"\bexit (?:code (?:is )?)?(\d+)\b")
+EXIT = re.compile(r"\bexits? (?:code (?:is )?)?(\d+)\b")
+FORMAT = re.compile(r"\b[Ff]ormats?[ -]\d+(?:(?:, | and | or | <-> )\d+)*")
 SENTENCE_END = re.compile(r"\. |\|")
 
 
@@ -79,28 +91,63 @@ def _hours(seconds: float) -> float:
     return int(hours) if hours.is_integer() else hours
 
 
-def _longest(pattern: re.Pattern[str]) -> int:
-    """The length of the longest run of `a` the pattern accepts (`a` is a letter and a hex
-    digit)."""
-    return max(n for n in range(4096) if pattern.fullmatch("a" * n))
+def _minutes(seconds: float) -> float:
+    minutes = seconds / 60
+    return int(minutes) if minutes.is_integer() else minutes
+
+
+def _mode(mode: int) -> str:
+    return f"{mode:04o}"
+
+
+def _longest(pattern: re.Pattern[str], prefix: str = "") -> int:
+    """The length of the longest run of `a` after `prefix` the pattern accepts (`a` is a
+    letter and a hex digit)."""
+    return max(n for n in range(4096) if pattern.fullmatch(prefix + "a" * n))
+
+
+def _status(code: str) -> int:
+    """The HTTP status of an error answer with `code`."""
+    spec = ERROR_CODES[code]
+    return http_status.status_for(spec.code, spec.category)
+
+
+def _openapi_version() -> str:
+    document = json.loads((REPO_ROOT / "tests/goldens/server/openapi_app.json").read_text())
+    return ".".join(document["openapi"].split(".")[:2])
+
+
+def _narrow_screen_px() -> int:
+    """The width below which the live view lays out for a narrow screen."""
+    css = (
+        REPO_ROOT / "packages/graph_cli_admin/src/graph_cli_admin/maintenance_cli/static/view.css"
+    ).read_text()
+    widths = {int(w) for w in re.findall(r"@media \(max-width: (\d+)px\)", css)}
+    assert len(widths) == 1, widths
+    return widths.pop()
+
+
+def _compose_ports(service: str) -> list[int]:
+    """The container ports a service of `compose.yaml` publishes, in order."""
+    text = (REPO_ROOT / "compose.yaml").read_text()
+    block = re.search(rf"^  {service}:\n(.*?)(?=^  \S|\Z)", text, re.MULTILINE | re.DOTALL)
+    assert block, service
+    return [int(port) for port in re.findall(r'^ +- "[^"]*:(\d+)"$', block.group(1), re.MULTILINE)]
+
+
+def _known_formats() -> set[int]:
+    """The format numbers of the manifest and of the index the code reads."""
+    return set(manifest.MANIFEST_FORMATS) | {int(f.rsplit("/", 1)[1]) for f in index.READ_FORMATS}
 
 
 def _shortest(pattern: re.Pattern[str]) -> int:
     return min(n for n in range(1, 4096) if pattern.fullmatch("a" * n))
 
 
-# The documents whose prose the coverage scan reads; the others are not scanned yet.
-SCANNED = (
-    "README.md",
-    "docs/README.md",
-    "docs/overview.md",
-    "docs/deployment_options.md",
-    "docs/design_decisions.md",
-    "docs/cli_graph.md",
-    "docs/configuration.md",
-    "docs/files.md",
-    "docs/skills.md",
-)
+# The documents whose prose the coverage scan reads: the root README and every document of
+# docs/ (CONTRIBUTING.md describes the development process, the admin skills have their own
+# checks).
+SCANNED = ("README.md", *sorted(f"docs/{p.name}" for p in (REPO_ROOT / "docs").glob("*.md")))
 
 FACTS: tuple[Fact, ...] = (
     # cli_graph.md
@@ -189,6 +236,101 @@ FACTS: tuple[Fact, ...] = (
         catalogs.FEATURED_LIMIT,
         catalogs.ACTIONS_FEATURED_LIMIT,
     ),
+    # access_control.md
+    fact("docs/access_control.md", "`_`, up to 64 characters)", _longest(actor.ROLE_NAME_RE)),
+    fact("docs/access_control.md", "A token holds at most 16 roles", actor.MAX_ROLES),
+    # live_view.md
+    fact("docs/live_view.md", "more than 250 revisions", live_view.RELOAD_REVISIONS),
+    fact("docs/live_view.md", "(1,000 events)", view_server.CLIENT_QUEUE),
+    fact("docs/live_view.md", "It keeps the last 500 steps", live_view.TRAIL_STEPS),
+    fact("docs/live_view.md", "at least 32 characters", view_command.MIN_TOKEN),
+    fact("docs/live_view.md", "the 15 seconds between heartbeats", int(view_server.HEARTBEAT_S)),
+    fact("docs/live_view.md", "(720 pixels or less", _narrow_screen_px()),
+    # server.md
+    fact("docs/server.md", "`--threads` (default 8)", server_main.DEFAULT_THREADS),
+    fact("docs/server.md", "refused with 403 and `remote.unauthorized`", http_status.SCOPE_REFUSED),
+    fact(
+        "docs/server.md",
+        "(`gce_` and 26 characters)",
+        _longest(enrollments.CODE_RE, "gce_"),
+    ),
+    fact(
+        "docs/server.md",
+        "for at most 24 hours",
+        _hours(enrollments.MAX_LIFETIME.total_seconds()),
+    ),
+    fact(
+        "docs/server.md",
+        "default 15 minutes",
+        _minutes(enrollments.DEFAULT_LIFETIME.total_seconds()),
+    ),
+    fact("docs/server.md", "(at most 4 KiB, no token", enroll.MAX_BODY_BYTES // 1024),
+    fact("docs/server.md", "`remote.unauthorized` (401)", _status("remote.unauthorized")),
+    fact(
+        "docs/server.md",
+        "(200 ok, 400 usage, 401 no valid token, 403 denied, 404 not found, 409 conflict, 422"
+        " refused or invalid, 503 unavailable, 500 internal)",
+        200,  # a success; every error answer has its category's status
+        http_status.STATUS_BY_CATEGORY[ErrorCategory.USAGE],
+        _status("remote.unauthorized"),
+        http_status.STATUS_BY_CATEGORY[ErrorCategory.DENIED],
+        http_status.STATUS_BY_CATEGORY[ErrorCategory.NOT_FOUND],
+        http_status.STATUS_BY_CATEGORY[ErrorCategory.CONFLICT],
+        http_status.STATUS_BY_CATEGORY[ErrorCategory.REFUSED],
+        http_status.STATUS_BY_CATEGORY[ErrorCategory.UNAVAILABLE],
+        http_status.STATUS_BY_CATEGORY[ErrorCategory.INTERNAL],
+    ),
+    fact(
+        "docs/server.md",
+        "a retryable 503 (such as `backend.lock_timeout`)",
+        _status("backend.lock_timeout"),
+    ),
+    fact("docs/server.md", "an OpenAPI 3.1 document", _openapi_version()),
+    fact(
+        "docs/server.md",
+        "`conflict.idempotency_key_reuse` (409;",
+        _status("conflict.idempotency_key_reuse"),
+    ),
+    fact("docs/server.md", "`remote.client_outdated` (422,", _status("remote.client_outdated")),
+    fact("docs/server.md", "`skills.outdated` (422)", _status("skills.outdated")),
+    fact("docs/server.md", "at most 1,000 files", server_app.MAX_DIRECTORY_FILES),
+    fact("docs/server.md", "`channel_timeout` (120 seconds)", server_main.CHANNEL_TIMEOUT_S),
+    fact("docs/server.md", "on port 8471", _compose_ports("graph")[1]),
+    fact("docs/server.md", "then 80 and 443 are the only ports", *_compose_ports("caddy")),
+    # architecture.md
+    fact(
+        "docs/architecture.md",
+        "24-hour expiry",
+        _hours(file_cache.UNUSED_FOR.total_seconds()),
+    ),
+    fact("docs/architecture.md", "magic bytes of the first 16 bytes", media_types.SNIFF_BYTES),
+    # storage.md
+    fact("docs/storage.md", "once 200 txs were written", index.FULL_CHECK_EVERY),
+    fact("docs/storage.md", "at least every 200 txs", index.FULL_CHECK_EVERY),
+    fact("docs/storage.md", "for 10 minutes", _minutes(store_marker.IDENTITY_TTL_S)),
+    fact(
+        "docs/storage.md",
+        "older than 12 hours",
+        _hours(s3_blobs.PROMOTE_REFRESH.total_seconds()),
+    ),
+    fact("docs/storage.md", "above 64 unconfirmed hashes", s3_blobs.LISTING_THRESHOLD),
+    fact("docs/storage.md", "mode 0444", _mode(blobs.BLOB_MODE)),
+    fact(
+        "docs/storage.md",
+        "older than 24 hours by the store's clock",
+        _hours(s3_blobs.GC_GRACE.total_seconds()),
+    ),
+    fact(
+        "docs/storage.md",
+        "removed by gc after 24 hours",
+        _hours(s3_blobs.GC_GRACE.total_seconds()),
+    ),
+    # audit.md
+    fact("docs/audit.md", "text of up to 128 characters", records.MAX_SOURCE_TEXT),
+    fact("docs/audit.md", "file mode 0600", _mode(access_log.FILE_MODE)),
+    fact("docs/audit.md", "`null` above 4 KiB", shape.SHAPE_MAX_BYTES // 1024),
+    fact("docs/audit.md", "logged as text up to 4 KiB", shape.SHAPE_MAX_BYTES // 1024),
+    fact("docs/audit.md", "lists the first 20 revisions", verify.MAX_LISTED_REVISIONS),
 )
 
 # Phrases whose numbers are not facts of the code, with the reason.
@@ -202,6 +344,16 @@ NOT_FACTS: dict[tuple[str, str], str] = {
     ("docs/files.md", "`last_page` (from 1)"): "a definition: pages count from 1",
     ("docs/files.md", "`files` 1.1"): "the module version that added the format record",
     ("docs/files.md", "a store answers 403 instead of 404"): "how S3 stores answer, not graph_cli",
+    ("docs/cli_graph_admin.md", "a missing key answering 404 (403 means"): "how S3 stores answer",
+    ("docs/live_view.md", "limited to about 100 bytes"): "the operating system's socket path limit",
+    ("docs/server.md", "answers 405 with `Allow`"): "HTTP semantics (RFC 9110)",
+    ("docs/server.md", "(409; the draft says 422)"): "what the IETF idempotency draft says",
+    ("docs/server.md", "answers 304 without them"): "HTTP semantics (RFC 9110)",
+    ("docs/server.md", "off (404)"): "HTTP semantics: the route is absent",
+    ("docs/server.md", "does step 1"): "refers to the first step of the list above",
+    ("docs/server.md", "often 30 to 60 seconds"): "the usual defaults of reverse proxies",
+    ("docs/storage.md", "on a 404 of a referenced object"): "how S3 stores answer",
+    ("docs/audit.md", "(`blobs` and `bytes` 0)"): "a definition: the store is empty",
 }
 
 
@@ -318,13 +470,22 @@ def _covered(prose: str, phrases: list[str]) -> list[range]:
 
 def _uncovered(prose: str, phrases: list[str], exits: list[int] | None = None) -> list[str]:
     """The numbers of a prose text that no phrase covers, each with a little context; the
-    exit codes are covered by the exit check, except those at `exits` (unpaired)."""
-    ranges = _covered(prose, phrases)
+    exit codes are covered by the exit check, except those at `exits` (unpaired), and the
+    format numbers by the format check."""
+    ranges = _covered(prose, phrases) + [range(*m.span()) for m in FORMAT.finditer(prose)]
     paired = {m.start(1) for m in EXIT.finditer(prose)} - set(exits or ())
     return [
         f"{number!r} in ...{prose[max(0, pos - 50) : pos + 30]}..."
         for pos, number in _numbers(prose)
         if pos not in paired and not any(pos in r for r in ranges)
+    ]
+
+
+def _unknown_formats(prose: str, known: set[int]) -> list[str]:
+    return [
+        match.group()
+        for match in FORMAT.finditer(prose)
+        if not {int(n) for n in re.findall(r"\d+", match.group())} <= known
     ]
 
 
@@ -366,11 +527,19 @@ def test_exit_check_pairs_codes() -> None:
     assert [line.split(" in ")[0] for line in _uncovered(prose, [], unpaired)] == ["'4'"]
 
 
+def test_format_check_reads_every_number() -> None:
+    prose = _prose("Formats 1 and 2, format-1 manifests, format 1 <-> 3, a format 7.")
+    assert _unknown_formats(prose, {1, 2}) == ["format 1 <-> 3", "format 7"]
+    assert _uncovered(prose, []) == []
+
+
 def test_helpers_probe_patterns() -> None:
     assert _longest(re.compile(r"^[a-z][a-z0-9_]{0,63}$")) == 64
     assert _shortest(re.compile(r"^[0-9a-f]{8,32}$")) == 8
     assert _hours(24 * 3600) == 24
     assert _hours(5400) == 1.5
+    assert _longest(re.compile(r"^gce_[a-z2-7]{26}\Z"), "gce_") == 26
+    assert _compose_ports("caddy") == [80, 443]
 
 
 @pytest.mark.parametrize("item", FACTS, ids=lambda f: f"{f.doc}:{f.phrase[:40]}")
@@ -385,6 +554,12 @@ def test_every_number_is_a_fact_or_exempted(doc: str) -> None:
     _, unpaired = _exit_problems(prose, _exit_codes())
     uncovered = _uncovered(prose, _phrases(doc), unpaired)
     assert not uncovered, "\n".join(uncovered)
+
+
+@pytest.mark.parametrize("doc", SCANNED)
+def test_format_numbers_exist(doc: str) -> None:
+    unknown = _unknown_formats(_prose(_source(doc)), _known_formats())
+    assert not unknown, unknown
 
 
 @pytest.mark.parametrize("doc", SCANNED)
