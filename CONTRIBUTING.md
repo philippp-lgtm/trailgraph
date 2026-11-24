@@ -135,6 +135,11 @@ Rules:
   image. Both are produced by a script, see [Generated files](#generated-files).
 - **New documents** get a lowercase name with `_` and a line in
   `docs/README.md`.
+- **Commands are written in full** in running text and code blocks:
+  `graph-admin graph push`, never shortened to the part after the program,
+  and `graph file add` and `graph file path` as two commands, not as
+  alternatives joined with `|`. Only the first column of a command overview
+  holds command paths relative to its program.
 - **Examples stay generic** (see `CLAUDE.md`): placeholders such as
   `<graph>` or `example_graph`, or the toy fixtures.
 
@@ -172,8 +177,11 @@ the reference block of `docs/configuration.md` names exactly the keys of
 environment variables the code reads, that the route tables of
 `docs/server.md` name exactly the paths of the OpenAPI documents, that every
 error code, finding code and policy action a document names in a code span
-exists (a dotted span that names a field instead goes into `NOT_CODES`), and
-that every policy example in `docs/access_control.md` compiles.
+exists (a dotted span that names a field instead goes into `NOT_CODES`),
+that every policy example in `docs/access_control.md` compiles, and that every
+`graph` and `graph-admin` command line of the documents names a real command
+with options it takes (`tests/support/command_lines.py`, also used for the
+admin skills).
 
 ## Generated files
 

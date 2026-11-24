@@ -46,7 +46,8 @@ into the graph's runtime area. Its kind follows the content:
   `<!-- graph_cli:block <name> -->` is replaced by a block generated from
   the graph's live model and manifest; the frontmatter, all other prose and
   extra files (`references/*.md`) are curated and kept. `graph` renders the
-  template at every `skills emit|install|check` with the model of the
+  template at every `graph skills emit`, `graph skills install` and
+  `graph skills check` with the model of the
   graph's current pin, so after an ontology release an installed copy is
   `stale` and `graph skills install` refreshes it; no republish is needed.
 - `static`: no marker. The files are the skill, installed as they are; a

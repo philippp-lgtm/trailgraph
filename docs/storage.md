@@ -221,8 +221,8 @@ in the graph directory.
   by replay), so a file committed meanwhile or a copy gc removed is copied
   before the intent; then the `change.blob_store` intent, the manifest
   through `replace_manifest` (one rename, format 1 <-> 2; the session
-  rebinds its blob backend), the anchor. `graph create`'s switch is the same
-  code with nothing to copy. A file add racing the move commits where the
+  rebinds its blob backend), the anchor. The switch of
+  `graph-admin graph create` is the same code with nothing to copy. A file add racing the move commits where the
   manifest names: its session binds the location under the lock, and the
   publish uploads from, or renames, its local staging file when the bound
   location lacks the blob (the promote before the lock went to the location

@@ -24,10 +24,10 @@ schema of every answer, as for `graph` (see [`graph`](cli_graph.md)).
 | `graph check REF` | check every entity against the pinned ontology, including what no write checks (rules with `when: batch`, `in` cardinality) and names shared by two active entities of one type family (warning `data.semantic.possible_duplicate`, once per name; only `same` names, a near spelling is reported on the write that adds it); exit 1 (`admin.data_errors`) on error findings, warnings are listed; also checks the published functions against the model (`admin.functions_broken`, for example `function.stale` after an interrupted push) the published actions (`admin.actions_broken`, for example `action.stale`) and the published views (`admin.views_broken`, for example `view.stale`; the functions are reported first, the views last); `--ontology DIR` checks against an authored version before it is released, and previews its migration when it has one ([below](#releasing-with-a-data-migration)) |
 | `graph reindex REF` | rebuild the revision files, the checkpoint and the index of a graph from its transaction log (`--dry-run`, `--reason`), audited as `maint.reindex`; for derived files that `audit verify` reports as different from the log, or reads that warn `storage.index_stale` |
 | `graph pull REF DIR` | write the authored sources of a graph into a workspace directory: its pinned release (`--version V`: another installed one), its published skill, functions, actions and views, byte for byte, with the base `push` checks (`--force` replaces an earlier pull); changes nothing in the data root ([Workspaces](#workspaces-pull-and-push)) |
-| `graph push REF DIR` | release and publish what changed in a pulled directory, under one lock; refused when the graph changed since the pull (`--dry-run`, `--reason`); a `migration.yaml` in the new version directory migrates the data ([below](#releasing-with-a-data-migration)); warns like `graph skill publish` |
+| `graph push REF DIR` | release and publish what changed in a pulled directory, under one lock; refused when the graph changed since the pull (`--dry-run`, `--reason`); a `migration.yaml` in the new version directory migrates the data ([below](#releasing-with-a-data-migration)); warns like `graph-admin graph skill publish` |
 | `workspace sync DIR` | set up or refresh a [maintainer workspace](#maintainer-workspaces): the admin skills in `DIR/.claude/skills/`, `DIR/CLAUDE.md` when there is none, and a pull of every graph that has no folder yet (`--dry-run`, `--force` for the skills) |
 | `graph skill publish GRAPH DIR` | publish a skill directory or a template as the graph's skill (`--dry-run`, `--reason`); a template over its [budget](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-skills/SKILL.md#what-publishing-checks) is published with the warning `admin.skill_over_budget`, and a template that teaches what the tool carries with the [recipe lint](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-skills/references/recipe_lint.md) warnings |
-| `graph functions publish GRAPH DIR` | publish a folder of function files (`<name>.yaml`, [`graph_cli.function/1`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md), the format reference of the `authoring-graph-functions` admin skill) as the graph's function catalog, checked against the graph's ontology pin; every problem is reported together (`admin.functions_invalid`); refused with `admin.views_broken` when a published view would not hold with the new functions; warns with `admin.function_single_ref` where a single-value `ref` could take a list ([what it covers](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md#what-publishing-checks); `graph push` warns the same for the functions it publishes); an empty folder unpublishes all (`--dry-run`, `--reason`) |
+| `graph functions publish GRAPH DIR` | publish a folder of function files (`<name>.yaml`, [`graph_cli.function/1`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md), the format reference of the `authoring-graph-functions` admin skill) as the graph's function catalog, checked against the graph's ontology pin; every problem is reported together (`admin.functions_invalid`); refused with `admin.views_broken` when a published view would not hold with the new functions; warns with `admin.function_single_ref` where a single-value `ref` could take a list ([what it covers](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md#what-publishing-checks); `graph-admin graph push` warns the same for the functions it publishes); an empty folder unpublishes all (`--dry-run`, `--reason`) |
 | `graph functions show GRAPH` | the published function catalog: hash, ontology pin it was published against, and one line per function |
 | `graph actions publish GRAPH DIR` | publish a folder of action files (`<name>.yaml`, [`graph_cli.action/1`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-actions/references/format.md), the format reference of the `authoring-graph-actions` admin skill) as the graph's action catalog, checked against the graph's ontology pin; every problem is reported together (`admin.actions_invalid`); an action may not be named like a published function, nor a function like a published action (one namespace per graph); an empty folder unpublishes all; a precondition over a [marked](access_control.md#markings) attribute warns (`admin.marking_in_expression`) (`--dry-run`, `--reason`) |
 | `graph actions show GRAPH` | the published action catalog: hash, ontology pin it was published against, and one line per action |
@@ -39,7 +39,7 @@ schema of every answer, as for `graph` (see [`graph`](cli_graph.md)).
 | `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it; classes the release adds get their `display_prefix` as alias prefix (a prefix stays with its entities: a class renamed with `renamed_from` (a local name, or the CURIE of the old term when it moves to another module) takes the prefix of its old name and replaces that entry, a removed class keeps its prefix, and a prefix another class already holds is not given out, with the warning `admin.alias_prefix_taken`); every published function, action and view must still resolve under the new release, on every bump, else `admin.functions_broken`, `admin.actions_broken` or `admin.views_broken` ([Auditing and releases](#auditing-and-releases)), unless the release has renames and they can be compiled again (`republished`); a deny rule that names a renamed term and no new one is `admin.policy_renamed_term`; a major release may carry a data migration (`migration.yaml`, [below](#releasing-with-a-data-migration)); `--dry-run` makes every check and shows the migration without writing, `--reason` is recorded with the release and the migration |
 | `audit verify` | check every chain, tx log, revision file, index, manifest pin, installed policy and blob location ([Blob location](audit.md#blob-location)); exit 1 on error findings |
 | `audit anchor` | record every graph stream's head in the installation stream |
-| `usage report [GRAPH] [--since DATE]` | read the access log (needs `[audit] access_log = true`; else `access_log: false`) per graph, or for `GRAPH` only: function runs (calls, distinct sessions, errors by code), `never_run` (published functions without a run), `function_share` (whole percent of runs among runs and queries), query `shapes` ranked by distinct sessions, and three lists derived from them: `discovery_misses` (a covered shape still queried), `batch_gaps` (the covering function takes one value where the query took a list) and `candidates` (uncovered shapes in at least two sessions, the input for new functions). Long lists are cut, `<list>_more` counts the rest. `--since` takes a date (midnight UTC) or an RFC 3339 timestamp, inclusive. Apart from the graphs, `sessions` is installation-wide (`GRAPH` does not narrow it): `count` is the number of sessions whose first logged command is in the window and `first_start` how many of them began with `graph start` (`first_start_share` in whole percent, null without sessions). A session is a session id of the actor together with its agent id when it has one: a subagent shares the session id of its parent and has an id of its own, so each agent counts on its own and one without an agent id stands for the session alone; a line with only a session name, or none, is no session. Its first command is its earliest line in the whole log (file order breaks a tie), whatever the command or its outcome. Only commands the log records are seen: `describe commands` and `--help` are not logged, so they are never first, and in the remote mode only the commands that reach a command route of the server are (`skills check|install`, `self update`, `connect` and the client half of `start` are not, so a session whose real first call is one of them begins with its next logged command). With `--since` a session counts when its first line is on or after it. The part is empty (`count: 0`, share null) unless `[audit] access_log` is on. Shapes only, no values; sessions are counted, never listed. In remote mode the server's log is read through the admin API (`maint.audit_read`) |
+| `usage report [GRAPH] [--since DATE]` | read the access log (needs `[audit] access_log = true`; else `access_log: false`) per graph, or for `GRAPH` only: function runs (calls, distinct sessions, errors by code), `never_run` (published functions without a run), `function_share` (whole percent of runs among runs and queries), query `shapes` ranked by distinct sessions, and three lists derived from them: `discovery_misses` (a covered shape still queried), `batch_gaps` (the covering function takes one value where the query took a list) and `candidates` (uncovered shapes in at least two sessions, the input for new functions). Long lists are cut, `<list>_more` counts the rest. `--since` takes a date (midnight UTC) or an RFC 3339 timestamp, inclusive. Apart from the graphs, `sessions` is installation-wide (`GRAPH` does not narrow it): `count` is the number of sessions whose first logged command is in the window and `first_start` how many of them began with `graph start` (`first_start_share` in whole percent, null without sessions). A session is a session id of the actor together with its agent id when it has one: a subagent shares the session id of its parent and has an id of its own, so each agent counts on its own and one without an agent id stands for the session alone; a line with only a session name, or none, is no session. Its first command is its earliest line in the whole log (file order breaks a tie), whatever the command or its outcome. Only commands the log records are seen: `describe commands` and `--help` are not logged, so they are never first, and in the remote mode only the commands that reach a command route of the server are (`graph skills check`, `graph skills install`, `graph self update`, `graph connect` and the client half of `graph start` are not, so a session whose real first call is one of them begins with its next logged command). With `--since` a session counts when its first line is on or after it. The part is empty (`count: 0`, share null) unless `[audit] access_log` is on. Shapes only, no values; sessions are counted, never listed. In remote mode the server's log is read through the admin API (`maint.audit_read`) |
 | `files verify --graph REF` | check the stored files of a graph (and name metadata records behind their extractor in `metadata`, information only): missing (and, with `--rehash`, damaged) files are errors, orphans, staging leftovers and misplaced copies (`blob_misplaced`: a copy outside the location the graph's manifest names) info; for a graph in an object store one listing of its prefix (`--rehash` reads every object), and a store that cannot be reached or is another store is the error `blob_store_unavailable` instead of a stop; a local graph is checked for copies in the configured object store only when one is configured with credentials and reachable, and never fails because of it |
 | `files gc --graph REF` | remove stored files no transaction names (in an object store only those past a grace period by the store's clock), old staging files and misplaced copies whose bytes the graph's location holds intact (a damaged or unreadable copy there keeps the misplaced one, listed as `misplaced_kept`; a local graph's objects only in the store its audit trail records it moved away from, others are report-only; the rules are in [Storage](storage.md#stored-files-in-an-object-store)) (`--dry-run`, `--reason`), audited as `maint.repair` ([what the event names](audit.md#blob-location)) |
 | `files move REF... --to s3\|local` | move the stored files of graphs between the data root and the object store (`--all` for every graph, archived ones too; graphs already there are skipped and listed as `at_target`): copy passes while writes go on, then the switch under the graph lock, audited as `maint.graph_configure`; the old copies stay until `files gc` (`--dry-run` counts files and bytes, `--reason`; [Moving stored files](#moving-stored-files)) |
@@ -76,11 +76,11 @@ of the `ontology-best-practices` skill. The app shows older revisions under the 
 from the pin history and the installed release files, so a release directory stays where it is.
 A function or action published with an old name is refused with its current name
 ("inv:Item was renamed to inv:Product in 2.0.0") in the problem's message and
-`details.renamed`, also in a `graph push` that makes the release.
+`details.renamed`, also in a `graph-admin graph push` that makes the release.
 
 - **The file** is `migration.yaml` (`graph_cli.migration/1`: `from`, `summary`, `steps`) next
-  to the module files of the version directory; `ontology release`, `graph push` and
-  `graph check --ontology` read it. Renames come from `renamed_from` in the ontology; the
+  to the module files of the version directory; `ontology release`, `graph-admin graph push` and
+  `graph-admin graph check --ontology` read it. Renames come from `renamed_from` in the ontology; the
   steps say what the ontology cannot (values, new required attributes, merged classes, dropped
   data). It is required whenever the release rewrites any revision, renames included (steps may
   be empty); without it the release is `admin.migration_required` with a hint to the file and
@@ -95,8 +95,8 @@ A function or action published with an old name is refused with its current name
 - **Authorization** is `maint.migrate`, decided with the release and pin before the lock
   (also for a dry run): maintainers only, a project admin's release that migrates is refused
   with `access.ceiling`.
-- **Preview**: `ontology release --dry-run`, `graph push --dry-run` and
-  `graph check REF --ontology DIR` apply the migration to an overlay and report, in the
+- **Preview**: `ontology release --dry-run`, `graph-admin graph push --dry-run` and
+  `graph-admin graph check REF --ontology DIR` apply the migration to an overlay and report, in the
   `migration` block of the answer, the counts per derived rename and per step (entities,
   edges, by type, three sample ids), the findings that remain and the steps that matched
   nothing. Nothing is written, not even a marker.
@@ -114,7 +114,7 @@ A function or action published with an old name is refused with its current name
   `change.functions.from` equal to `to`, only `compiled_hash` differs); the answer lists it in
   `republished`. Those that name an old CURIE, or an attribute that was renamed, stay
   `admin.functions_broken` / `admin.actions_broken` / `admin.views_broken` unless the same
-  `graph push` brings the fixed files. A view also runs functions: it is checked against the
+  `graph-admin graph push` brings the fixed files. A view also runs functions: it is checked against the
   functions as the release leaves them (the republished ones included) and is republished
   only when it no longer reads the same. A function without a `module:` line on a graph that the release splits into
   several modules needs that line (`function.module_required`), so it is fixed in the push
@@ -123,7 +123,7 @@ A function or action published with an old name is refused with its current name
   (`references`, with a `views` list only for a graph that has views; a function, action or
   view is `explicit` when its own file names the old CURIE) and
   the catalogs the release would publish again (`republished`); a deny rule the release would
-  be refused for is the warning `admin.policy_renamed_term_affected`. `graph check --ontology`
+  be refused for is the warning `admin.policy_renamed_term_affected`. `graph-admin graph check --ontology`
   gives the same refusals and `republished`.
 - **The release** runs under the graph lock: it installs the release, writes the migration
   marker, appends the `maint.migrate` intent (`--reason` recorded), commits the migration as
@@ -144,7 +144,7 @@ A function or action published with an old name is refused with its current name
 
 ## Workspaces: pull and push
 
-`graph pull REF DIR` writes what a graph was released and published from,
+`graph-admin graph pull REF DIR` writes what a graph was released and published from,
 so it can be changed on any machine, also one in the remote mode:
 
 ```
@@ -163,7 +163,7 @@ Pull owns these six entries (the `functions`, `actions` and `views` folders as a
 To change the ontology, copy the version directory to a new one named
 after the new version and bump the module version there; to change the
 skill, edit `skill/graph-<graph>/`; to change the functions, actions or views, edit, add or
-delete files in `functions/`, `actions/` or `views/`. `graph push REF DIR` then, under the
+delete files in `functions/`, `actions/` or `views/`. `graph-admin graph push REF DIR` then, under the
 graph's lock:
 
 - refuses with `admin.source_conflict` when the graph no longer has the
@@ -173,11 +173,11 @@ graph's lock:
 - releases and pins the highest version directory when it is newer than
   the base (the rules of `ontology release`; a changed module under the
   base version is `admin.release_exists`), and publishes the skill
-  directory when it differs (the rules of `graph skill publish`) and the
+  directory when it differs (the rules of `graph-admin graph skill publish`) and the
   `functions` folder when it differs, after the release (the rules of
-  `graph functions publish`), the `actions` folder the same way (the
-  rules of `graph actions publish`) and the `views` folder last (the rules of
-  `graph views publish`); the order is release, skill, functions,
+  `graph-admin graph functions publish`), the `actions` folder the same way (the
+  rules of `graph-admin graph actions publish`) and the `views` folder last (the rules of
+  `graph-admin graph views publish`); the order is release, skill, functions,
   actions, views. A missing folder is an empty one, so deleting every file
   unpublishes the catalog;
 - checks the skill the graph will have against the ontology it will have
@@ -207,9 +207,10 @@ of a major release), and a
 graph's release is one bundle: the version of the bundle is the version of
 the main module (the one that imports the others). When a directory holds
 more than one module file, name the main module with `--module <module>` on
-`ontology validate`, `ontology diff`, `ontology release`, `graph create` and
-`graph check --ontology`; without it these commands refuse with
-`usage.missing_argument`. `graph push` takes the main module from the pulled
+`graph-admin ontology validate`, `graph-admin ontology diff`,
+`graph-admin ontology release`, `graph-admin graph create` and
+`graph-admin graph check --ontology`; without it these commands refuse with
+`usage.missing_argument`. `graph-admin graph push` takes the main module from the pulled
 base. The bump of the main module must cover every change of the bundle;
 the own version of each other module is checked against the changes to its
 terms, and one that does not cover them is the warning
@@ -231,7 +232,7 @@ mode:
 ```
 DIR/CLAUDE.md                    written when missing, never replaced: points at the skills
 DIR/.claude/skills/<skill>/      the admin skills (as `skills install --scope project --dir DIR`)
-DIR/<graph>_<id suffix>/         one folder per graph, as `graph pull` writes it
+DIR/<graph>_<id suffix>/         one folder per graph, as `graph-admin graph pull` writes it
 ```
 
 The suffix is the last six hex digits of the graph's id (the random end of
@@ -239,7 +240,7 @@ a UUIDv7), so graphs of one name from two installations never share a
 folder. A folder belongs to a graph by its `.graph_cli_source.json`, not by
 its name: a renamed folder is still found. Each run installs or refreshes
 the skills and pulls every graph without a folder (archived ones are left
-out), through `graph list` and `graph pull` with their authorization and
+out), through `graph-admin graph list` and `graph-admin graph pull` with their authorization and
 checks; the answer lists each graph with its `action`:
 
 | Action | Meaning |
@@ -247,12 +248,12 @@ checks; the answer lists each graph with its `action`:
 | `pull` | would be pulled (`--dry-run`) |
 | `pulled` | pulled into its new folder |
 | `present` | its folder holds the release the graph has pinned |
-| `behind` | the graph has another release pinned than its folder was pulled from; pull it again with `graph pull --force` once the folder's edits are pushed |
+| `behind` | the graph has another release pinned than its folder was pulled from; pull it again with `graph-admin graph pull --force` once the folder's edits are pushed |
 | `conflict` | the folder name is taken by something that is not a pull of this graph; left as it is, the command ends with `admin.workspace_conflict` (exit 1) after doing the rest |
 | `failed` | its pull was refused; `error` names the code, the command ends with that error |
 
 A folder is never replaced or deleted. New graphs are drafted outside the
-graph folders, created with `graph create`, and get their folder at the
+graph folders, created with `graph-admin graph create`, and get their folder at the
 next sync. The workflow for agents is the `maintaining-graphs` skill
 ([Admin skills](skills.md#admin-skills)).
 
@@ -308,7 +309,7 @@ Every change is audited: an intent in the graph's stream, the effect, then
 an installation event anchoring the intent. A release must bump the version
 at least as much as the changes require; a new major version on a graph
 with data is released only if the data has no error findings under the new
-version (the check `graph check --ontology` runs without releasing), otherwise
+version (the check `graph-admin graph check --ontology` runs without releasing), otherwise
 the refusal lists them. On every release, also a minor
 or a patch, the published functions are checked against the new model
 (compiled against the new model): one that no longer resolves refuses the release
@@ -320,13 +321,13 @@ names in `details`); `ontology diff --graph` warns about them beforehand
 [markings](access_control.md#markings) are also checked for them: a release
 that would reuse the name of a once-marked attribute without its markings is
 refused with `ontology.marking_name_reused` (`ontology release`, `ontology diff
---graph`, `graph push`, `graph check --ontology`; history and the name map
+--graph`, `graph-admin graph push`, `graph-admin graph check --ontology`; history and the name map
 decide, see the `ontology-best-practices` skill), and `ontology release`,
-`ontology diff --graph` and `graph push` warn about marking problems
+`ontology diff --graph` and `graph-admin graph push` warn about marking problems
 (`admin.marking_*`, `admin.policy_unknown_marking`,
 `ontology.marking_name_returned`), listed with their meaning under
 [Markings](access_control.md#markings). Fix or delete the
-functions, actions and views in the same `graph push` as the ontology; a release with renames
+functions, actions and views in the same `graph-admin graph push` as the ontology; a release with renames
 compiles those whose sources still compile and publishes them again by itself
 ([Releasing with a data migration](#releasing-with-a-data-migration)). Verification reports an
 interrupted operation as info and anchors only graphs without errors.
