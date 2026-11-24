@@ -73,6 +73,9 @@ DEFAULT_MAX_FILE_BYTES: Final = 100 * 1024 * 1024
 MAX_MAX_FILE_BYTES: Final = 1024 * 1024 * 1024
 DEFAULT_EXTRACT_TIMEOUT_S: Final = 30.0
 MAX_EXTRACT_TIMEOUT_S: Final = 3600
+MAX_LOCK_TIMEOUT_S: Final = 3600
+MIN_REMOTE_TIMEOUT_S: Final = 1
+MAX_REMOTE_TIMEOUT_S: Final = 3600
 DEFAULT_EXTRACT_MEMORY_MIB: Final = 512
 MAX_EXTRACT_MEMORY_MIB: Final = 65536
 MIN_EXTRACT_MEMORY_MIB: Final = 64
@@ -226,8 +229,14 @@ def _read_remote(t: _Tables, config: Config) -> Config:
         )
     allow_plain_http = t.get("remote.allow_plain_http", bool, "a boolean")
     remote_timeout = t.get("remote.timeout_s", (int, float), "a number")
-    if remote_timeout is not None and not 1 <= remote_timeout <= 3600:
-        raise _invalid(t.path, "remote.timeout_s", "must be between 1 and 3600 seconds")
+    if remote_timeout is not None and not (
+        MIN_REMOTE_TIMEOUT_S <= remote_timeout <= MAX_REMOTE_TIMEOUT_S
+    ):
+        raise _invalid(
+            t.path,
+            "remote.timeout_s",
+            f"must be between {MIN_REMOTE_TIMEOUT_S} and {MAX_REMOTE_TIMEOUT_S} seconds",
+        )
     return replace(
         config,
         token_file=token_file,
@@ -278,8 +287,12 @@ def _read_identity(t: _Tables, config: Config) -> Config:
 
 def _read_storage(t: _Tables, config: Config) -> Config:
     timeout = t.get("storage.lock_timeout_s", (int, float), "a number")
-    if timeout is not None and not 0 < timeout <= 3600:
-        raise _invalid(t.path, "storage.lock_timeout_s", "must be between 0 and 3600 seconds")
+    if timeout is not None and not 0 < timeout <= MAX_LOCK_TIMEOUT_S:
+        raise _invalid(
+            t.path,
+            "storage.lock_timeout_s",
+            f"must be between 0 and {MAX_LOCK_TIMEOUT_S} seconds",
+        )
     durability = t.get("storage.durability", str, "a string")
     if durability not in (None, "full", "fsync"):
         raise _invalid(t.path, "storage.durability", "must be 'full' or 'fsync'")

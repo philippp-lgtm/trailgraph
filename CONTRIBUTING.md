@@ -140,6 +140,15 @@ Rules:
   and `graph file add` and `graph file path` as two commands, not as
   alternatives joined with `|`. Only the first column of a command overview
   holds command paths relative to its program.
+- **Numbers are checked or removed.** Every number in the prose of a
+  document (a limit, default, size, time or count) is a fact that
+  `tests/test_doc_facts.py` compares with the code, an exemption listed
+  there with its reason (an example value, a fact of another system), or it
+  goes: an option's default and maximum live in the generated reference, and
+  an implementation detail that does not help the reader is left out. A
+  limit worth stating that the code holds as a bare literal gets a named
+  constant first. Exit codes need no entry: they are compared with the error
+  code next to them.
 - **Examples stay generic** (see `CLAUDE.md`): placeholders such as
   `<graph>` or `example_graph`, or the toy fixtures.
 
@@ -162,6 +171,7 @@ Update the documentation in the same change as the code:
 | an error code, finding code or policy action renamed or removed | every document that names it (checked) |
 | an example graph's files or setup | `examples/<name>/README.md`; `tests/cli/test_company_example.py` keeps the example buildable |
 | a way to run graph_cli, a core concept or a foundational design decision | `docs/deployment_options.md`, `docs/overview.md` or `docs/design_decisions.md` |
+| a limit, default, size or time a document states | the document and its fact in `tests/test_doc_facts.py` (a changed constant fails there until both follow) |
 | install steps or the quickstart | `README.md`; `tests/cli/test_readme_quickstart.py` runs the quickstart's blocks on a throwaway data root and knows only the commands it uses (`uv run graph-admin`, `graph`, `mkdir -p`, a pointer file) |
 
 `uv run pytest tests/test_docs.py` checks that every link and anchor
@@ -182,6 +192,11 @@ that every policy example in `docs/access_control.md` compiles, and that every
 `graph` and `graph-admin` command line of the documents names a real command
 with options it takes (`tests/support/command_lines.py`, also used for the
 admin skills).
+
+`uv run pytest tests/test_doc_facts.py` checks that every number in the
+prose of the documents it scans is a fact that matches the code or a listed
+exemption, and that every exit code a document gives is the exit code of the
+error code next to it.
 
 ## Generated files
 
@@ -256,7 +271,7 @@ headers and envelope keys per level and fails until the change is judged.
 | docker | `tests/docker/` | opt-in (`GRAPH_CLI_DOCKER_TESTS=1`): the container killed mid-write recovers, `audit verify` in it stays clean |
 | integration | `tests/integration/` | opt-in (`GRAPH_CLI_TEST_S3_ENDPOINT` and the other variables the module names): stored files in a real S3-compatible store through both programs, local and remote mode (add, read, download, verify, gc, move both ways, quota, store check, wrong settings); `tests/integration/run_garage.sh` starts the pinned Garage image, creates a bucket, a key and a quota, and runs it |
 | architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
-| docs | `tests/test_docs.py` | documentation links and anchors resolve (also inside the example's README and the admin skills), the docs index lists every document, the command overviews of `graph` and `graph-admin` match their inventories |
+| docs | `tests/test_docs.py` | documentation links and anchors resolve (also inside the example's README and the admin skills), the docs index lists every document, the command overviews of `graph` and `graph-admin` match their inventories; `tests/test_doc_facts.py`: the numbers of the documents match the code |
 
 The admin skill tests are `tests/skills/test_ontology_skill.py` (YAML examples
 of `ontology-best-practices` compile; its format reference names every key the

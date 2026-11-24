@@ -57,11 +57,11 @@ read or search tool. The hint names no command: a shell program such as
 they were, so paging still reads from stdout.
 
 The file is `<dir>/<graph>/<command>_<UTC time>_<8 hex>.json` (without a
-graph directly in `<dir>`), mode 0600. `<dir>` is `[output] spill_dir`,
+graph directly in `<dir>`), readable only by the user. `<dir>` is `[output] spill_dir`,
 else `/tmp/graph_cli_<uid>`: a directory per user, because a fixed name in
 the shared `/tmp` could be created by another user first. The directory
 must be the user's own and closed to group and others (`graph` creates it
-with mode 0700); otherwise, or when the file cannot be written, the answer
+that way); otherwise, or when the file cannot be written, the answer
 is printed whole with the warning `output.spill_failed {bytes, limit,
 reason}`. Each spill removes files older than 24 hours from the same
 directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
@@ -71,7 +71,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 
 | Command | What it does |
 | --- | --- |
-| `start [--graph G] [--check] [--dir D]` | the first call of a session, in a few lines (at most about 1,500 bytes for five graphs; `--json` is `graph_cli.start/1`): whether this program and the installed skills are current (stale copies are refreshed as `self update` does, the program is never replaced; `--check` only reports), who acts, and per graph you reach its title, your level (and what a deny rule withholds below it), the number of modules, types, functions, actions and views you may use, the number you see but may not use (`actions 5 (+2 not allowed)`) and the commands that search them. See [Starting a session](#starting-a-session) |
+| `start [--graph G] [--check] [--dir D]` | the first call of a session, in a few lines (`--json` is `graph_cli.start/1`): whether this program and the installed skills are current (stale copies are refreshed as `self update` does, the program is never replaced; `--check` only reports), who acts, and per graph you reach its title, your level (and what a deny rule withholds below it), the number of modules, types, functions, actions and views you may use, the number you see but may not use (`actions 5 (+2 not allowed)`) and the commands that search them. See [Starting a session](#starting-a-session) |
 | `whoami` | the acting identity (principal, agent, session, project and, over the server, the roles of the token) and what the policy allows: the project scope and, per graph, the level, the actions a deny rule withholds below it, read-only types, write obligations and, for a caller whose level is below `write`, `writes`: what a write allow list lets it write per type and verb (see [Write allow lists](access_control.md#write-allow-lists)) and, for a caller limited to some types, `reads`: the types it sees (see [Read limits](access_control.md#read-limits)) and, for a graph whose ontology marks fields that the caller does not all hold, `markings`: the markings it holds (`[]` for none; see [Markings](access_control.md#markings)); `writes` names no field the caller cannot see |
 | `graphs` | the graphs this project may see and use, with the title that says what each is for and the default language of their values (BCP 47, null when unset) |
 | `describe commands` | every command as data (`graph_cli.inventory/1`): arguments, options, examples, error codes, exit codes |
@@ -105,7 +105,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `file check [REF...]` | compare origins with the stored content: `same`, `changed`, `missing`, `root_unknown`, `no_origin` |
 | `skills emit --out DIR` | write skill 1 and, with `--graph`, published graph skills into a directory (one directory per skill, no marker) |
 | `skills install --scope user\|project` | install or refresh the agent skills (see [Skills](skills.md#installing-skills)) |
-| `skills check --scope user\|project` | compare installed skills with what this program installs now; exit 1 unless all are fresh |
+| `skills check --scope user\|project` | compare installed skills with what this program installs now; `skills.check_failed` (exit 1) unless all are fresh |
 | `self update` | in the remote mode install the server's build of `graph` when it differs, then refresh the agent skills of the project (`--dir`) and the user, adding the skills of the project's graphs; `--check` only reports, `--force` replaces skills edited by hand (see [Self update](server.md#self-update)) |
 | `connect ENDPOINT --code CODE` | set up this machine and a folder (`--dir`) for a server from a one-time enrollment code: the project's token, the remote mode in `config.toml`, a pointer, the program and the project's graph skills; `--label` labels the token, `--force` replaces another endpoint or a stored token (see [Enrollment](server.md#enrollment)) |
 
@@ -478,8 +478,8 @@ and the answer names it as `tx:<seq>` in `since`; a time without an offset, a
 malformed position and a seq beyond the graph's last are
 `usage.invalid_argument` (the last one with `details.head_seq`).
 
-**Paging.** A page holds at most `--limit` entity items (default 100, at most
-500); whole transactions are taken while their items fit. A transaction with
+**Paging.** A page holds at most `--limit` entity items (default and
+maximum in the [command reference](../skills/graph-cli/references/commands.md)); whole transactions are taken while their items fit. A transaction with
 more items than the limit is cut into entries marked `partial: true` that
 continue on the next page. At most 1,000 transactions are read per call, so a
 page can be empty and still have `more: true` when the caller sees nothing of
@@ -717,8 +717,8 @@ of a class the view does not take is `view.class_mismatch`; a view that needs a 
 NAME`, with a REF `view.takes_no_entity`. Their `list` sections give every active entity of a class
 (or of several, with the concrete `type` per row) with attributes as `get` shows them, never cut, and
 the relations as neighbour keys (`ref`: the alias, else the id), in the order of `find` (the targets of an out-relation in edge order, up to 500 per list unless the view says less). The answer
-is a **page** of whole rows, at most `--page-bytes` bytes (the view's own size, else 12 KiB; up to
-256 KiB; a row larger than the page goes alone with `oversize: true`). A page that does not reach the
+is a **page** of whole rows, at most `--page-bytes` bytes (by default the view's own size, else the program's default in the [command
+reference](../skills/graph-cli/references/commands.md); a row larger than the page goes alone with `oversize: true`). A page that does not reach the
 end has `next` and `more: true`; `--cursor` with the same `--name` and `--param` gives the next page,
 and the pages put together are the one-page answer. After a write the cursor is `view.cursor_stale`
 (start again, or `--as-of tx:<seq>` pages the state you started with); after another view, other
@@ -803,8 +803,8 @@ looser than `lookup`'s, because a warning should rather ask once too often:
 
 - `same`: equal apart from case, accents, punctuation and word breaks
   (`E-Mail`, `email`, `E Mail`).
-- `similar`: the same words but one, and that one a typo of the other (at
-  most one edit from 5 letters, two from 10). A changed number never
+- `similar`: the same words but one, and that one a typo of the other (one
+  or two edits, by the word's length). A changed number never
   counts, so `Part 1` and `Part 2` stay apart, and neither does a short
   word.
 
@@ -939,7 +939,7 @@ to two hints, best first and before the next-page hint, also with
 whether the parameter takes one value or a list; a function that takes one
 value per run is named as such. A hint is never a rewrite of the query.
 
-Work is bounded: more than 100 000 candidate nodes, edges or rows end the
+Work is bounded: more than 100,000 candidate nodes, edges or rows end the
 query with `query.too_large`, naming the clause; add labels, a property map
 or a `LIMIT`. Errors carry `line` and `column`: `query.syntax` (exit 2, with
 what was found and expected), `query.unbound_variable` and

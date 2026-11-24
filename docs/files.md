@@ -174,7 +174,7 @@ copy in the file cache `<state>/files/<graph id>/<hash>` (`<state>` is
 downloaded from the server, and for a graph whose stored files are in an
 [object store](#object-storage-optional).
 
-- A copy is read only (mode 0400) and is checked against its hash before
+- A copy is read only and is checked against its hash before
   it is answered; a copy that changed is fetched again. Read it, never edit
   it.
 - Two commands may fetch the same file at once: each writes its own
