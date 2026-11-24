@@ -128,8 +128,11 @@ Rules:
 - **Diagrams are Mermaid blocks** (text, reviewed in the diff, rendered by
   GitHub). A diagram that mirrors code gets a check, like the layer diagram
   of `docs/architecture.md`.
-- **Screenshots** are marked in the text with `<!-- screenshot: <name> -->`
-  and a visible placeholder until the image exists.
+- **Screenshots** are marked in the text with `<!-- screenshot: <name> -->`,
+  directly followed by the image link to `images/<name>.png` (a PNG in
+  `docs/images/`). A terminal session is shown as a real text transcript
+  between `<!-- transcript: <name> -->` and `<!-- /transcript -->`, not as an
+  image. Both are produced by a script, see [Generated files](#generated-files).
 - **New documents** get a lowercase name with `_` and a line in
   `docs/README.md`.
 - **Examples stay generic** (see `CLAUDE.md`): placeholders such as
@@ -159,8 +162,10 @@ Update the documentation in the same change as the code:
 resolves, that `docs/README.md` lists every document and that the command
 overviews in `docs/cli_graph.md` and `docs/cli_graph_admin.md` name exactly
 the commands of `graph` and `graph-admin`, and only options those commands
-take, and that the layer diagram in `docs/architecture.md` matches the
-layers contract of import-linter.
+take, that the layer diagram in `docs/architecture.md` matches the
+layers contract of import-linter, that every screenshot marker is followed by
+its image and every image in `docs/images/` is a used, small PNG, and that
+the transcripts run only real `graph` commands with options they take.
 
 ## Generated files
 
@@ -192,6 +197,22 @@ regenerate and review:
 ```sh
 GRAPH_CLI_UPDATE_GOLDENS=1 uv run pytest tests/unit/server/test_openapi.py
 ```
+
+The screenshots in `docs/images/` and the terminal transcript in
+`docs/overview.md` are taken from the example graph by
+`scripts/docs_screenshots.py`. It builds `examples/company` in a temporary
+installation, starts `graph-admin view`, runs the transcript's commands and
+takes the pictures with Playwright, which it installs on first use (the
+dependency stays out of `uv.lock`):
+
+```sh
+uv run --with playwright==1.65.2 python scripts/docs_screenshots.py
+```
+
+Rerun it when the live view looks different, when the output of a command in
+the transcript changes or when the example graph changes, and review the
+images and the diff: ids and times differ on every run, so commit a rerun
+only for a real change.
 
 A client of another build keeps working against the server as long as its
 compatibility id is the same ([Builds](docs/server.md#builds)). The id

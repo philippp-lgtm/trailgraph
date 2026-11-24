@@ -179,8 +179,7 @@ to use graphs.
   ([Behind a reverse proxy](live_view.md#behind-a-reverse-proxy)).
 
 <!-- screenshot: live_view_activity -->
-> **Screenshot placeholder:** the live view with the activity list open,
-> showing recent writes to a graph.
+![The activity list of the live view: the reads of an agent's session and the entity it updated, each with time and agent](images/live_view_activity.png)
 
 ## Choosing an option
 

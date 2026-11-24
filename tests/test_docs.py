@@ -1,18 +1,22 @@
 """The documentation holds together: links resolve, the index lists every document, the
 command overviews of `graph` and `graph-admin` name exactly the commands each has, with
-options those commands take, and the layer diagram of docs/architecture.md matches the
-layers contract of import-linter.
+options those commands take, the layer diagram of docs/architecture.md matches the
+layers contract of import-linter, every screenshot marker has its image, and every terminal
+transcript names only real `graph` commands and options.
 
 Covers the tracked Markdown documentation (the root README, CONTRIBUTING.md, the
 example's README, docs/ and the hand-written admin skills that ship with graph-admin).
 Links inside code blocks are ignored. Anchors follow GitHub's heading slugs. The command
 overviews are compared with the inventory goldens, which `tests/cli/test_app_meta.py`
 and `tests/cli/test_admin_init.py` keep equal to `describe commands` of each program.
-Each check has a positive control, so a broken scanner cannot pass silently.
+Screenshots and transcripts are produced by `scripts/docs_screenshots.py`; this module only
+checks that they are in place. Each check has a positive control, so a broken scanner cannot
+pass silently.
 """
 
 import json
 import re
+import shlex
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -38,6 +42,16 @@ MERMAID_BLOCK = re.compile(r"^```mermaid\n(.*?)^```", re.MULTILINE | re.DOTALL)
 LAYER_NODE = re.compile(r'^\s*L(\d+)\["([^"]*)"\]\s*$', re.MULTILINE)
 LAYER_EDGE_LINE = re.compile(r"^\s*L\d+(?:\s*-->\s*L\d+)+\s*$", re.MULTILINE)
 LAYERS_CONTRACT = "graph_cli layers"
+IMAGES_DIR = DOCS_DIR / "images"
+SCREENSHOT = re.compile(r"^<!-- screenshot: ([a-z0-9_]+) -->\n(.*)$", re.MULTILINE)
+PLACEHOLDER = "Screenshot placeholder"
+TRANSCRIPT_START = re.compile(r"^<!-- transcript: ([a-z0-9_]+) -->$", re.MULTILINE)
+TRANSCRIPT = re.compile(
+    r"^<!-- transcript: ([a-z0-9_]+) -->\n```text\n(.*?)^```\n<!-- /transcript -->$",
+    re.MULTILINE | re.DOTALL,
+)
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+MAX_IMAGE_BYTES = 400_000
 
 
 def _documents() -> list[Path]:
@@ -145,6 +159,50 @@ def _contract_layers() -> list[list[str]]:
     ]
 
 
+def _screenshot_problems(text: str, images: set[str]) -> list[str]:
+    """Each `<!-- screenshot: name -->` is directly followed by an image link to
+    `images/<name>.png`, which is one of `images`; no placeholder text is left."""
+    problems = [
+        f"{name}: no image link" if f"](images/{name}.png)" not in nxt or not nxt.startswith("![")
+        else f"{name}: no file"
+        for name, nxt in SCREENSHOT.findall(text)
+        if f"](images/{name}.png)" not in nxt or not nxt.startswith("![") or name not in images
+    ]  # fmt: skip
+    return problems + ([PLACEHOLDER] if PLACEHOLDER in text else [])
+
+
+def _transcript_problems(text: str, inventory: dict[str, Any]) -> list[str]:
+    """Every transcript block is complete, holds commands, and each `$ ` line runs a
+    command of `graph` with options that command (or every command) takes."""
+    common = {"--json", "--help", *(o["name"] for o in inventory["global_options"])}
+    options = {
+        tuple(c["path"]): {o["name"] for o in c["options"]} | common for c in inventory["commands"]
+    }
+    blocks = TRANSCRIPT.findall(text)
+    problems = [
+        f"{name}: unterminated"
+        for name in TRANSCRIPT_START.findall(text)
+        if name not in {found for found, _ in blocks}
+    ]
+    for name, body in blocks:
+        lines = [line[2:] for line in body.splitlines() if line.startswith("$ ")]
+        if not lines:
+            problems.append(f"{name}: no command")
+        for line in lines:
+            words = shlex.split(line)
+            path = next(
+                (tuple(words[1:n]) for n in range(len(words), 1, -1)
+                 if tuple(words[1:n]) in options),
+                None,
+            )  # fmt: skip
+            if words[0] != "graph" or path is None:
+                problems.append(f"{name}: unknown command {line!r}")
+                continue
+            named = {w.partition("=")[0] for w in words if w.startswith("--")}
+            problems += [f"{name}: {path} has no {o}" for o in sorted(named - options[path])]
+    return problems
+
+
 def test_documents_exist() -> None:
     assert INDEX in _documents()
     assert all(path.is_file() for path in _documents())
@@ -195,6 +253,36 @@ def test_layer_diagram_matches_import_contract() -> None:
     assert _diagram_layers(section) == _contract_layers()
 
 
+def test_screenshot_markers_have_images() -> None:
+    images = {p.stem for p in IMAGES_DIR.glob("*.png")}
+    found = {
+        str(path.relative_to(REPO_ROOT)): problems
+        for path in _documents()
+        if (problems := _screenshot_problems(path.read_text(), images))
+    }
+    assert found == {}
+
+
+def test_images_are_small_pngs_and_used() -> None:
+    marked = {name for path in _documents() for name, _ in SCREENSHOT.findall(path.read_text())}
+    files = sorted(IMAGES_DIR.iterdir())
+    assert files, "docs/images/ holds no image"
+    assert [p.name for p in files if p.suffix != ".png" or p.stem not in marked] == []
+    assert [p.name for p in files if not p.read_bytes().startswith(PNG_SIGNATURE)] == []
+    assert [p.name for p in files if p.stat().st_size > MAX_IMAGE_BYTES] == []
+
+
+def test_transcripts_name_real_commands() -> None:
+    inventory = _inventory("app")
+    found = {
+        str(path.relative_to(REPO_ROOT)): problems
+        for path in _documents()
+        if (problems := _transcript_problems(path.read_text(), inventory))
+    }
+    assert found == {}
+    assert any(TRANSCRIPT.search(path.read_text()) for path in _documents())
+
+
 def test_positive_controls() -> None:
     page = DOCS_DIR / "README.md"
     text = "[a](missing.md#x) [b](cli_graph.md#no-such-heading) [c](#nowhere)\n"
@@ -231,3 +319,24 @@ def test_positive_controls() -> None:
         _diagram_layers(diagram.replace("L3[", "L4[").replace("--> L3", "--> L4"))
     assert _diagram_layers(diagram.replace("b, c", "c")) != [["a"], ["b", "c"], ["d"]]
     assert ["kernel"] in _contract_layers()
+
+    marked = "x\n<!-- screenshot: a -->\n![A](images/a.png)\n<!-- screenshot: b -->\n> b\n"
+    assert _screenshot_problems(marked, {"a"}) == ["b: no image link"]
+    assert _screenshot_problems(marked.replace("> b", "![B](images/b.png)"), {"a"}) == [
+        "b: no file"
+    ]
+    assert _screenshot_problems(f"> **{PLACEHOLDER}:** x\n", set()) == [PLACEHOLDER]
+    inventory = _inventory("app")
+    transcript = (
+        "<!-- transcript: t -->\n```text\n$ graph start\nok\n"
+        "$ graph run f --param p=1 --graph g\n$ graph link A r B --qualifier on=1 --nope\n"
+        "$ graph frobnicate\n$ ls\n```\n<!-- /transcript -->\n<!-- transcript: u -->\n"
+    )
+    assert _transcript_problems(transcript, inventory) == [
+        "u: unterminated",
+        "t: ('link',) has no --nope",
+        "t: unknown command 'graph frobnicate'",
+        "t: unknown command 'ls'",
+    ]
+    empty = "<!-- transcript: e -->\n```text\nnothing\n```\n<!-- /transcript -->\n"
+    assert _transcript_problems(empty, inventory) == ["e: no command"]
