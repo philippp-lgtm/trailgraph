@@ -104,6 +104,7 @@ reader looks for it:
 | `README.md` | newcomers | what graph_cli is, status, install, quickstart, links; nothing else |
 | `CONTRIBUTING.md` | contributors | development, tests, fixtures, generated files, these rules |
 | `docs/README.md` | everyone | the index of `docs/`, one line per document |
+| `docs/overview.md`, `deployment_options.md`, `design_decisions.md` | everyone who wants the big picture, people and agents | what graph_cli is and is for, the core concepts, how the parts fit together, the ways to run it, the foundational design decisions and their trade-offs; plain language and diagrams, every detail a link to its home |
 | `docs/cli_graph.md`, `configuration.md`, `files.md`, `skills.md` | users of `graph` | behavior, options, concepts across commands |
 | `docs/cli_graph_admin.md`, `access_control.md`, `security_model.md`, `live_view.md`, `server.md` | maintainers | operating graphs, policies, what is protected and what is not, running the server and its API |
 | `packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/` | maintainers (agents and people) | the admin skills: `ontology-best-practices` (the `graph_cli.ir/1` format reference, modeling guidance, change levels, release workflow), `maintaining-graphs` (the `graph-admin` workflow), `authoring-graph-skills` (graph skill templates: the block catalog, size budgets, what publishing checks; `docs/skills.md` keeps the concept), `authoring-graph-functions` (named read functions: the `graph_cli.function/1` format reference, what publishing checks, writing guidance), `authoring-graph-actions` (named write actions: the `graph_cli.action/1` format reference, what publishing checks, writing guidance), `authoring-graph-views` (views and set views: the `graph_cli.view/1` format reference, what a call answers and its bounds, what publishing checks, writing guidance) |
@@ -120,6 +121,15 @@ Rules:
   `graph` is the generated `skills/graph-cli/references/` (see
   [Generated files](#generated-files)); `docs/cli_graph.md` keeps the
   command overview and what applies across commands.
+- **The big-picture documents stay coarse.** `overview.md`,
+  `deployment_options.md` and `design_decisions.md` explain and link; they
+  hold no limits, defaults, key lists or procedures, so a code change rarely
+  touches them.
+- **Diagrams are Mermaid blocks** (text, reviewed in the diff, rendered by
+  GitHub). A diagram that mirrors code gets a check, like the layer diagram
+  of `docs/architecture.md`.
+- **Screenshots** are marked in the text with `<!-- screenshot: <name> -->`
+  and a visible placeholder until the image exists.
 - **New documents** get a lowercase name with `_` and a line in
   `docs/README.md`.
 - **Examples stay generic** (see `CLAUDE.md`): placeholders such as
@@ -142,13 +152,15 @@ Update the documentation in the same change as the code:
 | a layer, package or module | `docs/architecture.md` (or `storage.md`, `audit.md`) and the import contracts |
 | an on-disk format or a verification check | `docs/storage.md` or `docs/audit.md` |
 | an example graph's files or setup | `examples/<name>/README.md`; `tests/cli/test_company_example.py` keeps the example buildable |
+| a way to run graph_cli, a core concept or a foundational design decision | `docs/deployment_options.md`, `docs/overview.md` or `docs/design_decisions.md` |
 | install steps or the quickstart | `README.md`; run the quickstart on a throwaway data root |
 
 `uv run pytest tests/test_docs.py` checks that every link and anchor
 resolves, that `docs/README.md` lists every document and that the command
 overviews in `docs/cli_graph.md` and `docs/cli_graph_admin.md` name exactly
 the commands of `graph` and `graph-admin`, and only options those commands
-take.
+take, and that the layer diagram in `docs/architecture.md` matches the
+layers contract of import-linter.
 
 ## Generated files
 
