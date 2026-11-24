@@ -17,51 +17,112 @@ Keep the data root on a local file system (see [Storage](storage.md)).
 
 ## `config.toml`
 
-`graph-admin init` creates it with a device id. Every key is optional; an
-unset key has the default given here or in the document it links to:
+`graph-admin init` creates it with a device id. Every key is optional
+except `format_version`. Every key with its default (a commented key has
+none; its comment says what unset means):
 
-- `[device]`: `id` (set by `graph-admin init`), the device in the actor of an
-  invocation, and `name` (`graph-admin init --device-name`), a label for
-  people that nothing reads
+```toml
+format_version = 1
+
+[device]
+# id = "<uuid>"                 # set by graph-admin init
+# name = "laptop"
+
+[runtime]
+mode = "local"
+# endpoint = "https://graphs.example.org"
+
+[paths]
+# data_root = "~/graphs"        # unset: the XDG data directory
+
+[identity]
+providers = ["generic_env", "claude_code"]
+
+[storage]
+lock_timeout_s = 10
+durability = "full"
+
+[activity]
+signal_reads = false
+
+[audit]
+record_data_root = true
+access_log = false
+
+[output]
+default = "text"
+spill_bytes = 16384
+# spill_dir = "~/graph_cli_spill"   # unset: /tmp/graph_cli_<uid>
+
+[roots]
+# notes = "~/path/to/notes"     # names of your choice
+
+[files]
+max_bytes = 104857600
+store = "local"
+
+[files.s3]
+# bucket = "example-bucket"
+# prefix = "graph_cli"          # unset: no prefix
+# endpoint_url = "https://s3.example.org"   # unset: AWS, by region
+# region = "eu-central-1"
+# addressing = "virtual"        # unset: "path"
+allow_plain_http = false
+
+[extract]
+timeout_seconds = 30
+max_memory_mib = 512
+
+[server]
+cors_origins = []
+admin_api = false
+client_builds = "compatible"
+dist = true
+# public_url = "https://graphs.example.org"
+
+[remote]
+# token_file = "~/.config/graph_cli/token"
+# admin_token_file = "~/.config/graph_cli/admin_token"
+allow_plain_http = false
+timeout_s = 60
+```
+
+What the keys mean:
+
+- `[device]`: `id`, the device in the actor of an invocation, and `name`
+  (`graph-admin init --device-name`), a label for people that nothing reads
 - `[paths]`: `data_root`, absolute or `~/` ([Locations](#locations))
 - `[identity]`: `providers`, the sources of the asserted agent and session,
-  by name (`generic_env`, `claude_code`; both by default; an unknown name
-  stops the command); the OS user is always the principal
-  ([Identity](access_control.md#identity))
-- `[storage]`: `lock_timeout_s` (default 10, up to 3600), how long a writer
-  waits for a graph's lock; `durability` (`"full"` by default, or
-  `"fsync"`): on macOS `"full"` flushes the drive cache as well
-  ([Storage](storage.md))
-- `[activity]`: `signal_reads` (default `false`), see
-  [Live view](live_view.md)
-- `[audit]`: `record_data_root` (default `true`) puts the data root path
-  into audit events; `access_log` (default `false`) turns on the
-  [access log](audit.md#access-log)
-- `[output]`: `default` (`text` or `json`); `spill_bytes` (default
-  16384, 0 turns it off) and `spill_dir` (absolute or `~/`, default
-  `/tmp/graph_cli_<uid>`) send larger `graph` JSON answers to a file
+  by name (an unknown name stops the command); the OS user is always the
+  principal ([Identity](access_control.md#identity))
+- `[storage]`: `lock_timeout_s` (up to 3600), how long a writer waits for a
+  graph's lock; `durability` (`"full"` or `"fsync"`): on macOS `"full"`
+  flushes the drive cache as well ([Storage](storage.md))
+- `[activity]`: `signal_reads`, see [Live view](live_view.md)
+- `[audit]`: `record_data_root` puts the data root path into audit events;
+  `access_log` turns on the [access log](audit.md#access-log)
+- `[output]`: `default` (`"text"` or `"json"`); `spill_bytes` (0 turns it
+  off) and `spill_dir` (absolute or `~/`) send larger JSON answers of
+  `graph` to a file
   ([Large answers go to a file](cli_graph.md#large-answers-go-to-a-file))
 - `[roots]` and `[files] max_bytes`: [Files](files.md#origins-and-roots)
-- `[extract]`: `timeout_seconds` (default 30, above 0 up to 3600) and `max_memory_mib` (default
-  512, 64 to 65536): the limits of the process that parses one file for its
-  [metadata](files.md#metadata); read by `graph file add`, `graph-admin files extract` and the
-  server
+- `[extract]`: `timeout_seconds` (above 0 up to 3600) and `max_memory_mib`
+  (64 to 65536): the limits of the process that parses one file for its
+  [metadata](files.md#metadata); read by `graph file add`,
+  `graph-admin files extract` and the server
 - `[files] store` and `[files.s3]`: [Object storage](#object-storage)
 - `[server]`: `cors_origins`, the browser origins (`https://host[:port]`)
-  allowed to call `graph-server` (default none); `admin_api` (default
-  `false`) makes it serve the [admin API](server.md#admin-api) too;
-  `client_builds`: `"compatible"` (default) refuses a client of another
-  build only when its commands, answers or skills differ, `"exact"` every
-  client of another build, `"warn"` none: it gets a warning
-  ([Builds](server.md#builds));
-  `dist` (default `true`): `false` hands out no programs
-  ([Self update](server.md#self-update)); `public_url`, the `http(s)` URL
-  clients reach the server at (such as the domain of a proxy in front of
-  it, without credentials or query): the base of the problem types and the `servers` of
-  the OpenAPI documents ([API](server.md#api)), unset by default; read by
-  the server only
-- `[runtime]` `mode = "remote"` with `endpoint`, and `[remote]`: the
-  [remote mode](#remote-mode)
+  allowed to call `graph-server`; `admin_api` makes it serve the
+  [admin API](server.md#admin-api) too; `client_builds`: `"compatible"`
+  refuses a client of another build only when its commands, answers or
+  skills differ, `"exact"` every client of another build, `"warn"` none: it
+  gets a warning ([Builds](server.md#builds)); `dist = false` hands out no
+  programs ([Self update](server.md#self-update)); `public_url`, the
+  `http(s)` URL clients reach the server at (such as the domain of a proxy
+  in front of it, without credentials or query): the base of the problem
+  types and the `servers` of the OpenAPI documents ([API](server.md#api));
+  read by the server only
+- `[runtime]` and `[remote]`: the [remote mode](#remote-mode)
 
 Unknown config or manifest keys are warnings (except in `[files.s3]`); an
 unknown `format_version` or an invalid value stops the command.
@@ -133,7 +194,7 @@ timeout_s = 60
 # allow_plain_http = true                 # http:// to another host: the token travels in clear
 ```
 
-`timeout_s` (default 60, 1 to 3600) is the socket timeout of every request
+`timeout_s` (1 to 3600) is the socket timeout of every request
 ([Timeouts](server.md#timeouts)).
 
 The token comes from `GRAPH_CLI_TOKEN`, else from the token stored for the

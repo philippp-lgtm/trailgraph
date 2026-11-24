@@ -144,8 +144,8 @@ Update the documentation in the same change as the code:
 | --- | --- |
 | a `graph` command or option | regenerate the skill; `docs/cli_graph.md`: a row in the command overview for a new command (checked), the cross-command rules when they change |
 | a `graph-admin` command or option | update the inventory golden; `docs/cli_graph_admin.md`: a row in the command overview for a new command (checked), the cross-command rules when they change; the admin skills that name it (`maintaining-graphs`; command lines are checked) |
-| a `config.toml` key, pointer key or environment variable | `docs/configuration.md` |
-| an HTTP route or parameter, a `[server]` setting, a token or enrollment rule, the container | `docs/server.md` (the OpenAPI documents are generated, see [Generated files](#generated-files)); `docs/configuration.md` for a setting |
+| a `config.toml` key, pointer key or environment variable | `docs/configuration.md`: a key and its default in the reference block of "`config.toml`", a variable in the table of "Environment variables" (both checked) |
+| an HTTP route or parameter, a `[server]` setting, a token or enrollment rule, the container | `docs/server.md` (a route in the table of "API" or "Admin API", checked against the OpenAPI goldens; the OpenAPI documents are generated, see [Generated files](#generated-files)); `docs/configuration.md` for a setting |
 | a policy rule, action or identity source | `docs/access_control.md`, and `docs/security_model.md` if what is prevented or detected changes |
 | a key, base type, facet or check of `graph_cli.ir/1`, a change level of `ontology diff`, or when a check runs | `bundled_skills/ontology-best-practices/references/` of `graph_cli_admin` (`ir_format.md` is checked against the parser; the change levels and check timing are not) |
 | a key, type, limit or check of `graph_cli.function/1`, or a rule publishing applies to functions | `bundled_skills/authoring-graph-functions/references/format.md` of `graph_cli_admin` (the format has one home there; `docs/cli_graph.md` and `docs/cli_graph_admin.md` describe behavior and link to it) |
@@ -164,8 +164,12 @@ overviews in `docs/cli_graph.md` and `docs/cli_graph_admin.md` name exactly
 the commands of `graph` and `graph-admin`, and only options those commands
 take, that the layer diagram in `docs/architecture.md` matches the
 layers contract of import-linter, that every screenshot marker is followed by
-its image and every image in `docs/images/` is a used, small PNG, and that
-the transcripts run only real `graph` commands with options they take.
+its image and every image in `docs/images/` is a used, small PNG, that
+the transcripts run only real `graph` commands with options they take, that
+the reference block of `docs/configuration.md` names exactly the keys of
+`config.toml` with their real defaults and its tables exactly the
+environment variables the code reads, and that the route tables of
+`docs/server.md` name exactly the paths of the OpenAPI documents.
 
 ## Generated files
 
