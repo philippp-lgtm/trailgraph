@@ -153,16 +153,77 @@ The live view shows the graphs of a data root in the browser
 ([Live view](live_view.md)).
 
 <!-- screenshot: live_view_graph -->
-> **Screenshot placeholder:** the live view of the example graph, with the
-> graph drawn as dots and lines and the list of recent activity.
+![The live view of the example graph: entities as dots and relations as lines, the entities an agent has just read glowing, and on the right the list of recent activity](images/live_view_graph.png)
 
 <!-- screenshot: live_view_model -->
-> **Screenshot placeholder:** the live view showing the types of a graph as
-> a graph, next to its ontology and functions.
+![The type graph of the example graph: every type as a dot in the color of its module, relations as arrows, and in the side bar the graph's other views: model, functions, policies and the graph itself](images/live_view_model.png)
 
-<!-- screenshot: terminal_session -->
-> **Screenshot placeholder:** a terminal session in which an agent starts a
-> session with `graph start`, looks up an entity and records a new fact.
+A session of an agent on the [example graph](../examples/company/README.md),
+with the graph preselected: it starts with `graph start`, looks a person up,
+asks a named function which trainings the person still needs, records a
+completed training and asks again.
+
+<!-- transcript: terminal_session -->
+```text
+$ graph start
+graph 0.30.0
+skills: fresh (1)
+You: assistant
+Graphs (skill: graph-NAME, - for _):
+  company "Example company:..." (write): modules 6, types 17, functions 8, actions 3, views 2
+Search: graph describe search TEXT [--kind function|action|view] [--module M] [--limit N]
+Module: graph describe module M
+Counts and hits are what your token may use; a hit marked not allowed exists, but your token cannot use it: tell the user instead of working around it.
+$ graph lookup 'Noah Becker'
+items:
+  - text: Noah Becker
+    id: 01a20f2b-876e-7701-97bf-9d1264b4a1e2
+    alias: EMP-0011
+    type: ppl:Employee
+    record_status: active
+    label: Noah Becker
+    match:
+      attr: name
+      role: label
+      kind: exact
+      value: Noah Becker
+      lang: -
+    facts: -
+texts:
+  - text: Noah Becker
+    total: 1
+    exact: 1
+    excluded: 0
+fit: -
+$ graph run required_trainings --param person=EMP-0011
+person       training                position         role          completed_on
+Noah Becker  Data protection basics  Product Manager  Data steward  2023-06-07
+Noah Becker  Security awareness      Product Manager  Staff member  -
+$ graph link EMP-0011 ops:completed TRN-0001 --qualifier on=2026-11-20 --reason 'Completion confirmed in the training records' --idempotency-key noah-security-awareness
+tx_id: 01a20f2b-c788-7436-b3a4-587a309bfd96
+seq: 17
+event_id: 01a20f2b-c788-7437-baee-05cdfe7f022f
+dry_run: false
+idempotent_replay: false
+id: 01a20f2b-876e-7701-97bf-9d1264b4a1e2
+version: 4
+entity_count: 1
+entities:
+  - id: 01a20f2b-876e-7701-97bf-9d1264b4a1e2
+    alias: EMP-0011
+    rev: 4
+    type: ppl:Employee
+    ops:
+      - link
+    local: -
+    changed: true
+findings: []
+$ graph run required_trainings --param person=EMP-0011
+person       training                position         role          completed_on
+Noah Becker  Data protection basics  Product Manager  Data steward  2023-06-07
+Noah Becker  Security awareness      Product Manager  Staff member  2026-11-20
+```
+<!-- /transcript -->
 
 ## Where to go next
 
