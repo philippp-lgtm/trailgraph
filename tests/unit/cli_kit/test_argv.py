@@ -116,6 +116,7 @@ def test_pair_parameters_declare_their_shape() -> None:
     assert shapes == {
         ("--set", "map", "text"),
         ("--set-json", "map", "json"),
+        ("--input", "map", "json"),
         ("--qualifier", "map", "text"),
         ("--qualifier-json", "map", "json"),
         ("--param", "map", "json"),

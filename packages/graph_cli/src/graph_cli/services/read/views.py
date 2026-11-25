@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
@@ -23,7 +23,7 @@ from graph_cli.services.read.graph_read import GraphRead
 from graph_cli.services.read.json_shapes import edges_in, entities_in, value_json
 from graph_cli.services.read.queries import ReadQueries
 from graph_cli.services.read.state import query_phase
-from graph_cli.services.refs import entity_params
+from graph_cli.services.refs import Given, bind_params, entity_params
 from graph_cli.services.view_call import (
     CARD,
     LazyRows,
@@ -44,7 +44,7 @@ class ReadViews(ReadEntities, ReadQueries):
         ref: str | None,
         *,
         name: str | None = None,
-        pairs: Sequence[tuple[str, str]] = (),
+        pairs: Given = (),
         cursor: str | None = None,
         page_bytes: int | None = None,
         as_of: bool = False,
@@ -101,7 +101,9 @@ class ReadViews(ReadEntities, ReadQueries):
         classified = self._classified_views(view.actor, view.entry, view.read_view)
         for item in classified:
             if item.entry.name == name and not item.allowed:
-                request = RequestMeta.of(view.command, {"graph": view.entry.name, "name": name})
+                request = RequestMeta.of(
+                    view.command, {"graph": view.entry.name, "name": name}, via=view.via
+                )
                 raise self.refuse_not_allowed(view.actor, view.entry, item, request)
         # an exact name that is not allowed was refused above: what is found here is allowed, and
         # the suggestions of a name that is none are over everything the caller sees
@@ -111,7 +113,7 @@ class ReadViews(ReadEntities, ReadQueries):
         self,
         view: GraphRead,
         ref: str | None,
-        pairs: Sequence[tuple[str, str]],
+        pairs: Given,
         cursor: str | None,
         page_bytes: int | None,
         resolved: tuple[EntityId, Revision, list[WarningRecord], list[str], list[str]] | None,
@@ -160,7 +162,7 @@ class ReadViews(ReadEntities, ReadQueries):
         view: GraphRead,
         chosen: ViewEntry,
         ref: str | None,
-        pairs: Sequence[tuple[str, str]],
+        pairs: Given,
         cursor: str | None,
         page_bytes: int | None,
         as_of: bool,
@@ -217,13 +219,15 @@ class ReadViews(ReadEntities, ReadQueries):
                 details={"view": name, "hash": chosen.hash, "cause": problem.code},
             )
         warnings += self._view_notes(view, chosen)
-        bound = kinetic_params.bind_cli("view", name, chosen.defn.params, pairs, view.model)
-        for param in chosen.defn.params:
-            if param.type == "ref":
-                bound[param.name], found_warnings = entity_params(
-                    view.snapshot, view.model, "view", name, param, bound
-                )
-                warnings += found_warnings
+        bound, found_warnings = bind_params(
+            "view",
+            name,
+            chosen.defn.params,
+            pairs,
+            model=view.model,
+            snapshot=view.snapshot,
+        )
+        warnings += found_warnings
         spec = spec_of(chosen, view.model, bound)
         sections = [s for s in chosen.defn.sections if isinstance(s, RowsSection)]
         failures: list[WarningRecord] = []

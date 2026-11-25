@@ -371,8 +371,8 @@ every attribute, relation and enum it names, and every function a `rows` section
 A view the reader does not see is not found everywhere: `view.not_found` (never "denied"), absent from
 `describe views`, `describe search`, the affordances and the default resolution (the default of the next
 class up the chain, else the card). A view the reader sees in full but may not use, because a right is
-missing (`read.function` for a view that runs functions, `read.find` for a set view; `read.get` is the
-command's own), is not hidden: `describe view` and `describe search` show it marked `allowed: false` with
+missing (`read.get` for every view, `read.find` for a set view, `read.function` for a view that runs
+functions), is not hidden: `describe view` and `describe search` show it marked `allowed: false` with
 `missing`, lists count it as not allowed, and `graph view --name` of it is a recorded `access.denied`. Rows, neighbours and counts come from the reader's own snapshot:
 hidden entities are not rows, edges to them are not neighbours, hidden sources are not counted, and a
 masked attribute is absent from `fields: all`. `replaced_by` is shown only when the reader sees that

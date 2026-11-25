@@ -121,6 +121,13 @@ class ReadCatalogs(ReadAccess):
             entries = tuple(e for e in entries if e.name not in hidden)
         return entries or None
 
+    def visible_model(self, actor: ActorContext, entry: GraphEntry) -> CompiledModel:
+        """The model ``actor`` sees (what ``open`` puts into ``GraphRead.model``): the pinned one,
+        or its filtered view for a reader with read limits. Authorizes and records nothing."""
+        full, _ = self._models.load_for_read(entry)
+        view = self.read_view(actor, entry)
+        return self._visibility.model(entry, full, view) if view.limited else full
+
     def published_actions(self, entry: GraphEntry) -> ActionCatalog | None:
         """The parsed action catalog of the graph (``None`` when it has none), no
         authorization; cached by the hash of the compiled document. A document that does not
@@ -333,10 +340,9 @@ class ReadCatalogs(ReadAccess):
         S4). A view is visible exactly when everything it names is: the model the reader sees
         has its classes, relations, attributes and parameters, and the functions a ``rows``
         section runs are visible to the reader (hidden otherwise). Of the views that remain, a
-        set view needs ``read.find`` (it lists entities as ``find`` does) and one that runs
-        functions needs ``read.function``; the missing right makes it not allowed, not hidden.
-        ``read.get`` is the command's own action. A view that is hidden is a missing one
-        everywhere."""
+        view needs ``read.get`` (the action of ``view``), a set view also ``read.find`` (it lists
+        entities as ``find`` does) and one that runs functions ``read.function``; a missing right
+        makes it not allowed, not hidden. A view that is hidden is a missing one everywhere."""
         found = self._published_views(entry)
         if found is None:
             return ()
@@ -347,6 +353,7 @@ class ReadCatalogs(ReadAccess):
         if any(e.functions for e in entries):
             fits = frozenset(f.name for f in self._visible_functions(entry, view) or ())
             entries = tuple(e for e in entries if fits.issuperset(e.functions))
+        get = self._probe(actor, entry, "read.get") if entries else None
         find = (
             self._probe(actor, entry, "read.find") if any(not e.entity for e in entries) else None
         )
@@ -359,7 +366,7 @@ class ReadCatalogs(ReadAccess):
         for e in entries:
             denials = [
                 d
-                for d, needed in ((find, not e.entity), (run, bool(e.functions)))
+                for d, needed in ((get, True), (find, not e.entity), (run, bool(e.functions)))
                 if d is not None and needed and d.effect != "allow"
             ]
             classified.append(Classified(e, tuple(denials)))

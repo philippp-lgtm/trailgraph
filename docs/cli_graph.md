@@ -65,7 +65,9 @@ that way); otherwise, or when the file cannot be written, the answer
 is printed whole with the warning `output.spill_failed {bytes, limit,
 reason}`. Each spill removes files older than 24 hours from the same
 directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
-`spill_bytes = 0`) keeps every answer on stdout, for scripts.
+`spill_bytes = 0`) keeps every answer on stdout, for scripts. `graph call`
+never spills: its answer is the data a program asked for (see [Tools for
+agent harnesses](#tools-for-agent-harnesses)).
 
 ## Commands
 
@@ -83,7 +85,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `describe actions [--module M] [--include-deprecated] [--include-not-allowed]` | the actions of the graph that you may run (`graph_cli.model/1`), one item per action: `name`, `module`, `summary`, `signature` and `status`; deprecated actions only with `--include-deprecated`; `not_allowed` counts the actions whose write rights you lack (`--include-not-allowed` lists them too). See [Actions](#actions) |
 | `describe action NAME` | one action completely: summary, `use_when`, `reason`, parameters, preconditions, the compiled operations, the types and relations it touches, the write rights it needs (`needs`), examples and its hash; an unknown or hidden name is `action.not_found` with `did_you_mean`; an action you may not run is shown marked `allowed: false` with `missing`, without its operations, conditions, examples, needs and hash. See [Actions](#actions) |
 | `describe function NAME` | one function completely: summary, `use_when`, parameters, the result columns, examples, the types and relations its query touches, the normalized query text (copy it as the start of an ad-hoc query) and its hash; an unknown name is `function.not_found` with `did_you_mean`; a function you may not run is shown marked `allowed: false` with `missing`, without its query, examples, touched terms and hash (see [Entries you may not use](#entries-you-may-not-use)) |
-| `describe views [--module M] [--include-deprecated] [--include-not-allowed]` | the published views of the graph you can call (`graph_cli.model/1`), one item per view: `name`, `module`, `summary`, `takes` (the class an entity view shows; left out for a set view), `default` (only when true), `signature` and `status`; deprecated views only with `--include-deprecated`. A view you cannot see in full (it names a type, attribute, relation or function that is hidden from you) does not exist for you; one you see in full but that needs `read.find` or `read.function` that you lack is counted in `not_allowed` (`--include-not-allowed` lists it) |
+| `describe views [--module M] [--include-deprecated] [--include-not-allowed]` | the published views of the graph you can call (`graph_cli.model/1`), one item per view: `name`, `module`, `summary`, `takes` (the class an entity view shows; left out for a set view), `default` (only when true), `signature` and `status`; deprecated views only with `--include-deprecated`. A view you cannot see in full (it names a type, attribute, relation or function that is hidden from you) does not exist for you; one you see in full but that needs `read.get`, `read.find` or `read.function` that you lack is counted in `not_allowed` (`--include-not-allowed` lists it) |
 | `describe view NAME` | one view completely: summary, `use_when`, `takes`, `default`, parameters, every section with the types, relations, fields and function it reads, examples, `touches` (types, relations, attributes, functions), `hash` and `call`, the command that calls it; `replaced_by` names a view only when you see it; an unknown or hidden name is `view.not_found` with `did_you_mean` over the names you see and a hint to search the views by words; a view you may not use is shown marked `allowed: false` with `missing`, without its sections, examples, touched terms, hash and call command |
 | `describe tools [--tool NAME] [--kind K] [--module M] [--featured] [--exclude-deprecated]` | the tool manifest of the graph for an agent harness (`graph_cli.model/1`): one tool per function, action and view you may use, each with a JSON Schema for its input and its answer, and the error codes it may return with what to do about each; made for programs, not for agents that work in a shell. See [Tools for agent harnesses](#tools-for-agent-harnesses) |
 | `describe schema` | the ontology as `graph query` sees it: labels with their properties, one relationship pattern per relation (`(:A)-[:rel]->(:B)`), names written as a query needs them (see [Cypher queries](#cypher-queries)); `--compact` leaves out the properties; `--module M` limits it to the module's relations and labels plus the labels at the other end of its links |
@@ -100,6 +102,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed; `update --add`/`--remove` change a list attribute (see [References, filters and writes](#references-filters-and-writes)) |
 | `transition REF STATE`, `supersede BY TARGET...`, `retract REF` | lifecycle and provenance; `supersede` and `retract` need `--reason`; over a relation with `on_target_inactive: refuse` they are refused while active entities still point at the target (`data.referential.target_referenced` lists them; relink or retract them in the same change set) |
 | `do NAME` | run a named action of the graph: a reviewed write the maintainer published (`--param name=value`, once per value for a list parameter; `--dry-run`, `--reason`, `--idempotency-key`, `--graph`). The parameters are read by the types the action declares, a reference takes an id, alias or trailing hex digits, never a name. The service checks the action's preconditions and expands it in the state it finds under the graph lock, then writes one transaction with one audit intent that names the action; `--dry-run` shows every entity it would write. The answer is the write result plus `data.action` (`name`, `hash`). A retry with the same `--idempotency-key` and parameters returns the recorded result; the caller needs the write rights of every op it expands to, and an action it sees but may not run is `access.denied` (recorded, naming the right); one that names what the caller may not see is `action.not_found`. See [Actions](#actions) |
+| `call TOOL` | run one tool of the [tool manifest](#tools-for-agent-harnesses) with typed JSON input, for agent harnesses: each `--input NAME=<json>` is one member of the object `input_schema` describes (`_limit`, `_reason` and the other controls start with an underscore); it runs what `run`, `do` or `view` runs and answers the same, with the page of a function in `data`; `--expect-hash` refuses a tool that is no longer the one the manifest described (`tool.hash_mismatch`); `--idempotency-key` is taken by an action that is not a dry run only; a tool you may not see is `tool.not_found`. See [Tools for agent harnesses](#tools-for-agent-harnesses) |
 | `apply FILE` | change set documents (one JSON document or JSONL; `-` reads stdin); `--summary` leaves out the entities of each result and keeps `entity_count` and the findings |
 | `file add PATH` | store a file as `files:File` (or `--type` subclass) with its origin; known content is returned, not stored twice; then extract its metadata records (size, type, page count, ...) and answer them in `metadata`, `--no-extract` skips that, and a failure to extract is a warning, never a failed add (see [Files](files.md), [Metadata](files.md#metadata)) |
 | `file path REF` | the read-only path of a stored file; `--origin` the path it came from on this machine |
@@ -954,8 +957,8 @@ A function, action or view is one of three things for a caller (the rules are in
 
 - **allowed**: you see everything it names and hold the rights it needs;
 - **not allowed**: you see everything it names but lack a right (`read.function` for a function,
-  `read.find` for a set view, `read.function` for a view that runs functions, a write right for an
-  action);
+  `read.get` for a view, `read.find` for a set view, `read.function` for a view that runs functions,
+  a write right for an action);
 - **hidden**: it names something you cannot see; it does not exist for you.
 
 Lists and counts say what you may use. A list adds `not_allowed`, the number of entries you see but
@@ -1190,8 +1193,57 @@ the options of the commands:
 | `_entity` | entity view | the reference of the entity to show (required), of the class the view takes |
 | `_cursor`, `_page_bytes` | set view | `view --cursor` and `--page-bytes`: the next page and the page size |
 
-A harness that calls the commands maps a tool call to them: the parameters become `--param`
-options, the controls the options and the reference above.
+**Calling a tool.** `graph call TOOL` runs a tool with exactly the object its `input_schema`
+describes, whatever the kind of the tool:
+
+```sh
+graph call run_<function> --input <name>=<json> --input _limit=<json> --json
+graph call do_<action> --input <name>=<json> --input _dry_run=true --json
+graph call view_<view> --input _entity='"<id>"' --json
+```
+
+Each `--input` is one member of the object, its value a JSON value (a string is written with its
+quotes), repeated for more members. Over the server the same call is `POST /v1/commands/call` with
+`args.tool` and `args.input`, the object itself:
+`{"args": {"tool": "run_x", "input": {"since": "2026-01-01", "titles": ["a"]}}}`. The call answers
+what `run`, `do` or `view` answers for the same arguments: the same service runs, binds the
+parameters by the same types, resolves references the same way, authorizes, audits and refuses the
+same. What differs:
+
+- **The tool name** is looked up among the entries you see. One you do not see is `tool.not_found`
+  with the close names in `did_you_mean`; one you see but may not use gives what the command gives,
+  `access.denied`, recorded like that of the command.
+- **`null` is "not given"** for every parameter and control that is not required: a typed client
+  sends `null` for an argument it leaves out, and a default applies. For a required parameter it is
+  as good as missing (`function.parameter_missing`, `action.parameter_missing` or
+  `view.parameter_missing`). A number written with a fraction or an exponent (`5.0`) is an integer
+  when it is a whole number, so a client that writes every number as a float still binds `integer`
+  parameters and controls; for any other type, and for a number with a fraction, it is refused.
+- **Unknown input is refused**: a parameter the entry does not have is `function.parameter_unknown`
+  (`action.` or `view.` for those kinds), a control the tool does not have (`_reason` of a function)
+  or one with a value of the wrong type is `usage.invalid_argument`, and the entity of an entity view
+  is required (`usage.missing_argument`).
+- **A function's `page`** is part of `data` (for `run` it is in the envelope next to it), so the
+  answer is the one object `output_schema` describes. A call never writes its answer to a file, so
+  `data` is never `null` on success: how much comes back is bounded by the controls of the tool
+  (`_limit` for a function, `_page_bytes` for a set view), not by the output setting of the program.
+  A function's next page starts at `page.next_offset`; the next page of a set view is the `next` of
+  the answer as `_cursor` while `more` is true, and `view.cursor_stale` says a write landed between
+  two pages: start again from the first.
+- **`--expect-hash HASH`** refuses with `tool.hash_mismatch` (a conflict, not retryable) when the
+  `hash` the manifest gives your tool is not HASH, before anything runs: the harness built its tool
+  from an older manifest and fetches it again. A tool you may not use is refused as `access.denied`
+  first, and a tool you cannot see is `tool.not_found`.
+- **Idempotency.** Only an action that is not a dry run writes, and only that call takes
+  `--idempotency-key` (over the server also the `Idempotency-Key` header, as for `do`); the remote
+  `graph` generates a key when it gets none, so a lost answer can be repeated. A `call` and a `do`
+  with the same key and the same bound parameters are one request: either replays the recorded
+  result of the other (`idempotent_replay`), and other content under the key is
+  `conflict.idempotency_key_reuse`. Every other call, a dry run included, is a read: it repeats
+  safely and refuses a key with `usage.invalid_argument`.
+- **The audit** records what the command does: the command it ran (`do`, `run` or `view`), the hash
+  of the entry and `request.via`, `call` ([Audit](audit.md)); the access log names the command it
+  ran as well, so the calls of a harness count like any other call of a function.
 
 **Answers.** `output_schema` describes `data`, and the schemas stay open like every output schema of
 `describe commands`: a consumer ignores keys it does not know, so an answer can grow without
@@ -1221,9 +1273,12 @@ tightening an input schema, or changing what an `on_error` value means. A harnes
 | `stop` | nothing the harness can change helps: report it (`access.denied`, a stale entry, a graph that is archived) |
 
 A precondition failure is `action.precondition_failed`, and `error.details.failed` lists each failing
-precondition with its `precondition`, `parameter`, `entity`, `summary` and, for a count, `actual`.
-A dry run raises the same errors as the real run and writes and audits nothing. Each
-tool lists the codes of its command (`run`, `do` or `view`), `tool.not_found`, `tool.hash_mismatch`
-and the codes of the transport. A large manifest goes to a file on the command line like any large
-answer ([Large answers go to a file](#large-answers-go-to-a-file)); a harness fetches it over the
-server API.
+precondition with its `precondition`, `parameter`, `entity`, `summary` and, for a count, `actual`;
+the arguments were fine, so the call is not repeated unchanged: read what failed and change the
+graph or the plan. A dry run (`_dry_run`) raises the same errors as the real run and writes and
+audits nothing, so a harness can check a call before it makes it. Each tool lists the codes of its
+command (`run`, `do` or `view`) that a call can raise, `tool.not_found`, `tool.hash_mismatch` and
+the codes of the transport; the `not_found` codes of the three kinds of entry are left out, because
+a call of an entry you cannot see is `tool.not_found`. A large manifest goes to a file on the command
+line like any large answer ([Large answers go to a file](#large-answers-go-to-a-file)); a harness
+fetches it over the server API.

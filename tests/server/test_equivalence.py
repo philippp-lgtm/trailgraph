@@ -303,6 +303,66 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
         call("lookup", "x", "--for", "move_item.location")
         call("lookup", "x", "--for", "move_item.no_such_param")
         call("lookup", "x", "--for", "no_such_action.location")
+    call("call", "no_such_tool")
+    call("call", "run_no_such_tool", "--input", "x=1", "--expect-hash", "sha256:" + "0" * 64)
+    call("call", "do_no_such_tool", "--idempotency-key", "k-1")
+    call("call", "run_x", "--input", "broken")
+    if "inv:Location" in factory.model.classes:  # the ontology with published entries
+        tools = {t["name"]: t for t in call("describe", "tools")["data"]["tools"]}
+        run_in = ("call", "run_items_in_location", "--input", f"location={json.dumps(place)}")
+        call(*run_in)
+        call(*run_in, "--input", "_limit=1", "--input", "_offset=1.0")
+        call(*run_in, "--input", "_limit=0")
+        call(*run_in, "--expect-hash", tools["run_items_in_location"]["hash"])
+        call(*run_in, "--expect-hash", "sha256:" + "0" * 64)
+        call(*run_in, "--idempotency-key", "k-read")  # a read takes no key
+        call("call", "run_items_in_location", "--input", f"location={json.dumps(other)}")
+        call("call", "run_items_in_location", "--input", "location=null")
+        call(
+            "call",
+            "run_items_in_location",
+            "--input",
+            f"location={json.dumps(place)}",
+            "--input",
+            "x=1",
+        )
+        call("call", "run_items_by_condition", "--input", '"condition"="damaged"')
+        call("call", "run_items_by_condition", "--input", 'condition="damaged"')
+        call("call", "run_items_by_condition", "--input", 'condition="mint"')
+        text("call", "run_items_in_location", "--input", f"location={json.dumps(place)}")
+        entity = ("call", "view_location_overview", "--input", f"_entity={json.dumps(place)}")
+        call(*entity)
+        call("call", "view_location_overview")
+        call("call", "view_location_overview", "--input", f"_entity={json.dumps(other)}")
+        text(*entity)
+        shown = ("call", "view_item_catalog", "--input", "_page_bytes=300")
+        first = call(*shown)
+        assert first["data"]["more"], first
+        call(*shown, "--input", f"_cursor={json.dumps(first['data']['next'])}")
+        call(*shown, "--input", '_cursor="garbage"')
+        call("call", "view_items_in_location", "--input", f"location={json.dumps(place)}")
+        item, target = json.dumps(stock), json.dumps(far)
+        shift = ("call", "do_move_item", "--input", f"item={item}", "--input", f"location={target}")
+        call(*shift, "--input", "_dry_run=true")
+        call(*shift, "--idempotency-key", "call-1")
+        call(*shift, "--idempotency-key", "call-1")  # the recorded result again
+        call(*shift, "--input", "_dry_run=true", "--idempotency-key", "call-2")  # a read
+        call(*shift, "--input", "_reason=null", "--input", "_limit=3")
+        call("call", "do_retire_item", "--input", f"item={item}")  # needs a reason
+        stop = (
+            "call",
+            "do_retire_item",
+            "--input",
+            f"item={item}",
+            "--input",
+            '_reason="scrapped"',
+        )
+        call(*stop, "--input", "_dry_run=true")
+        call(*stop, "--expect-hash", "sha256:" + "0" * 64)
+        call(*stop, "--expect-hash", tools["do_retire_item"]["hash"])
+        call(*stop)  # the precondition no longer holds
+        call("history", stock)
+        text(*shift, "--input", "_dry_run=true")
     out = cwd / "emitted"
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir()

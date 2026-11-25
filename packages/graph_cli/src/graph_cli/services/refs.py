@@ -68,6 +68,7 @@ from graph_cli.kernel.ids import (
     ref_text,
 )
 from graph_cli.kernel.ports.storage import Snapshot
+from graph_cli.kinetic import params as kinetic_params
 from graph_cli.kinetic.params import ParamDef
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.values import Value
@@ -304,6 +305,40 @@ def entity_params(
             )
         ids.append(str(entity))
     return (ids if isinstance(given, list) else ids[0]), warnings
+
+
+type Given = Sequence[tuple[str, str]] | Mapping[str, JsonValue]
+
+
+def bind_params(
+    kind: Literal["function", "action", "view"],
+    name: str,
+    params: Sequence[ParamDef],
+    given: Given,
+    *,
+    model: CompiledModel,
+    snapshot: Snapshot,
+    shown: CompiledModel | None = None,
+) -> tuple[dict[str, Value], list[WarningRecord]]:
+    """The values of a function, an action or a view call, ready to run: ``given`` is read by
+    the declared types (``name=value`` pairs of the CLI, or the JSON object of a typed call with
+    its null and whole-number rules, ``kinetic.params.bind_input``) against ``model``, then each
+    ``ref`` parameter that has a value is resolved on ``snapshot`` and class-checked against
+    ``shown`` (``model`` by default: a type limited caller binds enums on the full model but
+    names entities among those it sees). The one place that binds a call's parameters, so the
+    CLI forms and the typed call refuse and resolve alike."""
+    if isinstance(given, Mapping):
+        bound = kinetic_params.bind_input(kind, name, params, given, model)
+    else:
+        bound = kinetic_params.bind_cli(kind, name, params, given, model)
+    warnings: list[WarningRecord] = []
+    for param in params:
+        if param.type == "ref" and param.name in bound:
+            bound[param.name], found = entity_params(
+                snapshot, shown or model, kind, name, param, bound
+            )
+            warnings += found
+    return bound, warnings
 
 
 def _not_found(text: str, path: str) -> GraphCliError:

@@ -8,6 +8,7 @@ from support.actions import VALID as ACTION_VALID
 from support.fixtures import compiled_model
 from support.functions import VALID as FUNCTION_VALID
 
+from graph_cli.kernel.changeset import FloatLiteral
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kinetic import bind, params
 from graph_cli.kinetic.action_format import load_action
@@ -121,3 +122,75 @@ def test_required_false_makes_the_parameter_optional_in_an_action() -> None:
         ("since", True),
     ]
     assert defn.params[2].default is None and not defn.params[2].required
+
+
+# ---- the typed input of a call (bind_input) -----------------------------------------------------
+
+
+def literal(text: str) -> FloatLiteral:
+    return FloatLiteral(text)
+
+
+def test_null_is_not_given() -> None:
+    params_ = [
+        p("need", "string"),
+        p("count", "integer", default=3),
+        p("note", "string", optional=True),
+    ]
+    got = params.bind_input(
+        "function", "fn", params_, {"need": "x", "count": None, "note": None}, MODEL
+    )
+    assert got == {"need": "x", "count": 3}  # the default applies, the optional one is absent
+    error = fail(
+        lambda: params.bind_input("function", "fn", params_, {"need": None}, MODEL),
+        "function.parameter_missing",
+    )
+    assert error.details["parameter"] == "need"
+    # a key that is no parameter is refused even when it is null
+    fail(
+        lambda: params.bind_input("action", "act", params_, {"need": "x", "other": None}, MODEL),
+        "action.parameter_unknown",
+    )
+
+
+def test_a_whole_number_written_as_a_float_is_an_integer() -> None:
+    one = [p("n", "integer")]
+    many = [p("n", "integer", many=True)]
+    for text, number in (
+        ("5.0", 5),
+        ("1e2", 100),
+        ("-3.00", -3),
+        ("0.0", 0),
+        ("9007199254740991.0", 2**53 - 1),
+    ):
+        assert params.bind_input("function", "fn", one, {"n": literal(text)}, MODEL) == {
+            "n": number
+        }
+    assert params.bind_input("function", "fn", many, {"n": [literal("1.0"), 2]}, MODEL) == {
+        "n": [1, 2]
+    }
+    for text in ("5.5", "1e-1", "9007199254740992.0", "1e999999999", "-1e999999999"):
+        error = fail(
+            lambda text=text: params.bind_input("function", "fn", one, {"n": literal(text)}, MODEL),
+            "function.parameter_invalid",
+        )
+        assert "whole number" in error.message
+
+
+def test_a_float_is_refused_for_every_other_type() -> None:
+    for param in (p("v", "string"), p("v", "boolean"), p("v", "decimal"), p("v", "date")):
+        for call in (params.bind_input, params.bind_json):
+            fail(
+                lambda call=call, param=param: call(
+                    "function", "fn", [param], {"v": literal("1.5")}, MODEL
+                ),  # type: ignore[misc]
+                "function.parameter_invalid",
+            )
+    # a decimal is a string in JSON: the message says how to write one
+    error = fail(
+        lambda: params.bind_input(
+            "function", "fn", [p("v", "decimal")], {"v": literal("1.5")}, MODEL
+        ),
+        "function.parameter_invalid",
+    )
+    assert '"1.5"' in error.message

@@ -107,7 +107,9 @@ class ReadOpen(ReadAccess):
             snapshot = VisibleSnapshot(snapshot, view, mapping.unmapped, mapping.own_class)
         warnings = (*warnings, *snapshot.warnings)
         self.usage.graph = graph_json(entry, snapshot.seq)
-        return GraphRead(entry, model, snapshot, warnings, actor, request.command, view, mapping)
+        return GraphRead(
+            entry, model, snapshot, warnings, actor, request.command, view, mapping, request.via
+        )
 
     def rename_hint(
         self, actor: ActorContext, entry: GraphEntry, error: GraphCliError

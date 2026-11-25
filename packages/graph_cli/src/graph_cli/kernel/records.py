@@ -137,11 +137,17 @@ class SourceRef:
         )
 
 
+VIA_CALL: Final = "call"  # ``RequestMeta.via`` of a request made by ``graph call``
+VIA_VALUES: Final = (VIA_CALL,)
+
+
 @dataclass(frozen=True, slots=True)
 class RequestMeta:
     """What was asked: command name and ``args_digest`` (C.10); ``action`` names the
     published action of a ``do`` (actions plan A7), ``source`` the source run of a document
-    that names one (reconcile plan R-K10).
+    that names one (reconcile plan R-K10), ``via`` the command that asked on the caller's
+    behalf (``call``: the request is that of the underlying ``run``, ``do`` or ``view``; the
+    digest does not cover it, so the same request made either way is the same request).
 
     Lives in the kernel (contract draft: ``services.write``) because tx records
     and authorized txs carry it.
@@ -151,6 +157,7 @@ class RequestMeta:
     args_digest: str
     action: ActionRef | None = None
     source: SourceRef | None = None
+    via: str | None = None
 
     @classmethod
     def of(
@@ -159,18 +166,22 @@ class RequestMeta:
         args: Mapping[str, JsonValue],
         action: ActionRef | None = None,
         source: SourceRef | None = None,
+        via: str | None = None,
     ) -> RequestMeta:
         """C.10: the digest covers the request DTO, not raw argv."""
-        return cls(command, hash_value({"command": command, "args": dict(args)}), action, source)
+        digest = hash_value({"command": command, "args": dict(args)})
+        return cls(command, digest, action, source, via)
 
     def to_json(self) -> dict[str, JsonValue]:
-        """The ``request`` object of an audit event or a tx record; ``action`` and ``source``
-        only when set, so requests without one keep their bytes."""
+        """The ``request`` object of an audit event or a tx record; ``action``, ``source`` and
+        ``via`` only when set, so requests without one keep their bytes."""
         data: dict[str, JsonValue] = {"command": self.command, "args_digest": self.args_digest}
         if self.action is not None:
             data["action"] = self.action.to_json()
         if self.source is not None:
             data["source"] = self.source.to_json()
+        if self.via is not None:
+            data["via"] = self.via
         return data
 
     @classmethod
@@ -184,6 +195,7 @@ class RequestMeta:
             SourceRef.from_json(req_obj(data, "source", path), f"{path}source.")
             if "source" in data
             else None,
+            req_str(data, "via", path) if "via" in data else None,
         )
 
 

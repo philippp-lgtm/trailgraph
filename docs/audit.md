@@ -47,6 +47,14 @@ action in `request.action`. Not audited: `--dry-run`, an action with nothing to 
 and an unknown or hidden action. `history` shows the `action` next to the `command` of a
 revision it wrote.
 
+A request that [`graph call`](cli_graph.md#tools-for-agent-harnesses) makes is the request of the
+command it runs (`do`, `run` or `view`, with that command's `action`, `args_digest` and
+refusals) plus `request.via`, `call`, in the intent, in a refusal event and in the transaction record.
+`args_digest` does not cover it, so `graph call` and `graph do` with the same key and the same bound
+parameters are one request: the retry of one by the other is a replay. `request.via` is optional and
+appears only for requests made by a call, so the bytes of every other request are unchanged;
+verification checks its shape.
+
 A write that hands over a source run names it: `request.source` is `{name, version?, run?}`
 in the intent, in a refusal event and in the transaction record (`name` is the producer's
 logical name, `version` and `run` are text of up to 128 characters; the program's own writers
@@ -111,6 +119,7 @@ fails:
 | `function` | only for `run`: `{name, hash}` of the function that ran (`hash` is `null` when the run failed, except for `function.stale`); never a parameter value |
 | `view` | only for `view`: `{name, hash}` of the published view that ran (the generated card has no hash and is not logged) |
 | `action` | only for `do`: `{name, hash}` of the action that ran (`hash` is `null` when it failed, except for `action.stale`); never a parameter value |
+| `via` | only `call`: [`graph call`](cli_graph.md#tools-for-agent-harnesses) is logged as the command it ran (`command` is `run`, `do` or `view`, with that command's `function`, `view` or `action`), so function runs of a harness count like any other; a call that fails before it names a tool is logged as `call` without `via` |
 | `query` | only for `query` (also with `--explain`; a parse or resolve error has none): `{shape_hash, shape, covered_by}`. `shape` is the canonical [query shape](#query-shape), or `null` above 4 KiB; `covered_by` lists at most three `{name, list_fit}`, the published functions that cover the query and that the caller may run |
 
 If the envelope names no graph, `graph` still names the graph a read opened,

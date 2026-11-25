@@ -166,7 +166,11 @@ download, a function, an action, the generated skill or `whoami`. <!-- claim: se
 ([Tools for agent harnesses](cli_graph.md#tools-for-agent-harnesses)) is rendered the same way: it lists only
 the functions, actions and views the caller may use, and its schemas hold the enum values and classes of the
 model the caller sees, so a hidden type, attribute or marking never reaches it, and an entry the caller sees
-but may not use is absent. <!-- claim: security_model.tool_manifest_per_caller --> What is left
+but may not use is absent. <!-- claim: security_model.tool_manifest_per_caller --> A call of a
+tool (`graph call`) is no way around that: it finds the tool among the entries the caller sees (one it
+does not see is `tool.not_found`, one it may not use is `access.denied`, recorded) and runs the service
+of the command behind it, so who may do it, what is refused and what the audit records are the
+command's. <!-- claim: security_model.tool_call_is_the_command --> What is left
 tells that something exists or that something happened, never what it is. These
 are accepted and known:
 

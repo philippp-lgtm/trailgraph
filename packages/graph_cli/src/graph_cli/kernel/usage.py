@@ -27,3 +27,6 @@ class UsageNote:
         # The authored view a ``view`` call found (``{name, hash}``), for a call that fails
         # afterwards with an error that does not name it. Never a parameter value or an id.
         self.view: dict[str, JsonValue] | None = None
+        # The command a ``call`` ran on the caller's behalf (``run``, ``do`` or ``view``): the
+        # line says what ran, with ``via: call``, so a harness's calls count like the others.
+        self.ran: str | None = None

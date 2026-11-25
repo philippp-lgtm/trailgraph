@@ -29,6 +29,32 @@ Usage: `graph apply FILE [OPTIONS]`
 | `graph apply <file> --dry-run --json` | Check a file without writing. |
 | `graph apply <file> --summary --json` | Apply a large file, findings without the list. |
 
+## graph call
+
+Run one tool of the tool manifest with typed JSON input.
+
+Kind: write. Surface: act. Action: none. Exit codes: 0, 1, 2, 3, 4, 5, 6.
+
+Usage: `graph call TOOL [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `tool` | string | yes | no | The tool name from the manifest. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--input` | json_assignment | no | yes | NAME=<json>: one member of the tool's input object, a JSON value; repeat for more. |
+| `--expect-hash` | string | no | no | Refuse unless the tool's hash in the manifest is this. |
+| `--idempotency-key` | string | no | no | Key that makes a retry of an action safe. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Example | Summary |
+|---|---|
+| `graph call <name> --input <name>=<json> --json` | Run a tool of the manifest: run_NAME, do_NAME or view_NAME. |
+| `graph call <name> --input <name>=<json> --input _dry_run=true --json` | See what an action would change. |
+| `graph call <name> --input <name>=<json> --input _reason='"<value>"' --idempotency-key <value> --json` | Run an action that needs a reason, safe to repeat. |
+| `graph call <name> --input _entity='"<id>"' --expect-hash <value> --json` | Show an entity, only if the tool is still the one the manifest described. |
+
 ## graph changes
 
 List what changed in the whole graph after a position, oldest first; paged.

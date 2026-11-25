@@ -411,6 +411,16 @@ def view_head(entry: ViewEntry, model: CompiledModel, visible: Sequence[ViewEntr
     )
 
 
+def control_names(kind: str, *, entity: bool = False) -> tuple[str, ...]:
+    """The controls a tool of ``kind`` takes (``entity``: a view that shows one entity, else a set
+    view), in the order its input schema lists them."""
+    if kind == FUNCTION:
+        return (LIMIT, OFFSET)
+    if kind == ACTION:
+        return (REASON, DRY_RUN)
+    return (ENTITY,) if entity else (CURSOR, PAGE_BYTES_ARG)
+
+
 def unique_names(heads: Sequence[ToolHead]) -> None:
     """Refuse a manifest in which two tools share a name (the builder's invariant)."""
     seen: dict[str, ToolHead] = {}

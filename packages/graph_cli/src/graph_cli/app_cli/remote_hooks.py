@@ -88,7 +88,7 @@ def resent(
     sent again, with its uploads, when the connection fails: the server uses an upload up
     once, so the command alone cannot be repeated. A write is sent once (a lost answer is
     ``remote.outcome_unknown``). Each try gets its own copy of ``args``."""
-    writes = spec.kind == "write" and args.get("--dry-run") is not True
+    writes = spec.kind_of(args) == "write" and args.get("--dry-run") is not True
     for attempt in range(1 if writes else 2):
         try:
             return send(dict(args))

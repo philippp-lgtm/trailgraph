@@ -88,7 +88,7 @@ def forward(
 
 def write_of(spec: CommandSpec, args: dict[str, JsonValue], *, generate: bool) -> Write | None:
     """What a lost answer must name, for a write; adds a generated key to ``args``."""
-    if spec.kind != "write" or args.get("--dry-run") is True:
+    if spec.kind_of(args) != "write" or args.get("--dry-run") is True:
         return None
     takes_key = any(p.name == KEY_OPTION for p in spec.params)
     if takes_key and generate and not isinstance(args.get(KEY_OPTION), str):

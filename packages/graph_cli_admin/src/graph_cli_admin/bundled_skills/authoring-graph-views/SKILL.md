@@ -105,7 +105,7 @@ changes the skill and makes installed copies stale (the next `graph start` refre
 A caller finds a view only when it sees everything the view names (classes, attributes,
 relations, enums, the functions it runs); for a caller with read limits that misses one it
 does not exist (hidden), and `graph view --name` of it is `view.not_found`. A caller that sees
-all of it but lacks `read.find` (a set view) or `read.function` (a `rows` section) finds it marked
+all of it but lacks `read.get` (every view), `read.find` (a set view) or `read.function` (a `rows` section) finds it marked
 `allowed: false` with the right it misses, and the call is `access.denied`.
 
 ## Release refusals

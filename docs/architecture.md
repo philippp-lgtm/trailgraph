@@ -122,6 +122,13 @@ and `view`; `history`: `history` and `changes`; `find`: `find`, `lookup`,
 `search` and `neighbors`; `query`: `query` and `run`). The package's `SPECS`
 joins theirs in the order of the help.
 
+`graph call` (`app_cli.commands.call`) runs a tool of the manifest through the services of `run`,
+`do` and `view`; it is a write only for an action that is not a dry run, which a command declares
+with `CommandSpec.kind_by_args` (the skill check, the context of the command and the idempotency key
+and the retry of the remote client ask `kind_of`, the inventory keeps the declared kind), and its
+answer never goes to a file (`CommandSpec.spill`). The audit and the access log say it asked
+(`kernel.records.RequestMeta.via`, the `via` key of `catalog.access_log`).
+
 A declaration also names the
 JSON Schema of its answer's `data` (`output`); shapes several commands share
 are definitions with one home each, next to what produces them:
@@ -351,7 +358,7 @@ nothing is filtered and nothing is paid.
 | `graph_cli_admin.services_admin.migration` | the migration of a release for the maintenance tools: parse and judge `migration.yaml` against the old and new model (`migration.invalid`, `admin.migration_unexpected`, `admin.migration_from_mismatch`), plan the data change with the stamp of its tx, judge the migrated overlay (`admin.migration_required`), describe it for the answers; `services_admin.release` writes it, `check` and `sources_push` use it |
 | `temporal_knowledge.name_map` | `NameMap`: the renames and re-keyings between consecutive pinned versions (`Hop`s from the two compiled models and the installed `migration.yaml`) composed from a revision's version to the pin; `MappedSnapshot` and the mapped revisions are built on it in `services.names` |
 | `app_cli.rename_hints` | `term.unknown` for an old name says what it is called now (message and `details.renamed`), around every command; the old name is never accepted |
-| `app_cli.tool_manifest` | the tool manifest of `describe tools`: the schemas of the answers of a function, action and view tool (the output schemas of `run`, `do` and `view`, standalone), the error codes of each kind of tool, the hash of a tool and the version of the manifest, the selection by tool, kind, module, featured and deprecation; built from the entries the caller may use over the model it sees |
+| `app_cli.tool_manifest` | the tool manifest of `describe tools`: the schemas of the answers of a function, action and view tool (the output schemas of `run`, `do` and `view`, standalone), the error codes of each kind of tool, the hash of a tool (`call --expect-hash` compares it) and the version of the manifest, the selection by tool, kind, module, featured and deprecation; built from the entries the caller may use over the model it sees |
 | `graph_cli_admin.services_admin.catalog_follow` | published function and action catalogs across a release with renames: `follow` decides nothing to do, republish (same sources, new compiled document) or refuse; `write` is the catalog switch shared with `graph <kind> publish` and `graph-admin graph push` |
 | `graph_cli_admin.services_admin.renamed_terms` | what a release that renames terms does to policy and catalogs: `hazards` (deny rules that would apply to nothing, `admin.policy_renamed_term`) and `references` (where functions, actions and policy name each renamed term) |
 | `ontology_layer.data_validator` | `CallerView`: on the write path, validation judges the whole graph and the view only decides what a finding may say (concealed findings, unknown type and relation answers over the filtered model) |
@@ -373,7 +380,7 @@ only caller of `WriteSession.commit`. The one other tx, a data migration, is bui
 | Module | Content |
 | --- | --- |
 | `kernel.changeset` | change set DTOs, the keys of the document, each op and an edge as data (the parser and skill 1's `references/changesets.md` read them), strict parsing (`changeset.malformed` with `details.path`), limits (operations and bytes per document), the canonical form and its hash, JSON/JSONL input readers |
-| `services.refs` | references: full ids, aliases (a renamed alias still resolves, with a warning), `@local` names declared by creates, id abbreviations for CLI arguments; the (action, type) pairs and the attributes and relations an op is decided on; `entity_params`, the existence and class check of `ref` parameters shared by `run` and `do` |
+| `services.refs` | references: full ids, aliases (a renamed alias still resolves, with a warning), `@local` names declared by creates, id abbreviations for CLI arguments; the (action, type) pairs and the attributes and relations an op is decided on; `entity_params`, the existence and class check of `ref` parameters, and `bind_params`, the one place that binds the parameters of a `run`, `do` or `view` call (CLI pairs or the typed JSON of `call`) and resolves their references |
 | `services.term_model`, `services.action_rights` | the app side of term rules: a compiled model condensed for the policy compiler and for the checks of an ontology release; which types a policy decides terms of (`fine_types`, cached per policy hash) and the any-of rule that lists an action and authorizes an empty expansion |
 | `temporal_knowledge.normalize` | applies the ops to a working copy: ids, defaults, initial lifecycle states, text coercion, aliases, supersede and retract, `derived_from` revisions; `WorkingState` reads like a snapshot of the result |
 | `ontology_layer.data_validator` | `validate_write` (the post-state of every touched entity, plus write rules with a `count` or `sum` aggregate on the entities at the other end of their edges) and `check_graph` (every entity, batch rules included) |

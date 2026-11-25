@@ -64,6 +64,7 @@ class CommandState:
     json_mode: bool = False  # how the answer will be written (run() decides)
     command: str | None = None
     kind: str | None = None  # the running command's kind: read, write or meta
+    spill: bool = True  # the running command's answer may go to a file when it is large
     result: Result | None = None
     warnings: list[WarningRecord] = field(default_factory=list)
     global_values: dict[str, Any] = field(default_factory=dict)  # option name -> value
@@ -165,7 +166,7 @@ def run(
         if json_mode:
             shape = short_envelope if invocation.short else dict
             stdout = render_json(shape(document))
-            if invocation.spill is not None:
+            if invocation.spill is not None and state.spill:
                 rendered = spill_json(document, stdout, invocation.spill, shape)
                 document, stdout, spilled = (
                     rendered.document,

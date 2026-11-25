@@ -30,12 +30,13 @@ def open_graph(
     command: str,
     args: dict[str, JsonValue],
     as_of: AsOf | None,
+    via: str | None = None,
 ) -> GraphRead:
     ctx = context(state)
     entry = ctx.select(graph)
     if as_of is not None:
         args = {**args, "as_of": as_of_text(as_of)}
-    request = RequestMeta.of(command, {"graph": entry.name, **args})
+    request = RequestMeta.of(command, {"graph": entry.name, **args}, via=via)
     view = ctx.reader.open(ctx.actor, entry, action, request, as_of=as_of)
     state.warnings += view.warnings
     return view

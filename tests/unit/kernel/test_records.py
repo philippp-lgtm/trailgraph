@@ -215,6 +215,16 @@ def test_request_meta_digest_covers_command_and_args() -> None:
     assert RequestMeta.of("find", {"graph": "g", "ref": "x"}).args_digest != meta.args_digest
 
 
+def test_a_request_made_by_a_call_says_so_without_changing_its_digest() -> None:
+    plain = RequestMeta.of("do", {"graph": "g", "action": "a"})
+    called = RequestMeta.of("do", {"graph": "g", "action": "a"}, via="call")
+    assert called.args_digest == plain.args_digest and called != plain
+    assert called.to_json() == {**plain.to_json(), "via": "call"}
+    assert "via" not in plain.to_json()  # a request not made by a call keeps its bytes
+    assert RequestMeta.from_json(called.to_json()) == called
+    assert RequestMeta.from_json(plain.to_json()).via is None
+
+
 def test_a_request_names_its_source_only_when_there_is_one() -> None:
     plain = RequestMeta("apply", "sha256:" + "b" * 64)
     # the bytes of a request without a source are what they were before the key existed

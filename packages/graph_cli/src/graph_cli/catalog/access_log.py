@@ -46,10 +46,12 @@ def access_record(
     opened: Mapping[str, JsonValue] | None = None,
     found: Mapping[str, JsonValue] | None = None,
     found_view: Mapping[str, JsonValue] | None = None,
+    ran: str | None = None,
 ) -> dict[str, JsonValue]:
     """One line of the access log, from the envelope the command wrote (B9.2). ``opened``
     is the graph a read opened and ``found`` the function a ``run`` found: they name the
-    graph and the function when an error after that point does not."""
+    graph and the function when an error after that point does not. A ``call`` is logged as
+    the command it ran (``ran``: ``run``, ``do`` or ``view``) with ``via: call``."""
     graph = document.get("graph")
     if not isinstance(graph, Mapping):
         graph = opened
@@ -57,10 +59,15 @@ def access_record(
     result: dict[str, JsonValue] = {"status": "ok"}
     if isinstance(error, Mapping):
         result = {"status": "error", "code": error.get("code")}
+    command = document.get("command")
+    via = command == "call" and ran is not None
+    if via:
+        command = ran
+        document = {**document, "command": ran}
     record: dict[str, JsonValue] = {
         "schema": ACCESS_SCHEMA,
         "ts": format_timestamp(ts),
-        "command": document.get("command"),
+        "command": command,
         "actor": actor.to_json(),
         "graph": (
             {k: graph.get(k) for k in ("id", "name", "seq")} if isinstance(graph, Mapping) else None
@@ -90,6 +97,8 @@ def access_record(
         record["action"] = action
     if query is not None and document.get("command") == "query":
         record["query"] = dict(query)
+    if via:
+        record["via"] = "call"
     return record
 
 

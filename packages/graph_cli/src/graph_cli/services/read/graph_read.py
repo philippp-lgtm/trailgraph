@@ -33,6 +33,8 @@ class GraphRead:
     # The mapped layer below the read limits (migration plan M7): old revisions under the
     # pin's names; ``None`` only for views built without ``ReadService.open``.
     mapping: MappedSnapshot | None = None
+    # what the request says made it (``RequestMeta.via``), for the denial a later step records
+    via: str | None = None
 
     def envelope_graph(self) -> dict[str, JsonValue]:
         return graph_json(self.entry, self.snapshot.seq)
