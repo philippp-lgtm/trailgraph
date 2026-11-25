@@ -65,7 +65,9 @@ that way); otherwise, or when the file cannot be written, the answer
 is printed whole with the warning `output.spill_failed {bytes, limit,
 reason}`. Each spill removes files older than 24 hours from the same
 directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
-`spill_bytes = 0`) keeps every answer on stdout, for scripts.
+`spill_bytes = 0`) keeps every answer on stdout, for scripts. `graph call`
+never spills: its answer is the data a program asked for (see [Tools for
+agent harnesses](#tools-for-agent-harnesses)).
 
 ## Commands
 
@@ -100,6 +102,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed; `update --add`/`--remove` change a list attribute (see [References, filters and writes](#references-filters-and-writes)) |
 | `transition REF STATE`, `supersede BY TARGET...`, `retract REF` | lifecycle and provenance; `supersede` and `retract` need `--reason`; over a relation with `on_target_inactive: refuse` they are refused while active entities still point at the target (`data.referential.target_referenced` lists them; relink or retract them in the same change set) |
 | `do NAME` | run a named action of the graph: a reviewed write the maintainer published (`--param name=value`, once per value for a list parameter; `--dry-run`, `--reason`, `--idempotency-key`, `--graph`). The parameters are read by the types the action declares, a reference takes an id, alias or trailing hex digits, never a name. The service checks the action's preconditions and expands it in the state it finds under the graph lock, then writes one transaction with one audit intent that names the action; `--dry-run` shows every entity it would write. The answer is the write result plus `data.action` (`name`, `hash`). A retry with the same `--idempotency-key` and parameters returns the recorded result; the caller needs the write rights of every op it expands to, and an action it sees but may not run is `access.denied` (recorded, naming the right); one that names what the caller may not see is `action.not_found`. See [Actions](#actions) |
+| `call TOOL` | run one tool of the [tool manifest](#tools-for-agent-harnesses) with typed JSON input, for agent harnesses: each `--input NAME=<json>` is one member of the object `input_schema` describes (`_limit`, `_reason` and the other controls start with an underscore); it runs what `run`, `do` or `view` runs and answers the same, with the page of a function in `data`; `--expect-hash` refuses a tool that is no longer the one the manifest described (`tool.hash_mismatch`); `--idempotency-key` is taken by an action that is not a dry run only; a tool you may not see is `tool.not_found`. See [Tools for agent harnesses](#tools-for-agent-harnesses) |
 | `apply FILE` | change set documents (one JSON document or JSONL; `-` reads stdin); `--summary` leaves out the entities of each result and keeps `entity_count` and the findings |
 | `file add PATH` | store a file as `files:File` (or `--type` subclass) with its origin; known content is returned, not stored twice; then extract its metadata records (size, type, page count, ...) and answer them in `metadata`, `--no-extract` skips that, and a failure to extract is a warning, never a failed add (see [Files](files.md), [Metadata](files.md#metadata)) |
 | `file path REF` | the read-only path of a stored file; `--origin` the path it came from on this machine |

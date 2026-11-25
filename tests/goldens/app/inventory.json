@@ -145,6 +145,146 @@
     },
     {
       "path": [
+        "call"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": null,
+      "summary": "Run one tool of the tool manifest with typed JSON input.",
+      "args": [
+        {
+          "name": "tool",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "The tool name from the manifest."
+        }
+      ],
+      "options": [
+        {
+          "name": "--input",
+          "type": "json_assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "NAME=<json>: one member of the tool's input object, a JSON value; repeat for more.",
+          "pairs": "map",
+          "pair_values": "json"
+        },
+        {
+          "name": "--expect-hash",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Refuse unless the tool's hash in the manifest is this."
+        },
+        {
+          "name": "--idempotency-key",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Key that makes a retry of an action safe."
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph call <name> --input <name>=<json> --json",
+          "summary": "Run a tool of the manifest: run_NAME, do_NAME or view_NAME."
+        },
+        {
+          "command": "graph call <name> --input <name>=<json> --input _dry_run=true --json",
+          "summary": "See what an action would change."
+        },
+        {
+          "command": "graph call <name> --input <name>=<json> --input _reason='\"<value>\"' --idempotency-key <value> --json",
+          "summary": "Run an action that needs a reason, safe to repeat."
+        },
+        {
+          "command": "graph call <name> --input _entity='\"<id>\"' --expect-hash <value> --json",
+          "summary": "Show an entity, only if the tool is still the one the manifest described."
+        }
+      ],
+      "errors": [
+        "access.batch_too_large",
+        "access.denied",
+        "access.project_mismatch",
+        "access.reason_required",
+        "action.nothing_to_do",
+        "action.parameter_invalid",
+        "action.parameter_missing",
+        "action.parameter_type",
+        "action.parameter_unknown",
+        "action.precondition_failed",
+        "action.reason_required",
+        "action.stale",
+        "actions.slot_invalid",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "changeset.too_large",
+        "config.forbidden_key",
+        "config.invalid",
+        "conflict.idempotency_key_reuse",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "function.parameter_invalid",
+        "function.parameter_missing",
+        "function.parameter_type",
+        "function.parameter_unknown",
+        "function.stale",
+        "graph.archived",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "graph.readonly",
+        "internal.error",
+        "ontology.artifact_missing",
+        "ontology.pin_mismatch",
+        "query.invalid_value",
+        "query.too_large",
+        "remote.client_outdated",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "skills.outdated",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.missing_argument",
+        "view.class_mismatch",
+        "view.cursor_invalid",
+        "view.cursor_stale",
+        "view.parameter_invalid",
+        "view.parameter_missing",
+        "view.parameter_type",
+        "view.parameter_unknown",
+        "view.stale",
+        "write.invalid",
+        "write.migration_incomplete"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "limits": {},
+      "skill_table": false,
+      "remote": "server"
+    },
+    {
+      "path": [
         "changes"
       ],
       "kind": "read",
@@ -5027,6 +5167,11 @@
       "code": "term.unknown",
       "category": "not_found",
       "exit": 1
+    },
+    {
+      "code": "tool.hash_mismatch",
+      "category": "conflict",
+      "exit": 4
     },
     {
       "code": "tool.not_found",

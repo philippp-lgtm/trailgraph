@@ -121,6 +121,13 @@ class ReadCatalogs(ReadAccess):
             entries = tuple(e for e in entries if e.name not in hidden)
         return entries or None
 
+    def visible_model(self, actor: ActorContext, entry: GraphEntry) -> CompiledModel:
+        """The model ``actor`` sees (what ``open`` puts into ``GraphRead.model``): the pinned one,
+        or its filtered view for a reader with read limits. Authorizes and records nothing."""
+        full, _ = self._models.load_for_read(entry)
+        view = self.read_view(actor, entry)
+        return self._visibility.model(entry, full, view) if view.limited else full
+
     def published_actions(self, entry: GraphEntry) -> ActionCatalog | None:
         """The parsed action catalog of the graph (``None`` when it has none), no
         authorization; cached by the hash of the compiled document. A document that does not

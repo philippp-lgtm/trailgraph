@@ -101,7 +101,9 @@ class ReadViews(ReadEntities, ReadQueries):
         classified = self._classified_views(view.actor, view.entry, view.read_view)
         for item in classified:
             if item.entry.name == name and not item.allowed:
-                request = RequestMeta.of(view.command, {"graph": view.entry.name, "name": name})
+                request = RequestMeta.of(
+                    view.command, {"graph": view.entry.name, "name": name}, via=view.via
+                )
                 raise self.refuse_not_allowed(view.actor, view.entry, item, request)
         # an exact name that is not allowed was refused above: what is found here is allowed, and
         # the suggestions of a name that is none are over everything the caller sees

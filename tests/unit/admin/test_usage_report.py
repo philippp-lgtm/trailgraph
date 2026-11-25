@@ -350,3 +350,12 @@ def test_each_agent_of_a_session_counts_on_its_own() -> None:
         line("get", session="c", agent="", ts=ts(0), graph=None),
     ]
     assert sessions(twice)["count"] == 3
+
+
+def test_a_run_made_by_a_call_counts_like_any_other_run() -> None:
+    """``graph call`` is logged as the command it ran, with ``via: call``."""
+    called = {**line("run", function="items_in_location", session="s2"), "via": "call"}
+    lines = [line("run", function="items_in_location", session="s1"), called]
+    report = graph_of(usage.aggregate(lines), published=["items_in_location", "idle"])
+    assert report["functions"][0]["calls"] == 2 and report["functions"][0]["sessions"] == 2
+    assert report["never_run"] == ["idle"]

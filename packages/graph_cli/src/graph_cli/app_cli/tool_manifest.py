@@ -137,6 +137,11 @@ def tool_errors(kind: str) -> tuple[str, ...]:
     return tuple(sorted(codes))
 
 
+def tool_hash(head: ToolHead) -> str:
+    """The ``hash`` of the tool of ``head`` in the manifest."""
+    return str(tool_json(head)["hash"])
+
+
 def tool_json(head: ToolHead) -> JsonObject:
     """One tool of the manifest. ``hash`` covers what a harness builds its tool from (name,
     description, both schemas, annotations): it changes when an ontology release changes an enum
@@ -207,7 +212,7 @@ def _by_name[Entry: (FunctionEntry, ActionEntry, ViewEntry)](
     return sorted(entries, key=lambda e: e.name)
 
 
-def _missing(wanted: Sequence[str], names: Sequence[str]) -> GraphCliError | None:
+def missing_tools(wanted: Sequence[str], names: Sequence[str]) -> GraphCliError | None:
     """``tool.not_found`` for the first wanted name no tool has, with the close names."""
     absent = [name for name in wanted if name not in names]
     if not absent:
@@ -250,7 +255,7 @@ def build_manifest(
     selection = selection or Selection()
     module = ModuleIndex(model).filter(selection.module)
     available = heads(model, functions, actions, views, obligations)
-    problem = _missing(selection.tools, [h.name for h in available])
+    problem = missing_tools(selection.tools, [h.name for h in available])
     if problem is not None:
         raise problem
     tools = [tool_json(h) for h in available if _kept(h, selection, module)]

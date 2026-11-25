@@ -302,6 +302,18 @@ def test_a_user_skill_of_another_program_refuses_writes(
     assert listed.code == 0 and listed.warning_codes == ["skills.stale"]
     for meta in (("whoami",), ("describe", "commands"), ("skills", "check", "--scope", "user")):
         assert "skills.stale" not in app(run_cli, *meta).warning_codes, meta
+    # a call is a write for an action and a read otherwise: the skill check follows the kind
+    for tool, extra in (("do_move_item", ()), ("do_move_item", ("--input", "_dry_run=null"))):
+        refused = app(run_cli, "call", tool, *extra, "--graph", "example_graph")
+        assert (refused.code, refused.error["code"]) == (1, "skills.outdated"), extra
+    for tool, extra in (
+        ("run_items", ()),
+        ("view_items", ()),
+        ("do_move_item", ("--input", "_dry_run=true")),
+    ):
+        read = app(run_cli, "call", tool, *extra, "--graph", "example_graph")
+        assert read.error["code"] == "tool.not_found", (tool, extra)
+        assert read.warning_codes == ["skills.stale"], (tool, extra)
     assert install(run_cli, "--scope", "user").code == 0
     assert app(run_cli, *note, "--graph", "example_graph").code == 0
 

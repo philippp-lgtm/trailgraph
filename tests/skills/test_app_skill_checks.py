@@ -153,7 +153,7 @@ class TestDocsVsCode:
     def test_a_command_for_programs_is_in_the_reference_but_not_in_the_table(self) -> None:
         files = committed_files()
         flagged = [c for c in golden_inventory()["commands"] if c.get("skill_table") is False]
-        assert [tuple(c["path"]) for c in flagged] == [("describe", "tools")]
+        assert [tuple(c["path"]) for c in flagged] == [("call",), ("describe", "tools")]
         for command in flagged:
             line = command_line(command)
             assert line not in files["SKILL.md"] and command["summary"] not in files["SKILL.md"]
@@ -434,8 +434,11 @@ class TestStructure:
                 # `graph view` adds about 1.7 KiB to the 43.5 KiB of before (46 KiB limit);
                 # views add 1.6 KiB: the options of `graph view`, `describe views` and
                 # `describe view`, and the view kind of `describe search` (48 KiB limit);
-                # `graph start` and `--include-not-allowed` add about 1.2 KiB (50 KiB limit)
-                assert len(text.encode()) <= 50 * 1024, name
+                # `graph start` and `--include-not-allowed` add about 1.2 KiB (50 KiB limit);
+                # the two commands for programs, `graph describe tools` and `graph call`, add
+                # about 2.8 KiB (52 KiB limit): the reference lists them, the command table
+                # of SKILL.md does not
+                assert len(text.encode()) <= 52 * 1024, name
 
     def test_references_are_linked_both_ways(self) -> None:
         files = committed_files()

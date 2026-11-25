@@ -72,11 +72,12 @@ class ActionService:
         dry_run: bool,
         reason: str | None,
         idempotency_key: str | None,
+        via: str | None = None,
     ) -> ActionResult:
         """Run action ``name`` of the graph with ``name=value`` parameter pairs or a typed JSON
-        object (``services.refs.bind_params``)."""
+        object (``services.refs.bind_params``). ``via`` says what made the request (``call``)."""
         if not self._reader.visible(actor, entry):
-            request = RequestMeta.of("do", {"graph": entry.name})
+            request = RequestMeta.of("do", {"graph": entry.name}, via=via)
             raise self._reader.refuse_hidden(actor, entry, entry.name, request)
         published = self._reader.published_actions(entry)
         classified = (
@@ -86,7 +87,7 @@ class ActionService:
         # an action the caller sees but may not run is a recorded denial, not a missing one
         for item in classified:
             if item.entry.name == name and not item.allowed:
-                request = RequestMeta.of("do", {"graph": entry.name, "action": name})
+                request = RequestMeta.of("do", {"graph": entry.name, "action": name}, via=via)
                 raise self._reader.refuse_not_allowed(actor, entry, item, request)
         # a name the caller sees but may not run was refused above: what is found here is allowed,
         # and the suggestions of a name that is none are over everything the caller sees
@@ -141,6 +142,7 @@ class ActionService:
                 "idempotency_key": idempotency_key,
             },
             ref,
+            via=via,
         )
         write = self._writer.apply(
             WriteRequest(

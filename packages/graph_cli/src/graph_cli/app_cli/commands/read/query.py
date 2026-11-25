@@ -21,7 +21,16 @@ from graph_cli.app_cli.commands.common import (
 from graph_cli.app_cli.commands.read.shared import STDIN, as_of_flag, open_graph, pinned
 from graph_cli.app_cli.output_schemas import NULLABLE_STRING, STRINGS
 from graph_cli.cli_kit.envelope import Result
-from graph_cli.cli_kit.output_schemas import ANY, BOOLEAN, STRING, array, nullable, obj, one_of
+from graph_cli.cli_kit.output_schemas import (
+    ANY,
+    BOOLEAN,
+    STRING,
+    array,
+    nullable,
+    obj,
+    one_of,
+    ref,
+)
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
@@ -107,7 +116,7 @@ def _cell(value: JsonValue) -> str:
     return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 
 
-def _table(columns: list[str], items: list[JsonValue]) -> str:
+def table_text(columns: list[str], items: list[JsonValue]) -> str:
     rows = [[_cell(item[c]) for c in columns] for item in items if isinstance(item, Mapping)]
     widths = [max([len(c), *(len(row[i]) for row in rows)]) for i, c in enumerate(columns)]
     lines = [columns, *rows]
@@ -202,7 +211,7 @@ def query(
         graph=view.envelope_graph(),
         page=page_json,
         hints=cover_hints + next_page(page_json, line),
-        text=_table([str(c) for c in columns], items),
+        text=table_text([str(c) for c in columns], items),
     )
 
 
@@ -239,7 +248,7 @@ def run(
         graph=view.envelope_graph(),
         page=page_json,
         hints=next_page(page_json, line),
-        text=_table([str(c) for c in columns], items),
+        text=table_text([str(c) for c in columns], items),
     )
 
 
@@ -281,13 +290,14 @@ QUERY_OUTPUT: Final = one_of(
 )
 
 
-RUN_OUTPUT: Final = obj(
-    {
-        "function": obj({"name": STRING, "hash": STRING}),
-        "columns": STRINGS,
-        "items": array(obj(extra=ANY)),
-    }
-)
+_RUN_ANSWER: Final = {
+    "function": obj({"name": STRING, "hash": STRING}),
+    "columns": STRINGS,
+    "items": array(obj(extra=ANY)),
+}
+RUN_OUTPUT: Final = obj(_RUN_ANSWER)
+# what a call of a function answers: the page is in data, not in the envelope
+RUN_PAGE_OUTPUT: Final = obj({**_RUN_ANSWER, "page": ref("page")})
 
 
 RUN_ERRORS: Final = (
