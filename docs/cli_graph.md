@@ -1232,7 +1232,9 @@ graph call lookup --input text='"<value>"' --input for='"run_<function>.<param>"
 Each `--input` is one member of the object, its value a JSON value (a string is written with its
 quotes), repeated for more members. Over the server the same call is `POST /v1/commands/call` with
 `args.tool` and `args.input`, the object itself:
-`{"args": {"tool": "run_x", "input": {"since": "2026-01-01", "titles": ["a"]}}}`. The call answers
+`{"args": {"tool": "run_x", "input": {"since": "2026-01-01", "titles": ["a"]}}}`; the options go by
+their API names like those of every command ([API](server.md#api)): `graph`, `expect_hash` and
+`idempotency_key`. The call answers
 what `run`, `do` or `view` answers for the same arguments: the same service runs, binds the
 parameters by the same types, resolves references the same way, authorizes, audits and refuses the
 same. What differs:
@@ -1247,9 +1249,11 @@ same. What differs:
   tool you cannot use) is `usage.invalid_argument` with the close slots in `did_you_mean`, and so is
   any input other than `text`, `for` and `limit`. It is a read: it takes no key. A graph whose ontology gives no entity a name
   answers as `lookup` does (`term.no_labels`).
-- **`null` is "not given"** for every parameter and control that is not required: a typed client
-  sends `null` for an argument it leaves out, and a default applies. For a required parameter it is
-  as good as missing (`function.parameter_missing`, `action.parameter_missing` or
+- **`null` is "not given"** for every parameter and control that is not required, and a default
+  applies. `input_schema` lets only a property without a default take `null` (a property with a
+  default is not nullable there), so a client that validates its input against the schema leaves a
+  defaulted argument out; the server is the more lenient of the two. For a required parameter
+  `null` is as good as missing (`function.parameter_missing`, `action.parameter_missing` or
   `view.parameter_missing`). A number written with a fraction or an exponent (`5.0`) is an integer
   when it is a whole number, so a client that writes every number as a float still binds `integer`
   parameters and controls; for any other type, and for a number with a fraction, it is refused.
