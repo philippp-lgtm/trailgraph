@@ -1025,7 +1025,10 @@ def test_every_example_of_the_company_entries_runs_through_call(
                 assert outcome.code == 0, (tool["name"], given, outcome.envelope)
                 # a view's schema is checked closed, like the plugin does: no key it does not name
                 schema = closed(tool["output_schema"]) if kind == "view" else tool["output_schema"]
-                found = list(Draft202012Validator(schema).iter_errors(outcome.data))
+                checked = Draft202012Validator(
+                    schema, format_checker=Draft202012Validator.FORMAT_CHECKER
+                )
+                found = list(checked.iter_errors(outcome.data))
                 assert found == [], (tool["name"], [e.message for e in found])
                 ran += 1
     assert ran >= 8
