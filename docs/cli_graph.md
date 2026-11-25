@@ -957,8 +957,8 @@ A function, action or view is one of three things for a caller (the rules are in
 
 - **allowed**: you see everything it names and hold the rights it needs;
 - **not allowed**: you see everything it names but lack a right (`read.function` for a function,
-  `read.find` for a set view, `read.function` for a view that runs functions, a write right for an
-  action);
+  `read.get` for a view, `read.find` for a set view, `read.function` for a view that runs functions,
+  a write right for an action);
 - **hidden**: it names something you cannot see; it does not exist for you.
 
 Lists and counts say what you may use. A list adds `not_allowed`, the number of entries you see but
