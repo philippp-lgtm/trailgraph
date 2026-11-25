@@ -26,7 +26,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 from graph_cli.app_cli.commands.common import GRAPH, context, services
 from graph_cli.app_cli.commands.do import DO_ERRORS, DO_OUTPUT
@@ -46,14 +46,15 @@ from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.output_schemas import one_of
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, Kind, ParamSpec
+from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.canonical import MAX_SAFE_INT, JsonValue
-from graph_cli.kernel.changeset import MAX_REASON, load_document
+from graph_cli.kernel.changeset import MAX_REASON, FloatLiteral, load_document
 from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import VIA_CALL
-from graph_cli.kinetic.action_entries import ActionEntry
-from graph_cli.kinetic.entries import FunctionEntry
 from graph_cli.kinetic.params import number_value
 from graph_cli.kinetic.view_entries import ViewEntry
+from graph_cli.kinetic.view_format import PAGE_BYTES_MAX
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT, split_assignment
 from graph_cli.services.catalog_access import Classified, allowed_entries
 from graph_cli.services.describe_tools import (
@@ -71,11 +72,12 @@ from graph_cli.services.describe_tools import (
     control_names,
     tool_name,
 )
-from graph_cli.services.read import graph_json
+from graph_cli.services.read import ReadService, graph_json
 
 INPUT_NAME_RE: Final = re.compile(r"^_?[a-z][a-z0-9_]*$")  # a parameter or a control
 INPUT: Final = "--input"
 KEY: Final = "--idempotency-key"
+RAN: Final = {FUNCTION: "run", ACTION: "do", VIEW: "view"}  # the command a tool runs
 
 
 def parse_input(pairs: Sequence[str]) -> dict[str, JsonValue]:
@@ -135,23 +137,41 @@ class _Found:
     entity: bool = False  # a view that shows one entity
 
 
-def _find(
-    tool: str,
-    functions: Sequence[Classified[FunctionEntry]],
-    actions: Sequence[Classified[ActionEntry]],
-    views: Sequence[Classified[ViewEntry]],
-) -> _Found | None:
-    """The entry of ``tool`` among everything the caller sees (names are unique by construction)."""
-    for fn in functions:
-        if tool_name(FUNCTION, fn.entry.name) == tool:
-            return _Found(FUNCTION, fn.entry.name, fn.allowed)
-    for action in actions:
-        if tool_name(ACTION, action.entry.name) == tool:
-            return _Found(ACTION, action.entry.name, action.allowed)
-    for shown in views:
-        if tool_name(VIEW, shown.entry.name) == tool:
-            return _Found(VIEW, shown.entry.name, shown.allowed, shown.entry.entity)
+def _kind_of(tool: str) -> str | None:
+    """The kind of entry the prefix of a tool name says, ``None`` when it has none of them."""
+    return next((kind for kind, prefix in PREFIXES.items() if tool.startswith(prefix)), None)
+
+
+def _classified(
+    reader: ReadService, actor: ActorContext, entry: GraphEntry, kind: str
+) -> Sequence[Classified[Any]]:
+    """What the caller sees of the catalog of ``kind``, with the rights it lacks."""
+    if kind == FUNCTION:
+        return reader.classified_functions(actor, entry)
+    if kind == VIEW:
+        return reader.classified_views(actor, entry)
+    published = reader.published_actions(entry)
+    return () if published is None else reader.classified_actions(actor, entry, published)
+
+
+def _find(tool: str, kind: str, seen: Sequence[Classified[Any]]) -> _Found | None:
+    """The entry of ``tool`` among what the caller sees of its catalog (names are unique by
+    construction)."""
+    for item in seen:
+        if tool_name(kind, item.entry.name) == tool:
+            entity = isinstance(item.entry, ViewEntry) and item.entry.entity
+            return _Found(kind, item.entry.name, item.allowed, entity)
     return None
+
+
+def _usable_names(reader: ReadService, actor: ActorContext, entry: GraphEntry) -> list[str]:
+    """The names of every tool the caller may use, for the suggestions of a name that is none."""
+    return [
+        tool_name(kind, item.entry.name)
+        for kind in (FUNCTION, ACTION, VIEW)
+        for item in _classified(reader, actor, entry, kind)
+        if item.allowed
+    ]
 
 
 def _integer(
@@ -168,7 +188,8 @@ def _integer(
 
 def _text(controls: Mapping[str, JsonValue], name: str) -> str | None:
     value = controls.get(name)
-    if value is not None and not isinstance(value, str):
+    # a number with a fraction is a FloatLiteral, which is a str: no string either
+    if value is not None and (not isinstance(value, str) or isinstance(value, FloatLiteral)):
         raise usage(name, "expected a string", str(value))
     return value
 
@@ -223,24 +244,26 @@ def call(
     ctx = context(state)
     entry = ctx.select(graph)
     reader, actor = ctx.reader, ctx.actor
-    functions = reader.classified_functions(actor, entry)
-    published = reader.published_actions(entry)
-    actions = () if published is None else reader.classified_actions(actor, entry, published)
-    views = reader.classified_views(actor, entry)
-    found = _find(tool, functions, actions, views)
-    if found is None:
-        names = [
-            *(tool_name(FUNCTION, e.name) for e in allowed_entries(functions)),
-            *(tool_name(ACTION, e.name) for e in allowed_entries(actions)),
-            *(tool_name(VIEW, e.name) for e in allowed_entries(views)),
-        ]
-        problem = missing_tools([tool], names)
+    kind = _kind_of(tool)
+    seen = () if kind is None else _classified(reader, actor, entry, kind)
+    found = None if kind is None else _find(tool, kind, seen)
+    if kind is None or found is None:
+        problem = missing_tools([tool], _usable_names(reader, actor, entry))
         assert problem is not None
         raise problem
+    services(state).usage.ran = RAN[kind]  # from here on the log says what ran
     if expect_hash is not None and found.allowed:  # one the caller may not use is refused below
-        usable = (allowed_entries(functions), allowed_entries(actions), allowed_entries(views))
-        obligations = reader.reason_obligations(actor, entry) if usable[1] else frozenset[str]()
-        manifest = heads(reader.visible_model(actor, entry), *usable, obligations)
+        usable = tuple(allowed_entries(seen))
+        none: tuple[Any, ...] = ()
+        obligations = reader.reason_obligations(actor, entry) if kind == ACTION else frozenset()
+        parts = {FUNCTION: none, ACTION: none, VIEW: none, kind: usable}
+        manifest = heads(
+            reader.visible_model(actor, entry),
+            parts[FUNCTION],
+            parts[ACTION],
+            parts[VIEW],
+            obligations,
+        )
         current = tool_hash(next(h for h in manifest if h.name == tool))
         if current != expect_hash:
             raise GraphCliError(
@@ -249,15 +272,23 @@ def call(
                 details={"tool": tool, "expected": expect_hash, "actual": current},
             )
     params, controls = _split(values, found)
-    note = services(state).usage
     if found.kind == FUNCTION:
-        note.ran = "run"
         return _run(state, graph, found.name, params, controls)
     if found.kind == ACTION:
-        note.ran = "do"
         return _do(state, graph, found.name, params, controls, idempotency_key)
-    note.ran = "view"
     return _view(state, graph, found, params, controls)
+
+
+def _digestible(value: JsonValue) -> JsonValue:
+    """``value`` for the digest of a request: a number written with a fraction (a ``FloatLiteral``,
+    a ``str``) as ``{"number": text}``, so that ``5.0`` and the text ``"5.0"`` differ."""
+    if isinstance(value, FloatLiteral):
+        return {"number": str(value)}
+    if isinstance(value, Mapping):
+        return {k: _digestible(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_digestible(v) for v in value]
+    return value
 
 
 def _run(
@@ -269,7 +300,8 @@ def _run(
 ) -> Result:
     limit = _integer(controls, LIMIT, DEFAULT_LIMIT, 1, MAX_LIMIT)
     offset = _integer(controls, OFFSET, 0, 0, MAX_SAFE_INT)
-    args: dict[str, JsonValue] = {"name": name, "input": params, "limit": limit, "offset": offset}
+    asked = _digestible(params)
+    args: dict[str, JsonValue] = {"name": name, "input": asked, "limit": limit, "offset": offset}
     view = open_graph(state, graph, "read.function", "run", args, None, via=VIA_CALL)
     data, page, warnings = context(state).reader.run(view, name, params, limit=limit, offset=offset)
     state.warnings += warnings
@@ -310,6 +342,18 @@ def _do(
     return Result(data=result.to_json(), graph=graph_json(entry, result.write.seq))
 
 
+def _as_control(exc: GraphCliError) -> GraphCliError:
+    """``exc`` naming the control ``_entity`` where the view service names its option ``ref``."""
+    if exc.details.get("argument") != "ref":
+        return exc
+    return GraphCliError(
+        exc.code,
+        exc.message.replace("ref:", f"{ENTITY}:", 1),
+        details={**exc.details, "argument": ENTITY},
+        warnings=exc.warnings,
+    )
+
+
 def _view(
     state: CommandState,
     graph: str | None,
@@ -327,19 +371,22 @@ def _view(
         )
     cursor = _text(controls, CURSOR)
     given = controls.get(PAGE_BYTES_ARG)
-    page_bytes = None if given is None else _integer(controls, PAGE_BYTES_ARG, 0, 1, MAX_SAFE_INT)
+    page_bytes = None if given is None else _integer(controls, PAGE_BYTES_ARG, 0, 1, PAGE_BYTES_MAX)
     args: dict[str, JsonValue] = {"name": name, "param": sorted(params)}
     if ref is not None:
         args["ref"] = ref
     reading = open_graph(state, graph, "read.get", "view", args, None, via=VIA_CALL)
-    data, warnings = context(state).reader.view(
-        reading,
-        ref,
-        name=name,
-        pairs=params,
-        cursor=cursor,
-        page_bytes=page_bytes,
-    )
+    try:
+        data, warnings = context(state).reader.view(
+            reading,
+            ref,
+            name=name,
+            pairs=params,
+            cursor=cursor,
+            page_bytes=page_bytes,
+        )
+    except GraphCliError as exc:
+        raise _as_control(exc) from None
     state.warnings += warnings
     return Result(data=data, graph=reading.envelope_graph(), text=view_text(data))
 

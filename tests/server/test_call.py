@@ -269,3 +269,25 @@ def test_the_call_is_in_the_inventory_and_the_api_document(served: tuple[ServerA
     document = call(app, "GET", "/v1/openapi.json", token=token).json
     assert "/v1/commands/call" in document["paths"]
     assert json.dumps(document).count("tool.hash_mismatch") >= 1
+
+
+def test_a_number_with_a_fraction_is_no_string_control(served: tuple[ServerApp, str]) -> None:
+    """The body parser keeps ``1.5`` as written, a ``str`` underneath: a text control refuses it."""
+    app, token = served
+    item = entity(app, token, "inv:Item")
+    shelf = entity(app, token, "inv:Location", "S")
+
+    def asked(tool: str, members: str) -> Reply:
+        body = '{"args": {"tool": "%s", "graph": "example_graph", "input": {%s}}}'
+        return raw(app, token, body % (tool, members))
+
+    for tool, members, argument in (
+        ("do_retire_item", f'"item": "{item}", "_reason": 1.5', "_reason"),
+        ("view_location_overview", '"_entity": 1.5', "_entity"),
+        ("view_location_overview", f'"_entity": "{shelf}", "_cursor": 1.5', None),
+        ("view_item_catalog", '"_cursor": 1.5', "_cursor"),
+    ):
+        reply = asked(tool, members)
+        assert (reply.status, reply.error["code"]) == (400, "usage.invalid_argument"), members
+        if argument is not None:
+            assert reply.error["details"]["argument"] == argument, members

@@ -51,8 +51,9 @@ A request that [`graph call`](cli_graph.md#tools-for-agent-harnesses) makes is t
 command it runs (`do`, `run` or `view`, with that command's `action`, `args_digest` and
 refusals) plus `request.via`, `call`, in the intent, in a refusal event and in the transaction record.
 `args_digest` does not cover it, so `graph call` and `graph do` with the same key and the same bound
-parameters are one request: the retry of one by the other is a replay. The key is optional and appears
-only for requests made by a call; verification checks its shape.
+parameters are one request: the retry of one by the other is a replay. `request.via` is optional and
+appears only for requests made by a call, so the bytes of every other request are unchanged;
+verification checks its shape.
 
 A write that hands over a source run names it: `request.source` is `{name, version?, run?}`
 in the intent, in a refusal event and in the transaction record (`name` is the producer's

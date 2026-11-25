@@ -331,7 +331,7 @@ def test_a_reason_is_a_control_and_the_errors_are_those_of_do(
     base = ["--input", f"item={j(item)}"]
     missing = call(run_cli, "do_retire_item", *base)
     assert (missing.code, missing.error["code"]) == (2, "action.reason_required")
-    for bad in ('"  "', "7", "true", '""'):
+    for bad in ('"  "', "7", "true", '""', "1.5", "2.0"):  # a number is no string
         refused = call(run_cli, "do_retire_item", *base, "--input", f"_reason={bad}")
         assert (refused.code, refused.error["code"]) == (2, "usage.invalid_argument"), bad
         assert refused.error["details"]["argument"] == "_reason"
@@ -580,6 +580,7 @@ def test_a_tool_the_caller_may_not_use_is_denied_not_hidden(
         ("run_items_by_condition", [f"condition={j('good')}"]),
         ("do_move_item", [f"item={j(item)}", f"location={j(shelf)}"]),
         ("do_move_item", [f"item={j(item)}", f"location={j(shelf)}", "_dry_run=true"]),
+        ("view_item_catalog", []),  # it runs a function and lists entities
     ):
         args = [x for pair in inputs for x in ("--input", pair)]
         denied = call(run_cli, tool, *args, env=EXPLORE)
@@ -591,6 +592,47 @@ def test_a_tool_the_caller_may_not_use_is_denied_not_hidden(
     assert by_run.error["code"] == "access.denied"
     # another caller of the same graph still has them
     assert call(run_cli, "run_items_by_condition", "--input", f"condition={j('good')}").code == 0
+
+
+NO_GET = """\
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {graphs: "*", level: write}
+no_project: {"*": write}
+deny:
+  - {id: no_explore_views, agent_type: [explore], action: ["read.get"]}
+"""
+
+
+@pytest.mark.doc_claim("security_model.tool_call_is_the_command")
+@pytest.mark.doc_claim("security_model.tool_manifest_per_caller")
+def test_a_view_tool_needs_read_get_like_the_view_command(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    shelf = alias_of(run_cli, "inv:Location", code="SH")
+    install(run_cli, tmp_path / "policies", NO_GET)
+    seen = manifest(run_cli, EXPLORE)
+    assert {n for n in seen if n.startswith("view_")} == set()  # none is a tool for this caller
+    assert "run_items_by_condition" in seen and "do_move_item" in seen
+    for name, inputs in (
+        ("view_location_overview", [f"_entity={j(shelf)}"]),
+        ("view_item_catalog", []),
+        ("view_items_in_location", [f"location={j(shelf)}"]),
+    ):
+        args = [x for pair in inputs for x in ("--input", pair)]
+        denied = call(run_cli, name, *args, env=EXPLORE)
+        assert (denied.code, denied.error["code"]) == (3, "access.denied"), name
+        hashed = call(run_cli, name, *args, "--expect-hash", "sha256:" + "0" * 64, env=EXPLORE)
+        assert hashed.error["code"] == "access.denied", name  # the denial comes first
+        assert last_refusal(root)["request"]["via"] == "call", name
+    listed = ok(run_cli, "describe", "views", "--include-not-allowed", env=EXPLORE)
+    assert [v["missing"][0]["action"] for v in listed.data["views"]] == ["read.get"] * 3
+    plain = app(run_cli, "view", shelf, "--name", "location_overview", env=EXPLORE)
+    assert plain.error["code"] == "access.denied"
+    # another caller of the same graph has them
+    assert "view_location_overview" in manifest(run_cli)
+    assert call(run_cli, "view_location_overview", "--input", f"_entity={j(shelf)}").code == 0
 
 
 @pytest.mark.doc_claim("security_model.tool_call_is_the_command")
@@ -638,6 +680,11 @@ def test_an_entity_view_call_answers_like_view(run_cli: CliRunner, root: Path) -
     assert (wrong.code, wrong.error["code"]) == (1, "view.class_mismatch")
     gone = call(run_cli, "view_location_overview", "--input", f"_entity={j('0192f3c0')}")
     assert (gone.code, gone.error["code"]) == (1, "entity.not_found")
+    for bad in ("1.5", "7", "true", '"Some Name"', '"not an id"'):  # no reference
+        refused = call(run_cli, "view_location_overview", "--input", f"_entity={bad}")
+        assert (refused.code, refused.error["code"]) == (2, "usage.invalid_argument"), bad
+        assert refused.error["details"]["argument"] == "_entity", bad  # the control, not ref
+        assert refused.error["message"].startswith("_entity:"), refused.error["message"]
     for control, value in (("_cursor", '"x"'), ("_page_bytes", "2048"), ("_limit", "1")):
         refused = call(
             run_cli,
@@ -669,6 +716,11 @@ def test_a_set_view_call_pages_by_cursor(run_cli: CliRunner, root: Path) -> None
     for control, value in (("_page_bytes", "0"), ("_page_bytes", "2.5"), ("_page_bytes", "262145")):
         refused = call(run_cli, "view_item_catalog", "--input", f"{control}={value}")
         assert (refused.code, refused.error["code"]) == (2, "usage.invalid_argument"), value
+        assert refused.error["details"]["argument"] == "_page_bytes", value  # not --page-bytes
+    for bad in ("1.5", "2.0", "7", "true"):  # a number is no cursor
+        refused = call(run_cli, "view_item_catalog", "--input", f"_cursor={bad}")
+        assert (refused.code, refused.error["code"]) == (2, "usage.invalid_argument"), bad
+        assert refused.error["details"]["argument"] == "_cursor"
     cursor = call(run_cli, "view_item_catalog", "--input", f"_cursor={j('nonsense')}")
     assert cursor.error["code"] == "view.cursor_invalid"
     nulls = call(
@@ -834,11 +886,19 @@ def test_the_access_log_records_the_command_a_call_ran_without_a_value(
         *("--input", f"_reason={j(MARKER)}"),
     )
     seen = call(run_cli, "view_location_overview", "--input", f"_entity={j(shelf)}")
+    stale = call(run_cli, "view_item_catalog", "--expect-hash", "sha256:" + "0" * 64)
+    control = call(run_cli, "run_items_by_condition", "--input", "_dry_run=true")
+    assert (stale.error["code"], control.error["code"]) == (
+        "tool.hash_mismatch",
+        "usage.invalid_argument",
+    )
     absent = call(run_cli, f"run_{MARKER}")
     assert failed.error["code"] == "entity.not_found" and absent.error["code"] == "tool.not_found"
     assert (shown.code, moved.code, seen.code) == (0, 0, 0)
     lines = [json.loads(line) for line in log.read_text().splitlines()]
-    ran, bad, did, viewed, unknown = lines[-5:]
+    ran, bad, did, viewed, mismatch, wrong, unknown = lines[-7:]
+    assert (mismatch["command"], mismatch["via"]) == ("view", "call")
+    assert (wrong["command"], wrong["via"]) == ("run", "call")  # the log says what ran
     assert (ran["command"], ran["via"], ran["result"]) == ("run", "call", {"status": "ok"})
     assert ran["function"]["name"] == "items_by_condition" and ran["function"]["hash"]
     assert (bad["command"], bad["via"], bad["result"]["code"]) == (
