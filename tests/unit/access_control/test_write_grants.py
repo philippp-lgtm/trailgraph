@@ -684,3 +684,16 @@ deny:
     assert compiled.unknown_write_types == ()
     bare = compile_policy(source.encode(), file="g.yaml", graphs=GRAPHS, graph=EXAMPLE)
     assert bare.hash == compiled.hash and bare.unknown_terms == ()
+
+
+@pytest.mark.doc_claim("security_model.only_attributes_are_marked")
+@pytest.mark.parametrize(
+    "action", ["read.get", "read.find", "read.history", "read.traverse", "read.*"]
+)
+def test_a_term_deny_rule_never_decides_a_read(action: str) -> None:
+    """There are no deny rules on single attributes' reads: a rule that names an attribute
+    names only write actions."""
+    rule = f"type: [nas:Note], attribute: [body], action: [{action}]"
+    source = f"schema: graph_cli.policy/1\nid: graph\ndeny:\n  - {{id: bad, {rule}}}\n"
+    found = problems_of(source, graph=EXAMPLE)
+    assert any(p == "deny[0].action" for p, _ in found), found

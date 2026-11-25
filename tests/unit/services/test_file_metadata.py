@@ -584,6 +584,7 @@ def test_other_errors_end_the_run(graph: Graph, code: str) -> None:
     assert caught.value.code == code
 
 
+@pytest.mark.doc_claim("security_model.extraction_object_store_checked")
 def test_a_corrupt_stored_copy_is_transient_for_that_file_only(tmp_path: Path) -> None:
     with FakeS3() as fake:
         env = ServiceEnv(
@@ -603,8 +604,19 @@ def test_a_corrupt_stored_copy_is_transient_for_that_file_only(tmp_path: Path) -
         original = fake.get(key)
         assert original is not None
         fake.corrupt_get(key, bytes(len(original)))  # same length, other bytes
-        report = graph.service(registry(pdf_stub())).extract(graph.request())
+        extractors = registry(pdf_stub())
+        parsed: list[bytes] = []  # what the parsers were handed
+
+        def runner(
+            name: str, path: Path, recorded: str, limits: ExtractLimits
+        ) -> ExtractionResult | Transient:
+            parsed.append(path.read_bytes())
+            return extractors[name].run(RunInput(path, recorded))
+
+        report = graph.service(extractors, runner=runner).extract(graph.request())
         assert [t["file"] for t in report.transient] == [bad]  # once: the format run only
+        assert original not in parsed and bytes(len(original)) not in parsed  # no parser saw it
+        assert parsed  # the good file was parsed
         assert report.problems == []
         assert set(graph.records(FORMAT_CLASS)) == {good}  # the run went on to the other file
         assert graph.records(PDF_CLASS) == {}

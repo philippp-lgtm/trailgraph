@@ -20,6 +20,7 @@ from support.server import call, grant_server
 
 from graph_cli import __version__
 from graph_cli.catalog.enrollments import code_hash
+from graph_cli.storage.files.maintenance import FileStoreMaintenance
 from graph_cli.storage.files.token_files import enrollments_path, tokens_path
 from graph_cli_server.admin_api import AdminApi
 from graph_cli_server.app import ServerApp, Settings
@@ -179,6 +180,35 @@ def test_wrong_used_revoked_and_expired_codes_get_one_answer(
         assert reply.status == 401, reply.json
         answers.add(json.dumps(reply.json["error"], sort_keys=True))
     assert len(answers) == 1
+    assert not tokens_path(root).exists()
+
+
+@pytest.mark.doc_claim("security_model.enrollment_codes")
+def test_a_wrong_code_takes_no_lock(
+    run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """With the registry lock held elsewhere a wrong, unlisted or expired code is still
+    refused at once, while the exchange of a good code waits for the lock and times out."""
+    root = installation["root"]
+    config = Path(installation["env"]["XDG_CONFIG_HOME"]) / "graph_cli" / "config.toml"
+    config.write_text(config.read_text() + "\n[storage]\nlock_timeout_s = 0.3\n")
+    good = code(run_cli, "--project", "p1")
+    expired = code(run_cli, "--project", "p1")
+    document = json.loads(enrollments_path(root).read_text())
+    for record in document["enrollments"]:
+        if record["id"] == expired["id"]:
+            record["expires_at"] = "2020-01-01T00:00:00.000Z"
+    enrollments_path(root).write_text(json.dumps(document))
+    app, _ = served(installation, tmp_path)
+    with FileStoreMaintenance(root).registry(timeout_s=5):
+        for given in ("gce_" + "a" * 26, "nonsense", expired["code"]):
+            for check in (True, False):
+                reply = call(app, "POST", "/v1/enroll", body={"code": given, "check": check})
+                assert reply.status == 401, (given, reply.json)
+                assert reply.error["code"] == "remote.unauthorized"
+        held = call(app, "POST", "/v1/enroll", body={"code": good["code"]})  # the control
+        assert held.status == 503, held.json
+        assert held.error["code"] == "backend.lock_timeout"
     assert not tokens_path(root).exists()
 
 

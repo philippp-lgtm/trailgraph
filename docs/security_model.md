@@ -186,7 +186,7 @@ are accepted and known:
   caller, because it cannot give a target. Hide such types together, or give
   the caller a role that sees the range. `policy check` warns about it for a
   grant's own `reads` (`admin.policy_unusable_write`); it cannot see what other
-  grants of the same caller add.
+  grants of the same caller add. <!-- claim: security_model.required_relation_hidden_range -->
 - **`graph view` is a `read.get` read.** A caller who may read an entity may read its
   card: counts of its relations and the first neighbours with their labels, even where
   a rule denies `read.traverse` (what `graph neighbors` needs). Types and attributes
@@ -327,7 +327,7 @@ marked or that something happened, with one exception that an author controls
 - **What it does not cover.** Classes, relations, edge qualifiers and enum values
   cannot be marked (personal data in an edge qualifier stays visible to whoever
   sees the edge), a marked attribute cannot be write-only (a caller writes only
-  attributes it sees), and there are no deny rules on single attributes' reads.
+  attributes it sees), and there are no deny rules on single attributes' reads. <!-- claim: security_model.only_attributes_are_marked -->
 
 ## Documents from a source
 
@@ -408,7 +408,7 @@ not:
   `graph` program; `graph file add` extracts and reports only the file it
   stored. <!-- claim: security_model.extraction_rights_are_the_callers --> A stored file altered on disk in a local data root is parsed as it
   is (`files verify --rehash` finds it); with an object store the bytes are
-  checked against their hash before a parser sees them.
+  checked against their hash before a parser sees them. <!-- claim: security_model.extraction_object_store_checked -->
 
 ## Data in backups and audit events
 

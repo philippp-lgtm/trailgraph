@@ -208,6 +208,29 @@ def test_create_update_and_retire_are_one_tx_that_names_its_source(world: World)
     assert not [f for f in world.env.verify().findings if f.severity.value == "error"]
 
 
+@pytest.mark.doc_claim("security_model.source_is_a_claim")
+def test_any_source_name_is_accepted_and_the_key_namespace_stops_no_plain_op(
+    world: World,
+) -> None:
+    """The source is a claim: a name no one registered runs with the caller's rights and is
+    recorded as named, and the plain ops of its document reach keys under another name."""
+    run(world, doc(scope(items=rows("curl"))))
+    curl = world.find("inventory/host_a/curl")
+    assert curl is not None
+    made_up = {"name": "made_up_name", "version": "any", "run": "whatever"}
+    plain = [
+        {"op": "update", "id": str(curl.id), "set": {"version": "666"}},
+        {"op": "create", "type": "ex:Installation", "attrs": {"source_key": "inventory/host_a/x"}},
+    ]
+    second = run(world, {"source": made_up, "ops": plain})
+    assert second.seq == 2
+    assert world.env.txs()[1].request.source == SourceRef("made_up_name", "any", "whatever")
+    assert graph_events(world)[-1]["request"]["source"]["name"] == "made_up_name"
+    changed = world.find("inventory/host_a/curl")
+    assert changed is not None and changed.attrs["version"] == "666"
+    assert world.keys() == ["inventory/host_a/curl", "inventory/host_a/x"]
+
+
 def test_a_document_reason_is_kept(world: World) -> None:
     run(world, doc(scope(items=rows("curl")), reason="Inventory run of host-a"))
     assert world.env.txs()[0].reason == "Inventory run of host-a"

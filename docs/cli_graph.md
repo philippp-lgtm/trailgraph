@@ -409,7 +409,7 @@ false` and the current `rev`, and the answer, a dry run too, carries the
 warning `entity.unchanged {ids, count}`. A document that changes no
 entity commits no transaction: `tx_id`, `seq` and `event_id` are null, no
 audit event and no idempotency key are recorded (a retry is evaluated
-again), and the exit code is 0. Expectations (`--expect`, `expect_seq`)
+again), and the exit code is 0. <!-- claim: cli_graph.unchanged_write_records_nothing --> Expectations (`--expect`, `expect_seq`)
 and errors are checked as for any write.
 
 ### Earlier revisions under current names

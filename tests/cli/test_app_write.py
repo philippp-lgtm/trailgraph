@@ -258,6 +258,46 @@ def test_a_json_array_as_text_for_a_list_is_refused(
     assert fixed.code == 0, fixed.envelope
 
 
+def audit_lines(root: Path) -> int:
+    """The events of every audit stream of the data root."""
+    return sum(len(p.read_text().splitlines()) for p in root.rglob("events-*.jsonl"))
+
+
+@pytest.mark.doc_claim("cli_graph.unchanged_write_records_nothing")
+def test_a_write_that_changes_nothing_records_no_event_and_no_idempotency_key(
+    run_cli: CliRunner, root: Path, roles: Roles, factory: OpsFactory
+) -> None:
+    curie, _, attr = str(roles.get("alt_label_attribute")).rpartition(".")
+    ids = cli_create(run_cli, factory, curie)
+    assert app(run_cli, "update", ids["x"], "--add", f"{attr}=One", env=ENV).code == 0
+    events = audit_lines(root)
+    # a single-entity command, then ``apply`` with the key in the document
+    same = app(
+        run_cli, "update", ids["x"], "--add", f"{attr}=One", "--idempotency-key", "k-1", env=ENV
+    )
+    assert same.code == 0 and same.warning_codes == ["entity.unchanged"], same.envelope
+    assert same.data["seq"] is None and same.data["entities"][0]["changed"] is False
+    op = {"op": "update", "id": ids["x"], "add": {attr: ["One"]}}
+    document = json.dumps({"ops": [op], "idempotency_key": "k-2"})
+    applied = app(run_cli, "apply", "-", env=ENV, input=document)
+    assert applied.code == 0, applied.envelope
+    assert applied.data["results"][0]["result"]["seq"] is None
+    assert audit_lines(root) == events  # no intent, no refusal
+    # no key was kept: after the value is gone the same requests are written, not replayed,
+    # and a key is no longer free for a request that differs
+    removed = app(run_cli, "update", ids["x"], "--remove", f"{attr}=One", env=ENV)
+    assert removed.code == 0, removed.envelope
+    again = app(
+        run_cli, "update", ids["x"], "--add", f"{attr}=One", "--idempotency-key", "k-1", env=ENV
+    )
+    assert again.data["entities"][0]["changed"] is True and again.data["seq"] is not None
+    other = app(
+        run_cli, "update", ids["x"], "--add", f"{attr}=Two", "--idempotency-key", "k-2", env=ENV
+    )
+    assert other.code == 0, other.envelope
+    assert other.data["entities"][0]["changed"] is True
+
+
 def test_a_write_that_changes_nothing_commits_nothing(
     run_cli: CliRunner, root: Path, roles: Roles, factory: OpsFactory
 ) -> None:

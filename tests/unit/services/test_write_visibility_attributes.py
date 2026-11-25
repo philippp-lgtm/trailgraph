@@ -114,7 +114,9 @@ GUESSES = [
 
 @pytest.mark.parametrize("dry_run", [False, True], ids=["real", "dry_run"])
 @pytest.mark.parametrize("caller", LIMITED)
-@pytest.mark.doc_claim("security_model.field_visibility_complete")
+@pytest.mark.doc_claim(
+    "security_model.field_visibility_complete", "security_model.only_attributes_are_marked"
+)
 def test_a_write_naming_a_hidden_attribute_answers_as_a_name_the_type_lacks(
     pair: Pair, caller: str, dry_run: bool
 ) -> None:

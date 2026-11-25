@@ -390,10 +390,18 @@ def test_history_and_as_of_answer_as_over_the_twin(world: World) -> None:
         world.ok(*args)
     # a revision that changed a hidden attribute only: the twin has none, the view an empty
     # ``changed`` (a documented residual)
+    before = world.ask(GRAPH, "history", E4).data["items"][0]["tx_seq"]
     write_documents(world.root, "example_graph", [HIDDEN_ONLY], seed=99)
     latest = world.ask(GRAPH, "history", E4).data["items"][0]
     assert latest["changed"]["attrs"] == [] and latest["reason"] == "more hours"
     assert leaks(world.ask(GRAPH, "history", E4).envelope) == []
+    # a selection by the transaction that last changed an entity matches it, though that
+    # transaction touched nothing the reader sees
+    assert latest["tx_seq"] > before
+    last_tx = latest["tx_seq"]
+    changed_since = world.ask(GRAPH, "find", "--where", f"tx_seq:eq={last_tx}", "--limit", "100")
+    assert [i["alias"] for i in changed_since.data["items"]] == [E4]
+    assert leaks(changed_since.envelope) == []
 
 
 def same_feed(world: World, *args: str) -> Outcome:

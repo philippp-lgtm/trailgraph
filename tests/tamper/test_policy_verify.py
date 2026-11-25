@@ -184,6 +184,56 @@ def test_a_write_without_the_installed_policy(
     assert codes(run_cli) == [audit_codes.POLICY_HASH_MISMATCH]
 
 
+WRITES = """\
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - graphs: [example_graph]
+    level: read
+    writes:
+      "inv:Location": {create: [name, code]}
+no_project: {"*": write}
+"""
+
+
+@pytest.mark.doc_claim("security_model.write_allow_lists")
+def test_decisions_on_attributes_are_checked_against_the_policy_in_effect(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """A write decided on attributes, under a policy that was not in effect, is found."""
+    first = write_policy(tmp_path, "first.yaml", WRITES)
+    apply(run_cli, first)
+    policy = root / "policy" / "installation.json"
+    first_applied = policy.read_bytes()
+    apply(
+        run_cli,
+        write_policy(tmp_path, "second.yaml", WRITES.replace("code]}", "code], update: [name]}")),
+    )
+    written = app(run_cli, *LOCATION, "--graph", "example_graph")
+    assert written.code == 0, written.envelope
+    assert codes(run_cli) == []
+    policy.write_bytes(first_applied)  # the first list, as if it were still installed
+    again = app(run_cli, *(*LOCATION[:-1], "code=S2"), "--graph", "example_graph")
+    assert again.code == 0, again.envelope
+    events = [
+        json.loads(line)
+        for segment in sorted((root / "graphs").glob("*/audit/events-*.jsonl"))
+        for line in segment.read_text().splitlines()
+    ]
+    fine = [
+        e
+        for e in events
+        if any("/attr:" in d["resource"] for d in (e.get("authz") or {}).get("decisions", []))
+    ]
+    assert len(fine) == 2  # the intent of each write names the attributes it decided on
+    last = fine[-1]
+    outcome = admin(run_cli, "audit", "verify")
+    found = outcome.error["details"]["findings"]
+    hashes = [f for f in found if f["code"] == audit_codes.POLICY_HASH_MISMATCH]
+    assert [f["target"]["seq"] for f in hashes] == [last["seq"]]
+    assert audit_codes.POLICY_MISMATCH in [f["code"] for f in found]  # the file itself, too
+
+
 def test_a_cut_installation_history(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
     """Finding 2: the apply cut from the installation stream and the policy deleted."""
     apply(run_cli, write_policy(tmp_path, "i.yaml", INSTALLATION))
