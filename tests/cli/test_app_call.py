@@ -12,6 +12,7 @@ from jsonschema import Draft202012Validator
 from support.admin import Outcome, admin, init, write_documents
 from support.app import app, create_graph
 from support.fixtures import EXAMPLES, FIXTURES
+from support.output_schemas import closed
 from support.read_limits import install
 from support.tools import company
 from support.views import VALID as VIEWS_VALID
@@ -1022,8 +1023,9 @@ def test_every_example_of_the_company_entries_runs_through_call(
                 args = [x for k, v in given.items() for x in ("--input", f"{k}={j(v)}")]
                 outcome = call(run_cli, tool["name"], *args, env=COMPANY)
                 assert outcome.code == 0, (tool["name"], given, outcome.envelope)
-                answer = Draft202012Validator(tool["output_schema"])
-                found = list(answer.iter_errors(outcome.data))
+                # a view's schema is checked closed, like the plugin does: no key it does not name
+                schema = closed(tool["output_schema"]) if kind == "view" else tool["output_schema"]
+                found = list(Draft202012Validator(schema).iter_errors(outcome.data))
                 assert found == [], (tool["name"], [e.message for e in found])
                 ran += 1
     assert ran >= 8

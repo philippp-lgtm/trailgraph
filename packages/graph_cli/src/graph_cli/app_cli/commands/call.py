@@ -257,6 +257,8 @@ def call(
         none: tuple[Any, ...] = ()
         obligations = reader.reason_obligations(actor, entry) if kind == ACTION else frozenset()
         parts = {FUNCTION: none, ACTION: none, VIEW: none, kind: usable}
+        if kind == VIEW:  # the rows sections of a view are typed by the functions it runs
+            parts[FUNCTION] = tuple(allowed_entries(_classified(reader, actor, entry, FUNCTION)))
         model = reader.visible_model(actor, entry)
         (head,) = heads(model, parts[FUNCTION], parts[ACTION], parts[VIEW], obligations, only=tool)
         current = tool_hash(head, model)

@@ -200,6 +200,49 @@ def test_other_tools_keep_their_hash_when_an_enum_changes() -> None:
     assert "run_items_in_location" in same and "run_items_by_condition" not in same
 
 
+def test_the_rows_of_a_view_follow_the_model_the_caller_sees() -> None:
+    """``view_item_catalog`` runs ``items_by_condition`` in a ``rows`` section; a set view cuts
+    nothing, so its cells keep the enum values of the caller's model, and a change of the enum
+    changes the hash of the view tool as it does that of the function tool."""
+    scene = INVENTORY.scene()
+    shorter = replace(
+        scene.model,
+        enums={
+            **scene.model.enums,
+            "inv:Condition": replace(
+                scene.model.enums["inv:Condition"],
+                values=scene.model.enums["inv:Condition"].values[:3],
+            ),
+        },
+    )
+
+    def condition(document: dict[str, Any]) -> dict[str, Any]:
+        tool = by_name(document)["view_item_catalog"]
+        for variant in tool["output_schema"]["properties"]["sections"]["items"]["anyOf"]:
+            if "columns" in variant["properties"]:
+                found: dict[str, Any] = variant["properties"]["items"]["items"]["properties"][
+                    "condition"
+                ]
+                return found
+        raise AssertionError("no rows section")
+
+    before, after = manifest(scene), manifest(replace(scene, model=shorter))
+    assert condition(before)["anyOf"][0]["enum"][-1] == "damaged"
+    assert condition(after)["anyOf"][0]["enum"][-1] == "worn"
+    assert (
+        by_name(before)["view_item_catalog"]["hash"] != by_name(after)["view_item_catalog"]["hash"]
+    )
+    assert (
+        by_name(before)["view_item_catalog"]["entry_hash"]
+        == (by_name(after)["view_item_catalog"]["entry_hash"])
+    )
+    # a view that runs a function of no enum column keeps its hash
+    assert (
+        by_name(before)["view_location_overview"]["hash"]
+        == by_name(after)["view_location_overview"]["hash"]
+    )
+
+
 # ---- the schemas --------------------------------------------------------------------------
 
 
@@ -269,7 +312,12 @@ def test_the_function_answer_is_the_run_output_but_for_items_and_page() -> None:
 def test_an_action_answers_the_write_result_and_a_view_the_view_model() -> None:
     document = by_name(manifest(COMPANY.scene()))
     assert document["do_assign_position"]["output_schema"] == tm.standalone(DO_OUTPUT)
-    assert document["view_unit_overview"]["output_schema"] == tm.standalone(VIEW_OUTPUT)
+    # a view answers the view model of its own sections: the general schema lists every kind
+    general = tm.standalone(VIEW_OUTPUT)
+    overview = document["view_unit_overview"]["output_schema"]
+    assert set(overview["required"]) == {"view", "entity", "sections", "bytes"}
+    assert set(general["properties"]) >= set(overview["properties"]) - {"view", "sections"}
+    assert overview != general and refs_in(overview) == []
     action = document["do_assign_position"]["output_schema"]["properties"]
     assert {"dry_run", "findings", "action", "entities"} <= set(action)
     assert {"view", "sections", "bytes"} <= set(

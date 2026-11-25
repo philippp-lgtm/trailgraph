@@ -24,9 +24,10 @@ from typing import Final
 
 from graph_cli.app_cli.column_schemas import column_schema
 from graph_cli.app_cli.commands.do import DO_ERRORS, DO_OUTPUT
-from graph_cli.app_cli.commands.read.entity import VIEW_ERRORS, VIEW_OUTPUT
+from graph_cli.app_cli.commands.read.entity import VIEW_ERRORS
 from graph_cli.app_cli.commands.read.query import RUN_ERRORS, RUN_OUTPUT
 from graph_cli.app_cli.output_schemas import standalone
+from graph_cli.app_cli.view_schemas import SectionShape, cut_tolerant, view_schema
 from graph_cli.cli_kit.output_schemas import ref
 from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_value
 from graph_cli.kernel.errors import GraphCliError
@@ -68,19 +69,23 @@ NOT_FOR_TOOLS: Final = frozenset(
 )
 
 
-def function_output(columns: Sequence[ToolColumn], model: CompiledModel) -> JsonObject:
-    """What a call of a function answers (``data``): ``RUN_OUTPUT`` plus the ``page`` the run
-    command puts in the envelope, with a row of the function's columns, each typed against the
-    caller's ``model`` where the function's types allow (``app_cli.column_schemas``), else any
-    JSON value marked ``x-graph-cli: {typed: false}``."""
-    base = standalone(RUN_OUTPUT)
-    properties = dict(_properties(base))
-    row: dict[str, JsonValue] = {
+def row_schema(columns: Sequence[ToolColumn], model: CompiledModel) -> JsonObject:
+    """One row of a function's result: a property per column, typed against the caller's
+    ``model`` where the function's types allow (``app_cli.column_schemas``), else any JSON value
+    marked ``x-graph-cli: {typed: false}``."""
+    return {
         "type": "object",
         "properties": {c.name: column_schema(c.type, c.summary, model) for c in columns},
         "required": [c.name for c in columns],
     }
-    properties["items"] = {"type": "array", "items": row}
+
+
+def function_output(columns: Sequence[ToolColumn], model: CompiledModel) -> JsonObject:
+    """What a call of a function answers (``data``): ``RUN_OUTPUT`` plus the ``page`` the run
+    command puts in the envelope, with a ``row_schema`` row."""
+    base = standalone(RUN_OUTPUT)
+    properties = dict(_properties(base))
+    properties["items"] = {"type": "array", "items": row_schema(columns, model)}
     properties["page"] = standalone(ref("page"))
     required = [*_required(base), "page"]
     return {"type": "object", "properties": properties, "required": required}
@@ -104,9 +109,20 @@ def action_output() -> JsonObject:
     return standalone(DO_OUTPUT)
 
 
-def view_output() -> JsonObject:
-    """What a call of a view answers: the view model, its sections still loose."""
-    return standalone(VIEW_OUTPUT)
+def view_output(head: ToolHead, model: CompiledModel) -> JsonObject:
+    """What a call of a view answers: the view model with the sections the view declares, each by
+    its id (``app_cli.view_schemas``). The rows of a ``rows`` section are typed by the columns of
+    its function as the caller sees them; an entity view cuts long text cells, so there the
+    cells lose the patterns, formats and enum values a cut text cannot meet."""
+    sections = []
+    for section in head.sections:
+        row = None
+        if section.columns is not None:
+            row = row_schema(section.columns, model)
+            if head.entity:
+                row = cut_tolerant(row)
+        sections.append(SectionShape(section.kind, section.id, section.function, row))
+    return standalone(view_schema(head.entry, sections, entity=head.entity))
 
 
 def tool_errors(kind: str) -> tuple[str, ...]:
@@ -114,6 +130,14 @@ def tool_errors(kind: str) -> tuple[str, ...]:
     command = {FUNCTION: RUN_ERRORS, ACTION: DO_ERRORS, VIEW: VIEW_ERRORS}[kind]
     codes = {*command, *CALL_ERRORS, *TRANSPORT_ERRORS} - NOT_FOR_TOOLS
     return tuple(sorted(codes))
+
+
+def _output(head: ToolHead, model: CompiledModel) -> JsonObject:
+    if head.kind == FUNCTION:
+        return function_output(head.columns, model)
+    if head.kind == ACTION:
+        return action_output()
+    return view_output(head, model)
 
 
 def tool_hash(head: ToolHead, model: CompiledModel) -> str:
@@ -126,11 +150,7 @@ def tool_json(head: ToolHead, model: CompiledModel) -> JsonObject:
     harness builds its tool from (name, description, both schemas, annotations): it changes when
     an ontology release changes an enum or the type of a column even though the entry's hash does
     not."""
-    output = {
-        FUNCTION: lambda: function_output(head.columns, model),
-        ACTION: action_output,
-        VIEW: view_output,
-    }[head.kind]()
+    output = _output(head, model)
     built: JsonObject = {
         "name": head.name,
         "description": head.description,
@@ -186,18 +206,24 @@ def heads(
     def wanted(kind: str, entry: FunctionEntry | ActionEntry | ViewEntry) -> bool:
         return only is None or describe_tools.tool_name(kind, entry.name) == only
 
+    function_heads = tuple(
+        describe_tools.function_head(e, model, functions)
+        for e in _by_name(functions)
+        if wanted(FUNCTION, e)
+    )
+    known = {h.entry: h.columns for h in function_heads}  # a view's rows are typed by these
     found = (
-        *(
-            describe_tools.function_head(e, model, functions)
-            for e in _by_name(functions)
-            if wanted(FUNCTION, e)
-        ),
+        *function_heads,
         *(
             describe_tools.action_head(e, model, actions, obligations)
             for e in _by_name(actions)
             if wanted(ACTION, e)
         ),
-        *(describe_tools.view_head(e, model, views) for e in _by_name(views) if wanted(VIEW, e)),
+        *(
+            describe_tools.view_head(e, model, views, functions, known)
+            for e in _by_name(views)
+            if wanted(VIEW, e)
+        ),
     )
     describe_tools.unique_names(found)
     return found
