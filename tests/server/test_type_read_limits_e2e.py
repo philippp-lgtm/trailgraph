@@ -551,7 +551,11 @@ def read_everything(world: World, who: str) -> dict[str, Reply]:
     return {name: world.ask(who, path, **args) for name, (path, args) in asked.items()}
 
 
-@pytest.mark.doc_claim("security_model.read_limits", "security_model.type_limits_complete")
+@pytest.mark.doc_claim(
+    "security_model.read_limits",
+    "security_model.type_limits_complete",
+    "security_model.activity_shows",
+)
 def test_type_read_limits_end_to_end(
     run_cli: CliRunner, world: World, installation: dict[str, Any]
 ) -> None:
@@ -760,6 +764,10 @@ def test_type_read_limits_end_to_end(
     )
     third = created.json["data"]["entities"][0]["id"]
     assert world.data("a", "get", ref=third)["entity"]["edges"] == []
+    # the history of that note names the action that wrote it, though A cannot find the action
+    assert world.ask("a", "describe/action", name="note_on_topic").status == 404
+    (item,) = world.data("a", "history", ref=third)["items"]
+    assert item["action"]["name"] == "note_on_topic"
     assert world.ask("a", "find", **{"--limit": 100}).json["page"]["total"] == 4
 
     # 6. a graph policy that denies read.get on web pages hides them from both tokens

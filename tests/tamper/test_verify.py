@@ -13,12 +13,13 @@ from pathlib import Path
 import pytest
 from support.drafts import intent
 from support.graphs import publish_ontology
-from support.stores import StoreEnv, snapshot_state
+from support.stores import ALL_STATUSES, StoreEnv, snapshot_state
 from support.trees import tree_hash
 
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EventId, GraphId
 from graph_cli.kernel.ports.audit import AuditReceipt
+from graph_cli.kernel.query_ast import Query
 from graph_cli.storage import finding_codes
 from graph_cli.storage.files.index import IndexReader
 from graph_cli.storage.files.maintenance import FileStoreMaintenance
@@ -263,6 +264,31 @@ def test_reindex_rebuilds_an_identical_tree(tmp_path: Path) -> None:
         session.reindex()  # also from a complete tree, replacing a damaged index
         assert session.verify() == []
     assert _derived_tree(store) == before
+
+
+@pytest.mark.doc_claim("security_model.derived_files_rebuilt")
+def test_an_edited_revision_file_changes_reads_until_reindex(tmp_path: Path) -> None:
+    """Reads trust the derived files: an edited revision file is what ``get`` returns
+    (``verify`` reports it), and ``reindex`` brings the stored value back."""
+    env, store, maintenance = setup(tmp_path)
+    entity = store.snapshot().query(Query(record_status=ALL_STATUSES, limit=1)).items[0].id
+    revision = store.snapshot().get(entity)
+    assert revision is not None
+    path = store.layout.revision_path(entity, revision.rev)
+    document = json.loads(path.read_text())
+    document["attrs"]["tampered"] = "yes"
+    path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
+    tampered = store.snapshot().get(entity)
+    assert tampered is not None
+    assert tampered.attrs != revision.attrs
+    assert tampered.attrs["tampered"] == "yes"
+    assert verify(maintenance, env.graph_id) == [finding_codes.REVISION_HASH_MISMATCH]
+    with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
+        session.reindex()
+    healed = store.snapshot().get(entity)
+    assert healed is not None
+    assert healed.attrs == revision.attrs
+    assert verify(maintenance, env.graph_id) == []
 
 
 def test_writer_recovery_also_rebuilds_the_derived_tree(tmp_path: Path) -> None:

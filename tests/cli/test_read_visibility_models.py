@@ -16,7 +16,7 @@ from harness import CliRunner
 from support.admin import Outcome, admin, init, write_documents
 from support.app import app, create_graph
 from support.fixtures import FIXTURES, ONTOLOGIES
-from support.read_limits import install, shown, the_same_but_for
+from support.read_limits import install, shown, the_same_but_for, without_suggestions
 
 from graph_cli.kernel.changeset import read_documents
 
@@ -262,3 +262,48 @@ def test_a_function_that_names_no_hidden_term_runs_over_the_view(
     absent = shown(app(run_cli, *where, "location=0192f3c0-11aa-7e01-b2c3-d4e5f6a7b8c9", env=ENV))
     assert asked["error"]["code"] == "entity.not_found"
     the_same_but_for(asked, absent, (ids["books"], "0192f3c0-11aa-7e01-b2c3-d4e5f6a7b8c9"))
+
+
+# ---- a release that adds a type ------------------------------------------------------------
+
+EVERYTHING = """\
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {entrypoint: app, graphs: [example_graph], level: write}
+no_project: {"*": write}
+"""
+
+
+@pytest.mark.doc_claim("access_control.new_types_stay_hidden")
+def test_a_type_added_by_a_release_stays_hidden_from_a_reads_limited_caller(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> None:
+    init(run_cli, isolated_env)
+    notes = ONTOLOGIES / "notes_and_sources"
+    created = admin(run_cli, "graph", "create", "example_graph", "--ontology", str(notes / "1.1.0"))
+    assert created.code == 0, created.envelope
+
+    def types() -> list[str]:
+        return [t["curie"] for t in ok(run_cli, "describe", "types").data["types"]]
+
+    limit(run_cli, tmp_path, "nas:Note", "nas:Topic")
+    before = types()
+    assert before == ["nas:Note", "nas:Topic"]
+    released = admin(run_cli, "ontology", "release", "example_graph", str(notes / "1.2.0"))
+    assert released.code == 0, released.envelope
+    assert types() == before  # the new type is not in the list of the caller
+    asked = shown(app(run_cli, "describe", "type", "nas:GlossaryEntry", env=ENV))
+    absent = shown(app(run_cli, "describe", "type", "nas:Nothing", env=ENV))
+    assert asked["error"]["code"] == "term.unknown"
+    the_same_but_for(
+        without_suggestions(asked), without_suggestions(absent), ("GlossaryEntry", "Nothing")
+    )
+    heading = ("--set-json", 'heading=[{"en": "Term"}]')
+    hidden = shown(app(run_cli, "create", "nas:GlossaryEntry", *heading, env=ENV))
+    missing = shown(app(run_cli, "create", "nas:Nothing", *heading, env=ENV))
+    assert hidden["code"] != 0 and hidden["error"]["code"] == "access.denied"
+    the_same_but_for(hidden, missing, ("GlossaryEntry", "Nothing"))
+    # a caller without a limit sees the new type at once
+    install(run_cli, tmp_path / "policies", EVERYTHING)
+    assert "nas:GlossaryEntry" in types()

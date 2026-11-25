@@ -309,7 +309,7 @@ sees everything, because rights add up.
   grant. Scopes and deny rules narrow the result, and an explicit deny wins.
 - **New types stay hidden.** An ontology release that adds a type changes
   nothing for a subject with `reads`: the new type is not in its list. A
-  subject without a limit sees the new type at once.
+  subject without a limit sees the new type at once. <!-- claim: access_control.new_types_stay_hidden -->
 - **Hide a type for everyone.** In the graph policy, `types: {ex:Person: none}`
   hides the type from every caller of `graph` and of the server API, for reads
   and writes. Maintenance is not hit: the `graph-admin` commands, project admin

@@ -49,6 +49,11 @@ classes:
     summary: A record only some may read.
     is_a: Record
     display_prefix: SEC
+  Memo:
+    summary: A note that must be classified under a secret.
+    display_prefix: MEM
+    attributes:
+      name: {summary: Name of the memo., type: string, required: true, role: label}
 relations:
   mentions:
     summary: The record mentions the other one.
@@ -61,6 +66,11 @@ relations:
     summary: The secret refers to a document.
     domain: Secret
     range: Doc
+  classified_under:
+    summary: The memo is classified under the secret.
+    domain: Memo
+    range: Secret
+    cardinality: {out: {min: 1}}
 rules:
   - id: doc_few_mentions
     summary: A document is mentioned at most once.
@@ -595,6 +605,27 @@ def test_a_writes_only_caller_is_denied_a_hidden_type_as_it_is_an_unknown_one(
     assert ("read.get", "ex:Secret", "deny", "default.deny") in decisions_of(events[0])
     assert ("write.create", "ex:Secret", "deny", "default.deny") in decisions_of(events[0])
     assert [d for d in decisions_of(events[1]) if d[0] == "read.get"] == []  # no such type
+
+
+@pytest.mark.doc_claim("security_model.required_relation_hidden_range")
+def test_a_required_relation_to_a_hidden_type_blocks_every_create_of_its_type(
+    world: World,
+) -> None:
+    """The caller sees memos and cannot see the secrets a memo must be classified under: it
+    cannot give a target, so no create of a memo gets through, with or without an edge."""
+    memo = {"op": "create", "type": "ex:Memo", "attrs": {"name": "Memo"}}
+    head = world.env.head_seq()
+    without = world.refused(memo)
+    found = only(world.findings(without), "cardinality_out")
+    concealed(found)
+    assert hidden_names(world, without) == []
+    edge = {"rel": "ex:classified_under", "target": world.id_of("s1")}
+    with_edge = world.refused({**memo, "edges": [edge]})
+    assert hidden_names(world, with_edge) == []
+    assert world.env.head_seq() == head  # nothing was written
+    # the caller that sees secrets creates the memo with a target
+    created = world.env.apply({**memo, "edges": [edge]}, bindings=world.ids, reason="test")
+    assert created.seq is not None
 
 
 def test_a_caller_whose_type_is_none_gets_the_answer_for_an_unknown_type(world: World) -> None:

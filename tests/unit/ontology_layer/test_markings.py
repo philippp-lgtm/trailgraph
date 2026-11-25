@@ -143,6 +143,56 @@ def test_unknown_and_unimported_markings() -> None:
     ]
 
 
+@pytest.mark.doc_claim("security_model.only_attributes_are_marked")
+def test_only_attributes_carry_markings() -> None:
+    """A class, a relation, an edge qualifier and an enum value have no ``markings`` key."""
+    body = (
+        "markings:\n  personal: {summary: Personal data.}\n"
+        "enums:\n  Level:\n    summary: A level.\n    values:\n"
+        "      low: {summary: Low., markings: [personal]}\n"
+        "classes:\n  Person:\n    summary: A person.\n    markings: [personal]\n"
+        "    attributes:\n      name: {summary: Name., type: string, role: label}\n"
+        "relations:\n  knows:\n    summary: Knows.\n    domain: Person\n    range: Person\n"
+        "    markings: [personal]\n    qualifiers:\n"
+        "      since: {summary: Since., type: string, markings: [personal]}\n"
+    )
+    assert findings(body) == [
+        ("model.structural.unknown_key", "classes.Person.markings"),
+        ("model.structural.unknown_key", "enums.Level.values.low.markings"),
+        ("model.structural.unknown_key", "relations.knows.markings"),
+        ("model.structural.unknown_key", "relations.knows.qualifiers.since.markings"),
+    ]
+
+
+FILE_SUBCLASS = (
+    "markings:\n  personal: {summary: Personal data.}\n"
+    "classes:\n  Contract:\n    summary: A contract file.\n    is_a: files:File\n"
+    "    attributes:\n      {redefined}\n"
+)
+
+
+@pytest.mark.doc_claim("security_model.file_attributes_visible")
+def test_the_attributes_of_files_file_cannot_be_marked() -> None:
+    """The bundled module marks none of them, and a subclass cannot declare one again to
+    mark it; its own new attributes can be marked."""
+    imports = ", imports: [{module: files, version: '^1.0.0'}]"
+    files_import = HEADER.format(v="1.0.0", imports=imports)
+
+    def compiled(attributes: str) -> CompileOutcome:
+        text = files_import + FILE_SUBCLASS.replace("{redefined}", attributes)
+        return compile_bundle("sample", LayeredSource(MappingSource({"sample": text.encode()})))
+
+    own = "remark: {summary: Remark., type: string, markings: [personal]}"
+    ok = compiled(own)
+    assert ok.model is not None, [f.to_json() for f in ok.findings]
+    file = ok.model.classes["files:File"]
+    assert file.attributes and all(a.markings == () for a in file.attributes.values())
+    assert ok.model.classes["smp:Contract"].attributes["remark"].markings == ("smp:personal",)
+    for name in file.attributes:
+        marked = compiled(f"{name}: {{summary: Again., type: string, markings: [personal]}}")
+        assert [f.code for f in marked.findings] == ["model.semantic.attribute_redefined"], name
+
+
 def test_marking_shares_the_name_space_of_relations() -> None:
     body = (
         "markings:\n  knows: {summary: Who knows whom.}\n"
