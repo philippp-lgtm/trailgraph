@@ -423,9 +423,9 @@ to the base:
 - The whole suite runs when the change touches the dependencies (`pyproject.toml`,
   `uv.lock`), the image (`Dockerfile`, `.dockerignore`), the root
   `tests/conftest.py`, `tests/harness.py` or one of the pytest plugins in
-  `tests/support`, a module under `packages/` or `tests/` that is deleted or
-  renamed away (its importers cannot be followed any more; also a
-  `conftest.py`), the CI plumbing that makes the selection (the check workflow,
+  `tests/support`, a Python file under `packages/` or `tests/` (a test file too) that
+  is deleted or renamed away (its importers cannot be followed any more; also
+  a `conftest.py`), the CI plumbing that makes the selection (the check workflow,
   `scripts/ci-*`, `tests/ci-*`, the selector itself), a file that no rule places
   or that no test names, and when the selection holds more than 70% of the test
   files (the same cost, and simpler).

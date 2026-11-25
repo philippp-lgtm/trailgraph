@@ -312,11 +312,6 @@ def test_a_changed_test_runs_itself_and_the_claims_check() -> None:
     assert only(selected({}, ["tests/test_filler_3.py"])) == ["tests/test_filler_3.py"]
 
 
-def test_a_deleted_test_selects_no_missing_file() -> None:
-    result = selected({}, ["tests/test_gone.py"])
-    assert isinstance(result, list) and "tests/test_gone.py" not in result
-
-
 def test_a_new_module_that_nothing_imports_is_read_by_the_tree_scanners() -> None:
     files = {
         "packages/app/src/app/new.py": "",
@@ -378,8 +373,10 @@ def test_a_module_that_is_gone_is_the_whole_suite() -> None:
         assert isinstance(result, str) and f"{path} no longer exists" in result, path
 
 
-def test_a_deleted_test_file_is_no_reason_for_the_whole_suite() -> None:
-    assert isinstance(selected({}, ["tests/test_removed.py"]), list)
+def test_a_deleted_test_file_is_the_whole_suite_too() -> None:
+    # another test may import it (`from test_x import y`)
+    result = selected({}, ["tests/test_removed.py"])
+    assert isinstance(result, str) and "tests/test_removed.py no longer exists" in result
 
 
 def test_a_file_in_a_package_that_nothing_reads_is_the_whole_suite() -> None:

@@ -557,9 +557,9 @@ class Selector:
                 test_side = test_side or path.startswith("tests/")
             elif kind == "test":
                 test_side = True
+                modules.add(path)  # tests import each other (`from test_x import y`)
                 if path in present:
                     self._add([path], f"{path} changed")
-                    modules.add(path)  # tests import each other (`from test_x import y`)
             elif kind == "document":
                 documents = True
                 self._document(path)
@@ -577,9 +577,9 @@ class Selector:
         if unplaced:
             more = " ..." if len(unplaced) > 5 else ""
             return self._full("no test names " + ", ".join(unplaced[:5]) + more)
-        # A module that is gone (deleted, or renamed away) cannot be followed to its importers in
-        # the new tree, and a conftest.py takes its fixtures along: nothing narrows that.
-        gone = sorted(p for p in modules if p not in self.graph.modules and not is_test_file(p))
+        # A module or test file that is gone (deleted, or renamed away) cannot be followed to its
+        # importers in the new tree, and a conftest.py takes its fixtures along.
+        gone = sorted(p for p in modules if p not in self.graph.modules)
         if gone:
             return self._full(f"{gone[0]} no longer exists")
         known = {p for p in modules if p in self.graph.modules}
