@@ -42,7 +42,7 @@ from graph_cli.cli_kit.output_schemas import (
     obj,
     ref,
 )
-from graph_cli.kernel.canonical import JsonObject, JsonValue
+from graph_cli.kernel.canonical import JsonObject
 from graph_cli.kinetic.view_format import KINDS
 
 STRINGS: Final = array(STRING)
@@ -59,8 +59,8 @@ NEXT_TEXT: Final = (
     "next page. view.cursor_stale means a write landed in between: start again from the first page."
 )
 CUT_TEXT: Final = (
-    "In an entity view a long text cell is cut and ends in an ellipsis, so a cell of a type "
-    "with a pattern, format or enum may not match it."
+    "In an entity view a long text cell is cut and ends in an ellipsis, so a decimal cell may "
+    "not match its pattern."
 )
 
 
@@ -447,28 +447,3 @@ def view_schema(name: str, sections: Sequence[SectionShape], *, entity: bool) ->
     required["sections"] = array({"anyOf": allowed})
     required["bytes"] = INTEGER
     return dict(obj(required, optional))
-
-
-def cut_tolerant(schema: JsonObject) -> JsonObject:
-    """``schema`` without what a cut text cannot meet: ``pattern``, ``format`` and ``enum`` of the
-    schemas of strings (an entity view cuts long strings and ends them in an ellipsis)."""
-    found = _tolerant(schema)
-    assert isinstance(found, dict)
-    return found
-
-
-def _tolerant(schema: JsonValue) -> JsonValue:
-    if isinstance(schema, list):
-        return [_tolerant(item) for item in schema]
-    if not isinstance(schema, Mapping):
-        return schema
-    text = schema.get("type") == "string"
-    kept: dict[str, JsonValue] = {}
-    for key, value in schema.items():
-        if text and key in ("pattern", "format", "enum"):
-            continue
-        if key == "properties" and isinstance(value, Mapping):  # names, not keywords
-            kept[key] = {name: _tolerant(sub) for name, sub in value.items()}
-        else:
-            kept[key] = _tolerant(value)
-    return kept

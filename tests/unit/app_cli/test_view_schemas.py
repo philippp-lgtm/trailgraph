@@ -312,24 +312,3 @@ def test_every_card_the_byte_guard_makes_matches_the_general_schema() -> None:
             count += 1
     assert {"fields", "relations", "files", "files:cited_by", "affordances"} <= seen
     assert count > 100
-
-
-def test_cut_tolerant_drops_the_text_grammars_and_nothing_else() -> None:
-    column = {
-        "type": "object",
-        "properties": {
-            "pattern": {"type": "string", "pattern": "^a$", "format": "date", "enum": ["a"]},
-            "n": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
-            "list": {"type": "array", "items": {"type": "string", "enum": ["a"]}},
-        },
-        "required": ["pattern"],
-    }
-    assert vs.cut_tolerant(column) == {
-        "type": "object",
-        "properties": {
-            "pattern": {"type": "string"},
-            "n": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
-            "list": {"type": "array", "items": {"type": "string"}},
-        },
-        "required": ["pattern"],
-    }

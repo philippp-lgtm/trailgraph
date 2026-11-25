@@ -5,10 +5,13 @@ view trimmed at every limit down to its stubs, the pages of a set view, a ``rows
 an error. The schemas are closed like the test plugin closes them."""
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any
+from uuid import uuid4
 
+import pytest
 from jsonschema import Draft202012Validator
 from support import tools
 from support.output_schemas import closed
@@ -17,11 +20,14 @@ from support.view_answers import ENTITY, Doc, head, problems
 
 from graph_cli.app_cli import tool_manifest as tm
 from graph_cli.app_cli import view_schemas as vs
+from graph_cli.app_cli.column_schemas import column_schema, entity_schema
 from graph_cli.app_cli.output_schemas import standalone
 from graph_cli.kernel.records import Revision
-from graph_cli.kinetic.card import render, spec_of
+from graph_cli.kinetic.card import ROWS_CELL_CHARS, render, spec_of
+from graph_cli.kinetic.return_types import ColumnType
 from graph_cli.kinetic.view_page import cursor_key, decode_cursor, render_set
 from graph_cli.kinetic.view_rows import RowsResult
+from graph_cli.ontology_layer.vocabulary import LOWER_NAME_RE
 
 SCENE = tools.company().scene()
 BY_NAME = {e.name: e for e in SCENE.views}
@@ -372,13 +378,9 @@ def test_the_rows_of_a_section_are_typed_by_the_columns_of_the_function() -> Non
     assert not strict.is_valid(odd)
 
 
-def test_an_entity_view_cuts_text_cells_so_its_cells_keep_only_the_type_of_a_text() -> None:
+def test_an_entity_view_cuts_text_cells_but_only_a_decimal_loses_its_pattern() -> None:
     schema = tool_schema("unit_overview")
-    row = rows_item(schema, "members")
-    assert all("pattern" not in json.dumps(c) for c in row["properties"].values())
-    cut = [
-        {"person": "x" * 200 + "…", "position": "y", "unit": None},
-    ]
+    cut = [{"person": "x" * 200 + "…", "position": "y", "unit": None}]
     section = {
         "kind": "rows",
         "id": "members",
@@ -395,7 +397,28 @@ def test_an_entity_view_cuts_text_cells_so_its_cells_keep_only_the_type_of_a_tex
     assert problems(schema, wrong) != []
 
 
-def test_a_function_the_caller_cannot_use_leaves_its_rows_untyped() -> None:
+def test_a_set_view_keeps_the_decimal_pattern_and_an_entity_view_does_not() -> None:
+    decimal = ColumnType("decimal", nullable=False)
+    assert "pattern" in column_schema(decimal, "S.", SCENE.model)
+    assert "pattern" not in column_schema(decimal, "S.", SCENE.model, cut=True)
+    entity = entity_schema("org:Position", SCENE.model, cut=True)
+    assert "pattern" not in json.dumps(entity["properties"]["attrs"])
+
+
+def test_nothing_but_a_decimal_can_be_longer_than_the_cut_of_an_entity_view() -> None:
+    """An entity view cuts a cell at ``ROWS_CELL_CHARS``; the enum, reference and date cells keep
+    their grammar because none of them can be that long. This breaks loudly if the cut moves
+    below the longest of them."""
+    enum_name = int(re.search(r"\{0,(\d+)\}", LOWER_NAME_RE.pattern)[1]) + 1  # type: ignore[index]
+    reference = len(f"urn:uuid:{uuid4()}")
+    stamp = len("9999-12-31T23:59:59.999999999+00:00")
+    assert max(enum_name, reference, stamp) < ROWS_CELL_CHARS
+    for model in (SCENE.model, tools.inventory().model, tools.staff().model):
+        for found in model.enums.values():
+            assert all(len(v.name) <= ROWS_CELL_CHARS for v in found.values)
+
+
+def test_a_rows_section_without_typed_columns_is_any_object() -> None:
     entry = BY_NAME["unit_overview"]
     sections = vs.view_schema(
         entry.name,
@@ -416,9 +439,9 @@ def test_a_function_the_caller_cannot_use_leaves_its_rows_untyped() -> None:
     assert problems(standalone_schema, head([rows], name=entry.name, entity=ENTITY)) == []
 
 
-def test_the_manifest_of_a_reader_without_the_function_types_nothing_it_cannot_see() -> None:
-    """A view whose function is not among the functions the caller may use still has a schema:
-    its rows are any object (the answer will be the error form)."""
+def test_a_view_without_the_function_of_a_rows_section_still_has_a_schema() -> None:
+    """The defensive path: a view whose function is not among the functions handed to the manifest
+    (describe and call never hand such a catalog) still has a schema, its rows any object."""
     no_functions: tuple[Any, ...] = ()
     (view,) = tm.heads(
         SCENE.model,
@@ -430,3 +453,75 @@ def test_the_manifest_of_a_reader_without_the_function_types_nothing_it_cannot_s
     assert [s.columns for s in view.sections if s.kind == "rows"] == [None]
     schema = tm.tool_json(view, SCENE.model)["output_schema"]
     Draft202012Validator.check_schema(schema)
+
+
+# ---- a caller who sees less ---------------------------------------------------------------
+
+CARDS = """\
+schema: graph_cli.function/1
+name: employee_cards
+summary: Employees with their shift.
+use_when: Who works which shift.
+query: |
+  MATCH (e:Employee) RETURN e AS employee, e.shift AS shift
+returns:
+  - column: employee
+    summary: The employee.
+  - column: shift
+    summary: The shift.
+examples:
+  - question: Who works which shift?
+"""
+BOARD = """\
+schema: graph_cli.view/1
+name: {name}
+summary: The employees with their shift.
+use_when: Who works which shift, as a view.
+{takes}sections:
+  - kind: rows
+    id: cards
+    function: employee_cards
+"""
+STAFF = tools.staff(
+    {"employee_cards.yaml": CARDS},
+    {
+        "board.yaml": BOARD.format(name="board", takes=""),
+        "employee_board.yaml": BOARD.format(name="employee_board", takes="takes: stf:Employee\n"),
+    },
+)
+
+
+def staff_cells(reader: tools.Scene, view: str) -> dict[str, Any]:
+    """The schema of the row of the ``rows`` section of a view tool, for one caller."""
+    (found,) = tm.heads(
+        reader.model,
+        reader.functions,
+        reader.actions,
+        reader.views,
+        frozenset(),
+        only=f"view_{view}",
+    )
+    schema = tm.tool_json(found, reader.model)["output_schema"]
+    assert isinstance(schema, dict)
+    return {"row": rows_item(schema, "cards"), "text": json.dumps(schema)}
+
+
+@pytest.mark.doc_claim("security_model.tool_manifest_per_caller")
+def test_the_rows_of_a_view_tool_show_the_attributes_and_values_the_caller_sees() -> None:
+    """The rows of a view tool carry entity attributes and enum values rendered from the model
+    of the caller, in a set view and in an entity view (which cuts text): a caller without
+    markings has no marked attribute in its schema, one with them has."""
+    for view in ("board", "employee_board"):
+        everything = staff_cells(STAFF.scene(), view)
+        personal = staff_cells(STAFF.reader(held=tools.PERSONAL), view)
+        nothing = staff_cells(STAFF.reader(held=tools.NOTHING), view)
+
+        def attrs(found: dict[str, Any]) -> set[str]:
+            return set(found["row"]["properties"]["employee"]["properties"]["attrs"]["properties"])
+
+        assert {"email", "salary", "badge_code", "name", "shift"} <= attrs(everything), view
+        assert "email" in attrs(personal) and "salary" not in attrs(personal), view
+        assert attrs(nothing) == {"name", "phone", "shift", "stage"}, view
+        for word in ("salary", "badge_code", "email", "birth_date", "pay_grade"):
+            assert word not in nothing["text"], (view, word)
+        assert nothing["row"]["properties"]["shift"]["anyOf"][0]["enum"] == ["day", "night"]
