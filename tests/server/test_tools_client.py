@@ -1,0 +1,388 @@
+"""C: the acceptance of the tool manifest (tool manifest plan, step 6): a client that knows a graph
+from ``POST /v1/commands/describe/tools`` alone, the way an agent harness does, uses every tool of
+the ``company`` example through ``POST /v1/commands/call``.
+
+The client (``support.tools_client``) checks each input it sends against the ``input_schema`` of the
+tool and each answer against its ``output_schema``, published and closed, and each refusal against
+the ``errors`` of the tool and the ``errors`` map of the manifest. The graph is the example built
+with its seeds (``support.company_server``), served to three callers: ``maintainer`` writes,
+``reader`` only reads and ``narrow`` reads a few types.
+"""
+
+import copy
+import shutil
+from pathlib import Path
+from typing import Any
+
+import pytest
+from harness import CliRunner
+from jsonschema import Draft202012Validator
+from support.admin import admin
+from support.company_server import COMPANY, GRAPH, Installation, build
+from support.tools_client import Ref, ToolsClient, sections
+
+pytestmark = pytest.mark.slow
+
+CONTRACTOR = {"kind": "contractor"}
+
+
+def ref(text: str, slot: str) -> Ref:
+    return Ref(text, slot)
+
+
+# Every function of the example with an input that finds rows: the names are looked up with the
+# ``lookup`` tool for the slot of the tool, so no id comes from outside the manifest.
+FUNCTIONS: dict[str, dict[str, Any]] = {
+    "run_employer_of": {"person": ref("Mara Lindqvist", "run_employer_of.person")},
+    "run_members_of_unit": {"unit": ref("Engineering", "run_members_of_unit.unit")},
+    "run_missing_required_trainings": {
+        "unit": ref("Engineering", "run_missing_required_trainings.unit")
+    },
+    "run_policies_for_unit": {"unit": ref("Infrastructure", "run_policies_for_unit.unit")},
+    "run_reporting_chain": {"position": ref("Software Engineer", "run_reporting_chain.position")},
+    "run_required_trainings": {"person": [ref("Mara Lindqvist", "run_required_trainings.person")]},
+    "run_shareholders_of": {"entity": [ref("Marrowdale Holding AG", "run_shareholders_of.entity")]},
+    "run_training_completions": {"titles": ["Security awareness"], "since": "2020-01-01"},
+    "run_vacant_positions": {"unit": ref("Management", "run_vacant_positions.unit")},
+    "run_externals_by_kind": CONTRACTOR,
+}
+ENTITY_VIEWS: dict[str, dict[str, Any]] = {
+    "view_position_overview": {
+        "_entity": ref("Software Engineer", "view_position_overview._entity")
+    },
+    "view_unit_overview": {
+        "_entity": ref("Engineering", "view_unit_overview._entity"),
+        "status": "active",
+    },
+    "view_legacy_unit_overview": {
+        "_entity": ref("Applications", "view_legacy_unit_overview._entity")
+    },
+}
+SET_VIEWS: dict[str, dict[str, Any]] = {
+    "view_org_catalog": {},
+    "view_members_report": {"unit": ref("Engineering", "view_members_report.unit")},
+    "view_tasks_by_state": {"status": "open", "before": "2027-01-01"},
+}
+PAGE_BYTES = 4096  # a set view pages by size, at least 1024 bytes
+
+
+@pytest.fixture
+def installation(run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path) -> Installation:
+    return build(run_cli, isolated_env, tmp_path)
+
+
+@pytest.fixture
+def harness(installation: Installation) -> ToolsClient:
+    """The client of the caller who writes, with the manifest fetched once."""
+    return ToolsClient.fetch(installation.server, installation.tokens["maintainer"], GRAPH)
+
+
+def assign(client: ToolsClient, person: str, **more: Any) -> dict[str, Any]:
+    """The input that gives the position of the data protection officer to ``person``."""
+    return {
+        "person": ref(person, "do_assign_position.person"),
+        "position": ref("Data Protection Officer", "do_assign_position.position"),
+        "since": "2026-03-01",
+        **more,
+    }
+
+
+def test_the_manifest_lists_every_tool_of_the_example(harness: ToolsClient) -> None:
+    listed = set(harness.tools)
+    assert listed == {
+        *FUNCTIONS,
+        *ENTITY_VIEWS,
+        *SET_VIEWS,
+        "do_assign_position",
+        "do_hand_over_position",
+        "do_offboard_employee",
+        "lookup",
+    }
+    assert harness.manifest["tools_format"] == 1
+    for tool in harness.tools.values():
+        Draft202012Validator.check_schema(tool["input_schema"])
+        Draft202012Validator.check_schema(tool["output_schema"])
+        # the codes of every tool are in the map, each with what to do about it
+        assert set(tool["errors"]) <= set(harness.manifest["errors"]), tool["name"]
+
+
+def test_every_function_answers_rows_that_fit_its_schema(harness: ToolsClient) -> None:
+    for tool, given in FUNCTIONS.items():
+        answer = harness.call(tool, given)  # the client checks the input and the answer
+        assert answer.data["items"], tool
+        assert answer.data["page"]["total"] == len(answer.data["items"]), tool
+    # a column whose type the manifest gives is typed in the rows: a date and an enum
+    rows = harness.call("run_externals_by_kind", CONTRACTOR).data["items"]
+    assert rows[0]["kind"] == "contractor" and rows[0]["engaged_until"] == "2027-03-31"
+
+
+def test_a_function_pages_by_offset(harness: ToolsClient) -> None:
+    given = FUNCTIONS["run_members_of_unit"]
+    whole = harness.call("run_members_of_unit", given).data["items"]
+    assert len(whole) > 3
+    assert harness.rows("run_members_of_unit", given, limit=3) == whole
+    first = harness.call("run_members_of_unit", {**given, "_limit": 3}).data["page"]
+    assert first["truncated"] is True and first["next_offset"] == 3
+    # null is "not given" for every argument that is not required, though the schema lets only an
+    # argument without a default take it (a default is "not required" and nullable in one):
+    nulls = harness.call("run_members_of_unit", {**given, "_limit": None}, valid=False)
+    assert nulls.data["items"] == whole
+    reasoned = assign(harness, "Dana Whitfield", _reason=None, _dry_run=True)
+    assert harness.call("do_assign_position", reasoned).data["dry_run"] is True
+
+
+def test_the_views_answer_pages_and_sections_that_fit_their_schemas(
+    harness: ToolsClient,
+) -> None:
+    for tool, given in ENTITY_VIEWS.items():
+        answer = harness.call(tool, given)
+        assert answer.data["sections"], tool
+        assert "more" not in answer.data and "next" not in answer.data, tool
+    rows = {
+        s["id"]: s
+        for s in sections(
+            harness.call("view_position_overview", ENTITY_VIEWS["view_position_overview"]).data
+        )
+    }
+    assert rows["chain"]["kind"] == "rows" and rows["chain"]["items"]
+    for tool, given in SET_VIEWS.items():
+        whole = harness.call(tool, given).data
+        assert harness.call(tool, given | {"_page_bytes": 262144}).data == whole
+
+
+def test_a_set_view_pages_by_cursor(harness: ToolsClient) -> None:
+    whole = harness.call("view_org_catalog", {"_page_bytes": 262144}).data
+    assert "more" not in whole
+    pages = harness.pages("view_org_catalog", {}, page_bytes=PAGE_BYTES)
+    assert len(pages) > 2 and all(p["more"] for p in pages[:-1]) and "more" not in pages[-1]
+    assert "next" not in pages[-1]
+
+    def keys(answer: dict[str, Any]) -> dict[str, list[str]]:
+        found: dict[str, list[str]] = {}
+        for section in sections(answer):
+            found.setdefault(section["id"], []).extend(i["ref"] for i in section.get("items", []))
+        return found
+
+    paged: dict[str, list[str]] = {}
+    for page in pages:
+        for section, refs in keys(page).items():
+            paged.setdefault(section, []).extend(refs)
+    assert paged == keys(whole)
+    # a set view with a reference and one with defaults page the same way
+    report = harness.pages("view_members_report", SET_VIEWS["view_members_report"], page_bytes=1024)
+    assert len(report) == 2 and report[0]["more"] is True
+
+
+def test_a_write_between_two_pages_makes_the_cursor_stale(harness: ToolsClient) -> None:
+    first = harness.call("view_org_catalog", {"_page_bytes": PAGE_BYTES}).data
+    cursor = first["next"]
+    harness.call("do_assign_position", assign(harness, "Dana Whitfield"))
+    stale = harness.call("view_org_catalog", {"_page_bytes": PAGE_BYTES, "_cursor": cursor})
+    assert (stale.reply.status, stale.code) == (422, "view.cursor_stale")
+    assert stale.on_error == "restart"
+    again = harness.pages("view_org_catalog", {}, page_bytes=PAGE_BYTES)  # from the first page
+    assert again[0]["next"] != cursor and "more" not in again[-1]
+
+
+def test_an_action_runs_as_a_dry_run_and_for_real(harness: ToolsClient) -> None:
+    before = harness.manifest["version"]
+    vacant = FUNCTIONS["run_vacant_positions"]
+    positions = harness.call("run_vacant_positions", vacant).data["items"]
+    dry = harness.call("do_assign_position", assign(harness, "Dana Whitfield", _dry_run=True))
+    assert dry.data["dry_run"] is True and dry.data["seq"] is None
+    assert harness.call("run_vacant_positions", vacant).data["items"] == positions
+    real = harness.call(
+        "do_assign_position", assign(harness, "Dana Whitfield", _reason="joins the company")
+    )
+    assert real.data["dry_run"] is False and real.data["seq"] is not None
+    assert real.data["entities"][0]["ops"] == ["link"]
+    held = harness.call(
+        "run_members_of_unit", {"unit": ref("Management", "run_members_of_unit.unit")}
+    )
+    assert "Dana Whitfield" in [r["person"] for r in held.data["items"]]
+    # the other two actions: a hand over to a new holder, and an exit, which needs a reason
+    handed = harness.call(
+        "do_hand_over_position",
+        {
+            "position": ref("Recruiter", "do_hand_over_position.position"),
+            "person": ref("Rhea Castellanos", "do_hand_over_position.person"),
+            "since": "2026-04-01",
+        },
+    )
+    assert handed.data["seq"] > real.data["seq"]
+    exit_input = {"employee": ref("Noah Becker", "do_offboard_employee.employee")}
+    harness.call("do_offboard_employee", exit_input | {"_dry_run": True, "_reason": "leaves"})
+    left = harness.call("do_offboard_employee", exit_input | {"_reason": "leaves the company"})
+    assert left.data["seq"] > handed.data["seq"]
+    # data writes do not change the manifest
+    assert ToolsClient.fetch(harness.server, harness.token, GRAPH).manifest["version"] == before
+
+
+def test_a_precondition_failure_tells_the_client_to_check_the_state(
+    harness: ToolsClient,
+) -> None:
+    harness.call("do_assign_position", assign(harness, "Dana Whitfield"))
+    for more in ({}, {"_dry_run": True}):  # a dry run raises the same error as the real run
+        taken = harness.call("do_assign_position", assign(harness, "Rhea Castellanos", **more))
+        assert (taken.reply.status, taken.code) == (422, "action.precondition_failed"), more
+        assert taken.on_error == "check_state"
+        (failed,) = taken.details["failed"]
+        assert failed["precondition"] == "position_vacant" and failed["entity"]
+    # the same input again is refused the same way: the state decides, not the input
+    again = harness.call("do_assign_position", assign(harness, "Dana Whitfield", _dry_run=True))
+    assert again.code == "action.precondition_failed"
+
+
+def test_an_input_the_schema_refuses_is_refused_by_the_server_as_well(
+    harness: ToolsClient,
+) -> None:
+    unit = ref("Engineering", "run_members_of_unit.unit")
+    cases = (
+        ("run_members_of_unit", {"unit": unit, "bogus": 1}, "function.parameter_unknown"),
+        ("run_externals_by_kind", {"kind": "vendor"}, "function.parameter_invalid"),
+        ("run_members_of_unit", {}, "function.parameter_missing"),
+        ("run_members_of_unit", {"unit": unit, "_limit": 0}, "usage.invalid_argument"),
+        (
+            "run_training_completions",
+            {"titles": ["x"], "since": "soon"},
+            "function.parameter_invalid",
+        ),
+        ("do_offboard_employee", {"employee": unit}, "action.reason_required"),
+        ("view_org_catalog", {"_entity": "x"}, "usage.invalid_argument"),
+    )
+    for tool, given, code in cases:
+        refused = harness.call(tool, given, valid=False)
+        assert refused.problems and (refused.reply.status, refused.code) == (400, code), (
+            tool,
+            given,
+        )
+        assert refused.on_error == "fix_input", (tool, given)
+
+
+def test_a_reference_of_the_wrong_class_is_refused(harness: ToolsClient) -> None:
+    person = harness.resolve(ref("Mara Lindqvist", "run_employer_of.person"))  # no unit
+    wrong = harness.call("run_members_of_unit", {"unit": person})
+    assert (wrong.reply.status, wrong.code) == (422, "function.parameter_type")
+    assert wrong.on_error == "fix_input"
+    shown = harness.call("view_position_overview", {"_entity": person})
+    assert shown.code == "view.class_mismatch" and shown.on_error == "fix_input"
+
+
+def test_a_tool_that_is_hidden_from_the_caller_is_not_found(
+    harness: ToolsClient, installation: Installation
+) -> None:
+    narrow = ToolsClient.fetch(installation.server, installation.tokens["narrow"], GRAPH)
+    assert "run_shareholders_of" in harness.tools and "run_shareholders_of" not in narrow.tools
+    assert {"lookup", "run_members_of_unit"} <= set(narrow.tools)
+    # the harness holds the tools of the caller who sees more; the narrow caller sees none of them
+    holding = harness.as_caller(installation.tokens["narrow"])
+    holder = harness.resolve(ref("Marrowdale Holding AG", "run_shareholders_of.entity"))
+    hidden = holding.call("run_shareholders_of", {"entity": [holder]})
+    assert (hidden.reply.status, hidden.code) == (404, "tool.not_found")
+    assert hidden.on_error == "refresh"
+    assert not any("shareholders" in name for name in hidden.details.get("did_you_mean", []))
+    # the entry names a hidden type: the narrow caller cannot see its entity either
+    hidden_view = holding.call(
+        "view_unit_overview",
+        {"_entity": harness.resolve(ref("Engineering", "view_unit_overview._entity"))},
+    )
+    assert hidden_view.code == "tool.not_found"
+
+
+def test_a_tool_the_caller_sees_but_may_not_use_is_denied(
+    harness: ToolsClient, installation: Installation
+) -> None:
+    reader = ToolsClient.fetch(installation.server, installation.tokens["reader"], GRAPH)
+    assert "do_assign_position" in harness.tools and "do_assign_position" not in reader.tools
+    reading = harness.as_caller(installation.tokens["reader"])
+    given = {
+        "person": harness.resolve(ref("Dana Whitfield", "do_assign_position.person")),
+        "position": harness.resolve(ref("Data Protection Officer", "do_assign_position.position")),
+        "since": "2026-03-01",
+    }
+    for more in ({}, {"_dry_run": True}):
+        denied = reading.call("do_assign_position", given | more)
+        assert (denied.reply.status, denied.code) == (403, "access.denied"), more
+        assert denied.on_error == "stop"
+    # nothing was written: the maintainer still finds the position vacant
+    assert harness.call("do_assign_position", given | {"_dry_run": True}).ok
+
+
+def test_a_changed_tool_is_refused_with_the_hash_it_has_now(
+    harness: ToolsClient, run_cli: CliRunner, tmp_path: Path
+) -> None:
+    given = FUNCTIONS["run_members_of_unit"]
+    old = harness.tools["run_members_of_unit"]["hash"]
+    wrong = harness.call("run_members_of_unit", given, expect_hash="sha256:" + "0" * 64)
+    assert (wrong.reply.status, wrong.code) == (409, "tool.hash_mismatch")
+    assert wrong.on_error == "refresh" and wrong.details["actual"] == old
+    assert harness.call("run_members_of_unit", given, expect_hash=False).ok
+    # the maintainer rewords the function: the tool the harness built is not the current one
+    folder = tmp_path / "reworded"
+    shutil.copytree(COMPANY / "functions", folder)
+    path = folder / "members_of_unit.yaml"
+    path.write_text(path.read_text().replace("People holding", "Everyone holding", 1))
+    published = admin(run_cli, "graph", "functions", "publish", GRAPH, str(folder))
+    assert published.code == 0, published.envelope
+    stale = harness.call("run_members_of_unit", given)
+    assert (stale.reply.status, stale.code) == (409, "tool.hash_mismatch")
+    assert stale.on_error == "refresh"
+    # refresh: fetch the manifest again and call with the tool as it is now
+    fresh = ToolsClient.fetch(harness.server, harness.token, GRAPH)
+    assert fresh.tools["run_members_of_unit"]["hash"] == stale.details["actual"] != old
+    assert fresh.manifest["version"] != harness.manifest["version"]
+    assert fresh.call("run_members_of_unit", given).ok
+
+
+def test_the_client_needs_no_describe_beyond_the_manifest(harness: ToolsClient) -> None:
+    for tool, given in {**FUNCTIONS, **ENTITY_VIEWS}.items():
+        harness.call(tool, given)
+    assert set(harness.requests) == {"describe/tools", "call"}
+    assert harness.requests.count("describe/tools") == 1
+    # every code a tool lists has what to do about it; the map lists no other code
+    listed = {code for tool in harness.tools.values() for code in tool["errors"]}
+    assert listed == set(harness.manifest["errors"])
+
+
+def test_the_client_refuses_an_answer_that_does_not_fit_its_schema(harness: ToolsClient) -> None:
+    """The checks of the client mean something: a schema that disagrees with the answer, in a
+    type or by leaving out a key (which only the closed form notices), fails the call."""
+    given = FUNCTIONS["run_members_of_unit"]
+
+    def with_schema(change: Any) -> ToolsClient:
+        manifest = copy.deepcopy(dict(harness.manifest))
+        tool = next(t for t in manifest["tools"] if t["name"] == "run_members_of_unit")
+        change(tool["output_schema"]["properties"]["items"]["items"])
+        return ToolsClient(harness.server, harness.token, GRAPH, manifest)
+
+    def retype(row: dict[str, Any]) -> None:
+        row["properties"]["person"] = {"type": "integer"}
+
+    def forget(row: dict[str, Any]) -> None:
+        del row["properties"]["position"]
+        row["required"].remove("position")
+
+    with pytest.raises(AssertionError, match="published schema"):
+        with_schema(retype).call("run_members_of_unit", given)
+    with pytest.raises(AssertionError, match="closed schema"):
+        with_schema(forget).call("run_members_of_unit", given)
+    # and one that lists less than the server may return
+    narrower = copy.deepcopy(dict(harness.manifest))
+    for tool in narrower["tools"]:
+        tool["errors"] = [c for c in tool["errors"] if c != "function.parameter_unknown"]
+    refusing = ToolsClient(harness.server, harness.token, GRAPH, narrower)
+    with pytest.raises(AssertionError, match=r"does not list function\.parameter_unknown"):
+        refusing.call("run_members_of_unit", {**given, "bogus": 1}, valid=False)
+
+
+def test_the_format_checker_refuses_what_is_no_date_or_timestamp() -> None:
+    """The formats of the schemas are checked only where the checker has the library for them
+    (``date-time`` needs ``rfc3339-validator``, which ``jsonschema`` does not require): a date-time
+    without an offset, and a date that is no day, are errors, so the checks above mean something."""
+    checker = Draft202012Validator.FORMAT_CHECKER
+    stamp = Draft202012Validator({"type": "string", "format": "date-time"}, format_checker=checker)
+    assert stamp.is_valid("2026-01-31T10:00:00Z") and stamp.is_valid("2026-01-31T10:00:00+01:00")
+    for bad in ("2026-01-31T10:00:00", "2026-01-31", "yesterday", "2026-13-01T10:00:00Z"):
+        assert not stamp.is_valid(bad), bad
+    day = Draft202012Validator({"type": "string", "format": "date"}, format_checker=checker)
+    assert day.is_valid("2026-02-28") and not day.is_valid("2026-02-30")
