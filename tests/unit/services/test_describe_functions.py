@@ -106,6 +106,43 @@ def test_a_function_is_described_completely() -> None:
     assert (deprecated["status"], deprecated["replaced_by"]) == ("deprecated", "members_of_unit")
 
 
+def test_every_column_shows_its_type_against_the_model_of_the_reader() -> None:
+    f = describe_function(ENTRY, MODEL, FUNCTIONS, "people_by_email_text")["function"]
+    assert [(r["column"], r["type"], r["nullable"], r["many"]) for r in f["returns"]] == [
+        ("person", "string", True, False),
+        ("email", "string", True, False),  # also declared: the same
+    ]
+    trainings = describe_function(ENTRY, MODEL, FUNCTIONS, "training_completions")["function"]
+    last = trainings["returns"][-1]
+    assert (last["column"], last["type"], last["class"], last["enum"]) == (
+        "completed_on",
+        "date",
+        None,
+        None,
+    )
+
+
+def test_a_column_nothing_types_shows_no_type_and_a_declared_one_shows_it() -> None:
+    source = valid_sources()["members_of_unit.yaml"]
+    open_source = source.replace("p.name AS person", "size(p.name) AS person")
+    declared = open_source.replace(
+        "  - column: person\n    summary: Name of the holder.",
+        "  - column: person\n    summary: Name of the holder.\n    type: integer",
+    )
+    for text, expected in ((open_source, None), (declared, "integer")):
+        document, problems = compile_catalog({"members_of_unit.yaml": text}, MODEL)
+        assert [p.to_json() for p in problems] == []
+        found = describe_function(ENTRY, MODEL, load_entries(document), "members_of_unit")
+        person = found["function"]["returns"][0]
+        assert person["type"] == expected
+        assert (person["class"], person["enum"], person["many"], person["nullable"]) == (
+            None,
+            None,
+            False,
+            True,
+        )
+
+
 def test_replaced_by_names_only_a_function_the_reader_sees() -> None:
     visible = tuple(f for f in FUNCTIONS if f.name != "members_of_unit")
     hidden = describe_function(ENTRY, MODEL, visible, "unit_members")["function"]

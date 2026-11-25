@@ -212,4 +212,5 @@ hash of the entry. A column keeps the type its author declared and nothing else:
 types are not stored, so a catalog of functions without declared types
 keeps its bytes (and entry hashes), and the types are inferred again
 from the stored query whenever they are shown. Agents see the entry with
-`graph describe function <function>`.
+`graph describe function <function>`, which lists the type of every
+column (`type` is `null` for an untyped one).

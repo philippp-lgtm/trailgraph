@@ -1267,11 +1267,65 @@
                     },
                     "summary": {
                       "type": "string"
+                    },
+                    "type": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "string",
+                            "integer",
+                            "decimal",
+                            "boolean",
+                            "date",
+                            "datetime",
+                            "enum",
+                            "ref",
+                            "entity",
+                            "lang",
+                            "any"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "class": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "enum": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "many": {
+                      "type": "boolean"
+                    },
+                    "nullable": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "column",
-                    "summary"
+                    "summary",
+                    "type",
+                    "class",
+                    "enum",
+                    "many",
+                    "nullable"
                   ]
                 }
               },

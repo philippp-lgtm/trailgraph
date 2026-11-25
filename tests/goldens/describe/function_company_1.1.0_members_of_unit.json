@@ -31,15 +31,30 @@
     "returns": [
       {
         "column": "person",
-        "summary": "Name of the holder."
+        "summary": "Name of the holder.",
+        "type": "string",
+        "class": null,
+        "enum": null,
+        "many": false,
+        "nullable": true
       },
       {
         "column": "position",
-        "summary": "Title of the position held."
+        "summary": "Title of the position held.",
+        "type": "string",
+        "class": null,
+        "enum": null,
+        "many": false,
+        "nullable": true
       },
       {
         "column": "unit",
-        "summary": "The unit the position belongs to."
+        "summary": "The unit the position belongs to.",
+        "type": "string",
+        "class": null,
+        "enum": null,
+        "many": false,
+        "nullable": true
       }
     ],
     "examples": [

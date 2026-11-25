@@ -17,6 +17,7 @@ from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import as_object, req_list, req_obj, req_str
 from graph_cli.kinetic.format import FunctionDef, ParamDef
+from graph_cli.kinetic.return_types import ColumnType
 
 DEPRECATED: Final = "deprecated"
 
@@ -78,9 +79,14 @@ class FunctionEntry:
             "status": self.defn.status,
         }
 
-    def detail_json(self) -> dict[str, JsonValue]:
-        """Everything of the function format plus the normalized query text and the hash."""
+    def detail_json(self, types: Sequence[ColumnType | None] | None = None) -> dict[str, JsonValue]:
+        """Everything of the function format plus the normalized query text and the hash.
+        ``types`` are the types of the columns against the caller's model
+        (``compile.column_types``), shown as ``type`` (``null``: untyped), ``class``, ``enum``,
+        ``many`` and ``nullable`` of each column; without them the columns show what the author
+        declared."""
         d = self.defn
+        found = types if types is not None else [r.declared for r in d.returns]
         return {
             "name": self.name,
             "module": self.module,
@@ -91,7 +97,10 @@ class FunctionEntry:
             "featured": d.featured,
             "signature": self.signature,
             "params": [p.to_json() for p in d.params],
-            "returns": [{"column": r.column, "summary": r.summary} for r in d.returns],
+            "returns": [
+                {"column": r.column, "summary": r.summary, **column_type_json(t)}
+                for r, t in zip(d.returns, found, strict=True)
+            ],
             "examples": [{"question": e.question, "params": dict(e.params)} for e in d.examples],
             "touches": {
                 "types": [{"curie": t.curie, "module": t.module} for t in self.types],
@@ -100,6 +109,13 @@ class FunctionEntry:
             "query": self.query,
             "hash": self.hash,
         }
+
+
+def column_type_json(column: ColumnType | None) -> dict[str, JsonValue]:
+    """The type keys of a column in ``describe function``; empty ones when it is untyped."""
+    if column is None:
+        return {"type": None, "class": None, "enum": None, "many": False, "nullable": True}
+    return dict(column.to_json())
 
 
 def signature(params: Sequence[ParamDef]) -> str:
