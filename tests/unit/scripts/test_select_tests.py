@@ -331,6 +331,63 @@ def test_the_guards_and_the_documentation_checks_exist_in_the_repository() -> No
         assert (REPO_ROOT / path).is_file(), path
 
 
+def test_a_changed_test_selects_the_tests_that_import_it() -> None:
+    files = {
+        "tests/test_leak.py": "DENY = ['x']\n",
+        "tests/test_user.py": "from test_leak import DENY\n",
+        "tests/test_other.py": "",
+    }
+    assert only(selected(files, ["tests/test_leak.py"])) == [
+        "tests/test_leak.py",
+        "tests/test_user.py",
+    ]
+
+
+def test_the_skills_root_counts_beside_the_files_that_are_named() -> None:
+    files = {
+        "skills/s/SKILL.md": "# skill\n",
+        "skills/s/references/a.md": "a\n",
+        "tests/support/__init__.py": "",
+        "tests/support/skills.py": 'DIR = "skills"\n',
+        "tests/test_fresh.py": "from support import skills\n",
+        "tests/test_named.py": 'X = "a.md"\n',
+    }
+    result = only(selected(files, ["skills/s/references/a.md"]))
+    assert result == ["tests/test_fresh.py", "tests/test_named.py"]
+
+
+def test_the_goldens_root_counts_only_when_nothing_else_names_the_file() -> None:
+    files = {
+        "tests/goldens/g/x.json": "{}",
+        "tests/support/__init__.py": "",
+        "tests/support/fixtures.py": 'GOLDENS = "goldens"\n',
+        "tests/test_hub.py": "from support import fixtures\n",
+        "tests/test_x.py": 'NAME = "x.json"\n',
+    }
+    assert only(selected(files, ["tests/goldens/g/x.json"])) == ["tests/test_x.py"]
+
+
+def test_a_module_that_is_gone_is_the_whole_suite() -> None:
+    files = {"tests/support/__init__.py": "", "tests/test_h.py": ""}
+    for path in (
+        "packages/app/src/app/removed.py",  # the importers cannot be followed in the new tree
+        "tests/support/clock.py",
+        "tests/area/conftest.py",  # the fixtures of the tests below it are gone
+    ):
+        result = selected(files, [path])
+        assert isinstance(result, str) and f"{path} no longer exists" in result, path
+
+
+def test_a_deleted_test_file_is_no_reason_for_the_whole_suite() -> None:
+    assert isinstance(selected({}, ["tests/test_removed.py"]), list)
+
+
+def test_a_file_in_a_package_that_nothing_reads_is_the_whole_suite() -> None:
+    for path in ("packages/app/README.md", "packages/app/src/new.txt"):
+        result = selected({}, [path])
+        assert isinstance(result, str) and "no test names" in result, path
+
+
 # ---- the whole suite -----------------------------------------------------------------------------
 
 
@@ -351,6 +408,7 @@ def test_the_guards_and_the_documentation_checks_exist_in_the_repository() -> No
         "scripts/ci-select-tests.sh",
         "scripts/ci-reuse-pr-run.sh",
         ".github/workflows/check.yml",
+        ".github/actions/setup/action.yml",
         "tests/ci-select/run.sh",
         "Makefile",
         "unknown/place.txt",
@@ -385,6 +443,27 @@ def test_the_share_is_of_all_test_files() -> None:
 def test_a_path_that_is_not_plain_is_the_whole_suite() -> None:
     result = selected({"tests/test_a b.py": ""}, ["tests/test_a b.py"])
     assert isinstance(result, str) and "unsafe test path" in result
+
+
+def test_a_relative_path_of_the_changed_files_works_with_another_root(tmp_path: Path) -> None:
+    (tmp_path / "root" / "tests").mkdir(parents=True)
+    (tmp_path / "root" / "tests" / "test_a.py").write_text("")
+    (tmp_path / "changed").write_bytes(b"README.md\0")
+    done = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "select_tests.py"),
+            "--changed-files",
+            "changed",
+            "--root",
+            "root",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        check=False,
+    )
+    assert b"internal error" not in done.stderr, done.stderr
+    assert done.returncode == 0
 
 
 def test_every_selected_path_is_plain() -> None:
@@ -479,3 +558,18 @@ def test_every_data_file_of_the_repository_is_placed_or_runs_everything(real: "s
         and st.classify(p) not in {"data", "document"}
     ]
     assert stray == []
+
+
+def test_the_generated_app_skill_selects_its_freshness_check(real: "st.Graph") -> None:
+    sel = run_real(real, ["skills/graph-cli/SKILL.md"])
+    assert not sel.full
+    assert "tests/skills/test_app_skill.py" in sel.tests
+    assert "tests/test_docs.py" in sel.tests
+
+
+def test_a_changed_test_module_selects_the_tests_that_import_it_in_the_repository(
+    real: "st.Graph",
+) -> None:
+    sel = run_real(real, ["tests/test_vocabulary_leak.py"])
+    assert not sel.full
+    assert "tests/cli/test_admin_init.py" in sel.tests

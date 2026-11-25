@@ -89,6 +89,10 @@ FULL_FILES = frozenset(
 # The CI plumbing that makes and applies the selection must itself be tested in full.
 FULL_PREFIXES = ("scripts/ci-", "tests/ci-")
 FULL_WORKFLOW = ".github/workflows/check.yml"
+FULL_PREFIXES_EXTRA = (".github/actions/",)  # local composite actions the workflows may use
+# Data roots whose readers (the tests that name the root) always count: few tests name them.
+# For the others (goldens, fixtures, examples) a helper that most tests import names the root.
+ADDITIVE_ROOTS = frozenset({"skills", "docs"})
 # Only a path of this shape is ever printed: it ends up in a shell word and a pytest argument.
 SAFE_PATH = re.compile(r"tests/[A-Za-z0-9_./-]+\.py")
 
@@ -422,7 +426,9 @@ class Selection:
 def classify(path: str) -> str:
     """The kind of a changed path: how the selector treats it."""
     name = path.rsplit("/", 1)[-1]
-    if path in FULL_FILES or path == FULL_WORKFLOW or path.startswith(FULL_PREFIXES):
+    if path in FULL_FILES or path == FULL_WORKFLOW:
+        return "full"
+    if path.startswith((*FULL_PREFIXES, *FULL_PREFIXES_EXTRA)):
         return "full"
     if path.startswith("packages/"):
         if name == "pyproject.toml":
@@ -493,14 +499,16 @@ class Selector:
 
     def _repository_file(self, path: str) -> int:
         """Selects the tests that name a file of the repository (outside the packages): by its
-        name or a directory it is in, else by the data root (`goldens`, `docs`, ...), whose name
-        a helper that half of the suite imports mostly holds. Returns how many."""
+        name or a directory it is in, and by the data root (`skills`, `docs`) always; for the
+        others (`goldens`, ...) the root only when nothing else names the file, since a helper
+        that most of the suite imports holds its name. Returns how many."""
         name, directories, root = _data_tokens(path)
-        for readers in (self._naming(directories, part_of=name), self._naming(root)):
-            count = self._add(self._depending_on(readers), f"names {path}")
-            if count:
-                return count
-        return 0
+        count = self._add(
+            self._depending_on(self._naming(directories, part_of=name)), f"names {path}"
+        )
+        if root and (count == 0 or root[0] in ADDITIVE_ROOTS):
+            count += self._add(self._depending_on(self._naming(root)), f"names the root of {path}")
+        return count
 
     def _package_file(self, path: str) -> int:
         """A file inside a package that is no module: the modules that name the directory it is in
@@ -551,11 +559,13 @@ class Selector:
                 test_side = True
                 if path in present:
                     self._add([path], f"{path} changed")
+                    modules.add(path)  # tests import each other (`from test_x import y`)
             elif kind == "document":
                 documents = True
                 self._document(path)
             elif kind == "package_file":
-                self._package_file(path)
+                if not self._package_file(path):
+                    unplaced.append(path)
             elif kind == "data":
                 if not self._repository_file(path):
                     unplaced.append(path)
@@ -567,6 +577,11 @@ class Selector:
         if unplaced:
             more = " ..." if len(unplaced) > 5 else ""
             return self._full("no test names " + ", ".join(unplaced[:5]) + more)
+        # A module that is gone (deleted, or renamed away) cannot be followed to its importers in
+        # the new tree, and a conftest.py takes its fixtures along: nothing narrows that.
+        gone = sorted(p for p in modules if p not in self.graph.modules and not is_test_file(p))
+        if gone:
+            return self._full(f"{gone[0]} no longer exists")
         known = {p for p in modules if p in self.graph.modules}
         self._add(self._depending_on(known), "imports a changed module")
         if source:  # a module that nothing imports (new, deleted) is still read by tree scanners
@@ -640,6 +655,8 @@ def main(argv: list[str] | None = None) -> int:
     changed: list[str] = []
     tree: Tree | None = None
     try:
+        if args.changed_files and args.changed_files != "-":
+            args.changed_files = os.path.abspath(args.changed_files)  # before the chdir
         os.chdir(args.root or os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         changed = changed_files(args)
         tree = GitTree(args.head) if args.head and not args.changed_files else FsTree(".")
