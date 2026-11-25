@@ -43,7 +43,7 @@ def test_the_prefix_of_a_name_says_which_catalog_it_asks_for() -> None:
 def test_a_call_reads_only_the_catalog_of_its_tool() -> None:
     for kind, catalog in (("function", "functions"), ("action", "actions"), ("view", "views")):
         reader = Reader()
-        call_module._classified(reader, None, None, kind)  # type: ignore[arg-type]
+        call_module.classified(reader, None, None, kind)  # type: ignore[arg-type]
         assert reader.read == [catalog], kind
     reader = Reader()
     call_module._usable_names(reader, None, None)  # type: ignore[arg-type]

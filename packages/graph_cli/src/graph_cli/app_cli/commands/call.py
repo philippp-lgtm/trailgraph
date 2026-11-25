@@ -44,10 +44,12 @@ from graph_cli.app_cli.tool_manifest import (
     CALL_ERRORS,
     NOT_FOR_LOOKUP,
     NOT_FOR_TOOLS,
+    classified,
     heads,
     lookup_refs,
     missing_tools,
     tool_hash,
+    tool_head,
 )
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.output_schemas import one_of
@@ -158,18 +160,6 @@ def _kind_of(tool: str) -> str | None:
     return next((kind for kind, prefix in PREFIXES.items() if tool.startswith(prefix)), None)
 
 
-def _classified(
-    reader: ReadService, actor: ActorContext, entry: GraphEntry, kind: str
-) -> Sequence[Classified[Any]]:
-    """What the caller sees of the catalog of ``kind``, with the rights it lacks."""
-    if kind == FUNCTION:
-        return reader.classified_functions(actor, entry)
-    if kind == VIEW:
-        return reader.classified_views(actor, entry)
-    published = reader.published_actions(entry)
-    return () if published is None else reader.classified_actions(actor, entry, published)
-
-
 def _find(tool: str, kind: str, seen: Sequence[Classified[Any]]) -> _Found | None:
     """The entry of ``tool`` among what the caller sees of its catalog (names are unique by
     construction)."""
@@ -184,7 +174,7 @@ def _usable(
     reader: ReadService, actor: ActorContext, entry: GraphEntry
 ) -> dict[str, tuple[Any, ...]]:
     """The entries of each kind the caller may use."""
-    return {kind: tuple(allowed_entries(_classified(reader, actor, entry, kind))) for kind in KINDS}
+    return {kind: tuple(allowed_entries(classified(reader, actor, entry, kind))) for kind in KINDS}
 
 
 def _lookup_refs(
@@ -289,7 +279,7 @@ def call(
     if tool == LOOKUP:
         return _lookup(state, graph, entry, values, expect_hash)
     kind = _kind_of(tool)
-    seen = () if kind is None else _classified(reader, actor, entry, kind)
+    seen = () if kind is None else classified(reader, actor, entry, kind)
     found = None if kind is None else _find(tool, kind, seen)
     if kind is None or found is None:
         problem = missing_tools([tool], _usable_names(reader, actor, entry))
@@ -297,26 +287,7 @@ def call(
         raise problem
     services(state).usage.ran = RAN[kind]  # from here on the log says what ran
     if expect_hash is not None and found.allowed:  # one the caller may not use is refused below
-        obligations = reader.reason_obligations(actor, entry) if kind == ACTION else frozenset()
-        model = reader.visible_model(actor, entry)
-        none: tuple[Any, ...] = ()
-        parts = {k: none for k in KINDS}
-        parts[kind] = tuple(allowed_entries(seen))
-        if kind == VIEW:  # the rows sections of a view are typed by the functions it runs
-            parts[FUNCTION] = tuple(allowed_entries(_classified(reader, actor, entry, FUNCTION)))
-        # What the manifest says of a tool's references depends only on read.find and on whether
-        # the tool has a servable one itself (then the lookup tool is listed whatever else
-        # there is), so the entry of this tool alone gives the same flag as every entry.
-        own = {
-            k: tuple(e for e in parts[k] if e.name == found.name) if k == kind else none
-            for k in KINDS
-        }
-        refs = lookup_refs(
-            model, own[FUNCTION], own[ACTION], own[VIEW], find=reader.may(actor, entry, "read.find")
-        )
-        (head,) = heads(
-            model, parts[FUNCTION], parts[ACTION], parts[VIEW], obligations, only=tool, refs=refs
-        )
+        head, model = tool_head(reader, actor, entry, kind, found.name, seen=seen)
         _check_hash(tool, expect_hash, tool_hash(head, model))
     params, controls = _split(values, found)
     if found.kind == FUNCTION:

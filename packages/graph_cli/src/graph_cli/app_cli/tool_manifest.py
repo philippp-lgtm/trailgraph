@@ -22,7 +22,7 @@ from __future__ import annotations
 import difflib
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 from graph_cli.app_cli.column_schemas import column_schema
 from graph_cli.app_cli.commands.do import DO_ERRORS, DO_OUTPUT
@@ -32,6 +32,7 @@ from graph_cli.app_cli.commands.read.query import RUN_ERRORS, RUN_OUTPUT
 from graph_cli.app_cli.output_schemas import standalone
 from graph_cli.app_cli.view_schemas import SectionShape, view_schema
 from graph_cli.cli_kit.output_schemas import ref
+from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_value
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.catalog import GraphEntry
@@ -40,16 +41,19 @@ from graph_cli.kinetic.entries import FunctionEntry
 from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services import describe_tools
+from graph_cli.services.catalog_access import Classified, allowed_entries
 from graph_cli.services.describe import ModuleIndex, model_envelope
 from graph_cli.services.describe_tools import (
     ACTION,
     FUNCTION,
+    KINDS,
     LOOKUP,
     VIEW,
     RefInput,
     ToolColumn,
     ToolHead,
 )
+from graph_cli.services.read import ReadService
 from graph_cli.services.tool_errors import error_info
 
 TOOLS_FORMAT: Final = 1
@@ -271,6 +275,61 @@ def heads(
     )
     describe_tools.unique_names(found)
     return found
+
+
+def classified(
+    reader: ReadService, actor: ActorContext, entry: GraphEntry, kind: str
+) -> Sequence[Classified[Any]]:
+    """What the caller sees of the catalog of ``kind``, with the rights it lacks."""
+    if kind == FUNCTION:
+        return reader.classified_functions(actor, entry)
+    if kind == VIEW:
+        return reader.classified_views(actor, entry)
+    published = reader.published_actions(entry)
+    return () if published is None else reader.classified_actions(actor, entry, published)
+
+
+def tool_head(
+    reader: ReadService,
+    actor: ActorContext,
+    entry: GraphEntry,
+    kind: str,
+    name: str,
+    *,
+    seen: Sequence[Classified[Any]] | None = None,
+) -> tuple[ToolHead, CompiledModel]:
+    """The head of the tool of the entry ``name`` of ``kind`` for ``actor`` on ``entry``, with the
+    model the actor sees: what ``describe tools`` lists for that caller, built from the one entry
+    and what its tool needs (``seen``: what the caller sees of its catalog, when at hand). The
+    entry must be one the caller may use; ``call --expect-hash`` and the test plugin that checks
+    the answers against the output schema of the tool both build it here.
+
+    What the manifest says of a tool's references depends only on ``read.find`` and on whether
+    the tool has a servable one itself (then the lookup tool is listed whatever else there is), so
+    the entry of this tool alone gives the same flag as every entry."""
+    seen = classified(reader, actor, entry, kind) if seen is None else seen
+    obligations = reader.reason_obligations(actor, entry) if kind == ACTION else frozenset()
+    model = reader.visible_model(actor, entry)
+    none: tuple[Any, ...] = ()
+    parts = {k: none for k in KINDS}
+    parts[kind] = tuple(allowed_entries(seen))
+    if kind == VIEW:  # the rows sections of a view are typed by the functions it runs
+        parts[FUNCTION] = tuple(allowed_entries(classified(reader, actor, entry, FUNCTION)))
+    own = {k: tuple(e for e in parts[k] if e.name == name) if k == kind else none for k in KINDS}
+    refs = lookup_refs(
+        model, own[FUNCTION], own[ACTION], own[VIEW], find=reader.may(actor, entry, "read.find")
+    )
+    tool = describe_tools.tool_name(kind, name)
+    found = heads(
+        model, parts[FUNCTION], parts[ACTION], parts[VIEW], obligations, only=tool, refs=refs
+    )
+    if len(found) != 1:
+        raise GraphCliError(
+            "tool.not_found",
+            f"{tool} is not a tool the caller may use",
+            details={"tool": tool},
+        )
+    return found[0], model
 
 
 def lookup_refs(
