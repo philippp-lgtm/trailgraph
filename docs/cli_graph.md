@@ -1248,10 +1248,11 @@ same. What differs:
   `access.denied`, recorded like that of the command.
 - **The `lookup` tool** is called like the others, with `text`, `for` and `limit`. It is there only for a
   caller that holds `read.find` while some tool takes a reference: with that right missing it is
-  `access.denied`, as for `lookup`, with no reference input at all it is `tool.not_found`. A `for` that is
-  none of the slots (a name without its kind prefix, a slot of a tool you cannot use) is
-  `usage.invalid_argument` with the close slots in `did_you_mean`, and so is any input other than `text`,
-  `for` and `limit`; a missing `text` or `for` is `usage.missing_argument`. It is a read: it takes no key.
+  `access.denied`, as for `lookup`, with no reference input the lookup tool can serve (a reference whose
+  class has no label attribute does not count) it is `tool.not_found`. A `for` that is none of the slots
+  (a name without its kind prefix, a slot of a tool you cannot use) is `usage.invalid_argument` with the
+  close slots in `did_you_mean`, and so is any input other than `text`, `for` and `limit`; a missing
+  `text` or `for` is `usage.missing_argument`. It is a read: it takes no key.
 - **`null` is "not given"** for every parameter and control that is not required, and a default
   applies. `input_schema` lets only a property without a default take `null` (a property with a
   default is not nullable there), so a client that validates its input against the schema leaves a
