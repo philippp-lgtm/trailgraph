@@ -31,11 +31,12 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from functools import partial
 from typing import Final
 
 from graph_cli.kernel.canonical import MAX_SAFE_INT, JsonObject, JsonValue
+from graph_cli.kernel.changeset import FloatLiteral
 from graph_cli.kernel.errors import EMPTY, GraphCliError
 from graph_cli.kernel.ids import parse_entity_ref, ref_text
 from graph_cli.kernel.json_access import opt_str, req_bool, req_str
@@ -412,6 +413,58 @@ def bind_json(
     return bound
 
 
+def bind_input(
+    kind: str,
+    name: str,
+    params: Sequence[ParamDef],
+    values: Mapping[str, JsonValue],
+    model: CompiledModel,
+) -> dict[str, Value]:
+    """Values from the typed input of a tool call (``graph call``): ``bind_json`` with the two
+    rules a JSON Schema cannot express. ``null`` for a parameter means "not given": a default
+    applies, an optional one stays absent, a required one is missing. A number written with a
+    fraction or an exponent (``5.0``) is an integer when it is a whole number, so a client that
+    writes every number as a float still binds an integer parameter; for any other type it is
+    refused, as a float always was."""
+    by_name = {p.name: p for p in params}
+    given: dict[str, JsonValue] = {}
+    for key, value in values.items():
+        param = by_name.get(key)
+        if param is None:
+            given[key] = value  # an unknown key: bind_json refuses it
+        elif value is not None:
+            given[key] = number_value(value, integer=param.type == "integer")
+    return bind_json(kind, name, params, given, model)
+
+
+def number_value(value: JsonValue, *, integer: bool) -> JsonValue:
+    """``value`` with a float literal of an input (``kernel.changeset.FloatLiteral``, kept as
+    written) read as an integer when ``integer`` and it is a whole number such as ``5.0`` or
+    ``1e2``; any other float literal stays as it is, and the binder refuses it. Lists are read
+    element by element."""
+    if isinstance(value, FloatLiteral):
+        whole = _whole_number(value) if integer else None
+        return value if whole is None else whole
+    if isinstance(value, list):
+        return [number_value(item, integer=integer) for item in value]
+    return value
+
+
+def _whole_number(text: str) -> int | None:
+    """The integer a float literal says (``5.0``), ``None`` when it is not a whole number in the
+    safe range."""
+    try:
+        number = Decimal(text)
+    except InvalidOperation:
+        return None
+    # adjusted() is the exponent of the first digit: 1e999999999 is refused before it is built
+    if not number.is_finite() or number.adjusted() > len(str(MAX_SAFE_INT)) - 1:
+        return None
+    if number != number.to_integral_value() or abs(number) > MAX_SAFE_INT:
+        return None
+    return int(number)
+
+
 def placeholder(param: ParamDef, model: CompiledModel) -> Value:
     """A value of the parameter's type, for resolving a query without real values."""
     if param.type == "enum":
@@ -537,6 +590,13 @@ def _reference(text: str) -> str:
     return ref_text(parsed)
 
 
+_FLOAT_TEXT: Final = {
+    "integer": "{} is not a whole number",
+    "boolean": "{} is not true or false",
+    "decimal": 'a decimal is written as a string, such as "{}"',
+}
+
+
 def _from_text(param: ParamDef, text: str, model: CompiledModel) -> str | int | bool:
     if param.type == "string":
         return text
@@ -549,6 +609,8 @@ def _from_text(param: ParamDef, text: str, model: CompiledModel) -> str | int | 
 
 def _from_json(param: ParamDef, value: JsonValue, model: CompiledModel) -> str | int | bool:
     kind = param.type
+    if isinstance(value, FloatLiteral):  # a number with a fraction or an exponent (a str subclass)
+        raise ValueError(_FLOAT_TEXT.get(kind, f"{str(value)!r} is not a string").format(value))
     if kind == "integer":
         if isinstance(value, bool) or not isinstance(value, int) or abs(value) > MAX_SAFE_INT:
             raise ValueError(f"{value!r} is not an integer")

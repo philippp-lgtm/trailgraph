@@ -15,7 +15,6 @@ service except through the tx (the request digest covers them).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 
 from graph_cli.kernel.actor import ActorContext
@@ -28,11 +27,11 @@ from graph_cli.kernel.timing import Timings
 from graph_cli.kinetic.action_entries import find_action
 from graph_cli.kinetic.entries import seen_replacement
 from graph_cli.kinetic.expand import check_reason
-from graph_cli.kinetic.params import bind_cli, json_value
+from graph_cli.kinetic.params import json_value
 from graph_cli.services.catalog_access import allowed_entries
 from graph_cli.services.models import ModelCache
 from graph_cli.services.read import ReadService
-from graph_cli.services.refs import entity_params
+from graph_cli.services.refs import Given, bind_params
 from graph_cli.services.write import ActionPlan, WriteRequest, WriteResult, WriteService
 
 
@@ -68,13 +67,14 @@ class ActionService:
         actor: ActorContext,
         entry: GraphEntry,
         name: str,
-        pairs: Sequence[tuple[str, str]],
+        given: Given,
         *,
         dry_run: bool,
         reason: str | None,
         idempotency_key: str | None,
     ) -> ActionResult:
-        """Run action ``name`` of the graph with ``name=value`` parameter pairs."""
+        """Run action ``name`` of the graph with ``name=value`` parameter pairs or a typed JSON
+        object (``services.refs.bind_params``)."""
         if not self._reader.visible(actor, entry):
             request = RequestMeta.of("do", {"graph": entry.name})
             raise self._reader.refuse_hidden(actor, entry, entry.name, request)
@@ -113,18 +113,21 @@ class ActionService:
                 )
             )
         check_reason(action, reason)
-        bound = bind_cli("action", name, action.defn.params, pairs, model)
         read, _ = self._catalog.store_for(entry.id)
         with self.timings.phase("snapshot"):
             raw = read.snapshot()
         # A type limited caller names entities among those it sees: a hidden one is missing.
         snapshot, shown, _ = self._reader.limited_view(actor, entry, raw, model)
-        for param in action.defn.params:
-            if param.type == "ref" and param.name in bound:
-                bound[param.name], found = entity_params(
-                    snapshot, shown, "action", name, param, bound
-                )
-                warnings += found
+        bound, found = bind_params(
+            "action",
+            name,
+            action.defn.params,
+            given,
+            model=model,
+            snapshot=snapshot,
+            shown=shown,
+        )
+        warnings += found
         ref = ActionRef(name, action.hash)
         request = RequestMeta.of(
             "do",

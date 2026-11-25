@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
-from graph_cli.kinetic.bind import bind_cli
 from graph_cli.kinetic.entries import FunctionEntry, find_entry, seen_replacement
 from graph_cli.query.cypher.values import Value
 from graph_cli.query.plan import DEFAULT_LIMIT
 from graph_cli.services.read.catalogs import ReadCatalogs
 from graph_cli.services.read.graph_read import GraphRead, Page
 from graph_cli.services.read.json_shapes import edges_in, entities_in, value_json
-from graph_cli.services.refs import entity_params
+from graph_cli.services.refs import Given, bind_params
 from graph_cli.services.visibility import SIGNATURE_VIEWS, remember
 
 if TYPE_CHECKING:
@@ -184,12 +183,13 @@ class ReadQueries(ReadCatalogs):
         self,
         view: GraphRead,
         name: str,
-        pairs: Sequence[tuple[str, str]],
+        given: Given,
         *,
         limit: int,
         offset: int,
     ) -> tuple[dict[str, JsonValue], Page, tuple[WarningRecord, ...]]:
-        """A published function run with ``name=value`` parameters (plan K2, K3, K5, K8).
+        """A published function run with ``name=value`` pairs or a typed JSON object as
+        parameters (plan K2, K3, K5, K8; ``services.refs.bind_params``).
 
         The caller is authorized (``read.function``, by ``open``). Values are read by the
         declared types, a ``ref`` is resolved and its class checked, and the stored
@@ -211,13 +211,15 @@ class ReadQueries(ReadCatalogs):
                 )
             )
         with self.timings.phase("query"):
-            bound = bind_cli(name, function.defn.params, pairs, view.model)
-            for param in function.defn.params:
-                if param.type == "ref":
-                    bound[param.name], found = entity_params(
-                        view.snapshot, view.model, "function", name, param, bound
-                    )
-                    warnings += found
+            bound, found = bind_params(
+                "function",
+                name,
+                function.defn.params,
+                given,
+                model=view.model,
+                snapshot=view.snapshot,
+            )
+            warnings += found
         resolved = self._resolve_function(view, function, bound)
         data, page = self._rows(view, resolved, False, None, limit, offset, name)
         data = {"function": {"name": name, "hash": function.hash}, **data}

@@ -5,12 +5,14 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from support.fixtures import compiled_model
 from support.snapshots import DictSnapshot, edge, eid, revision
 
 from graph_cli.kernel.changeset import ChangeSet, EdgeSpec, LinkOp, UpdateOp, parse_changeset
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import AbbrevRef, EntityId, TermRef
-from graph_cli.services.refs import invalid_ref, resolve_ref, resolve_refs
+from graph_cli.kinetic.params import ParamDef
+from graph_cli.services.refs import bind_params, invalid_ref, resolve_ref, resolve_refs
 
 ROOM = revision("room", "ex:Place", {"name": "R"}, alias="LOC-0002")
 DESK = revision("desk", "ex:Thing", {"name": "D"}, alias="ITEM-0001")
@@ -298,3 +300,58 @@ def test_a_name_as_a_cli_reference_is_refused_with_its_slot() -> None:
     assert (
         resolve_ref("ITEM-0001", SNAP, argument="ref")[0] == DESK.id
     )  # a reference is not refused
+
+
+# ---- bind_params: the one place that binds the parameters of a call -----------------------------
+
+
+def _params(*defs: ParamDef) -> list[ParamDef]:
+    return list(defs)
+
+
+INV = compiled_model("inventory")
+SHELF = revision("shelf", "inv:Location", {"name": "S", "code": "S"}, alias="LOC-0001")
+BOX = revision("box", "inv:Item", {"name": "B"}, alias="ITEM-0002")
+STOCK = DictSnapshot(SHELF, BOX)
+WHERE = ParamDef("where", "ref", "A place.", of_class="inv:Location")
+WHERES = ParamDef("wheres", "ref", "Places.", of_class="inv:Location", many=True)
+PLAIN = ParamDef("note", "string", "A note.", optional=True)
+LIMITED = ParamDef("n", "integer", "A count.", default=5)
+
+
+def bound(given: Any, *defs: ParamDef, kind: Any = "function") -> Any:
+    return bind_params(kind, "thing", _params(*defs), given, model=INV, snapshot=STOCK)
+
+
+@pytest.mark.parametrize(
+    "given",
+    [[("where", "LOC-0001")], {"where": "LOC-0001"}],
+    ids=["pairs", "object"],
+)
+def test_a_reference_is_resolved_to_the_id_in_both_forms(given: Any) -> None:
+    values, warnings = bound(given, WHERE, LIMITED)
+    assert values == {"where": str(SHELF.id), "n": 5} and warnings == []
+
+
+def test_a_list_of_references_is_resolved_one_by_one() -> None:
+    values, _ = bound([("wheres", "LOC-0001"), ("wheres", str(SHELF.id))], WHERES)
+    assert values == {"wheres": [str(SHELF.id), str(SHELF.id)]}
+    values, _ = bound({"wheres": ["LOC-0001"]}, WHERES)
+    assert values == {"wheres": [str(SHELF.id)]}
+
+
+def test_an_optional_reference_that_is_not_given_is_left_out() -> None:
+    optional = ParamDef("where", "ref", "A place.", of_class="inv:Location", optional=True)
+    assert bound([], optional, PLAIN)[0] == {}
+    assert bound({"where": None}, optional, PLAIN)[0] == {}
+
+
+def test_a_reference_that_finds_nothing_or_fits_no_class_is_refused_for_every_kind() -> None:
+    for kind in ("function", "action", "view"):
+        with pytest.raises(GraphCliError) as missing:
+            bound({"where": "0192f3c0"}, WHERE, kind=kind)
+        assert missing.value.code == "entity.not_found"
+        with pytest.raises(GraphCliError) as wrong:
+            bound([("where", "ITEM-0002")], WHERE, kind=kind)
+        assert wrong.value.code == f"{kind}.parameter_type"
+        assert wrong.value.details["found"] == "inv:Item"
