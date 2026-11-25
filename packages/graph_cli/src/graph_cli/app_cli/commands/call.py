@@ -62,6 +62,7 @@ from graph_cli.kernel.records import VIA_CALL
 from graph_cli.kinetic.params import number_value
 from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.kinetic.view_format import PAGE_BYTES_MAX
+from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.lookup import MAX_LOOKUP_TEXTS, LookupSpec
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT, split_assignment
 from graph_cli.services.catalog_access import Classified, allowed_entries
@@ -187,21 +188,32 @@ def _usable(
 
 
 def _lookup_refs(
-    reader: ReadService, actor: ActorContext, entry: GraphEntry, usable: Mapping[str, Sequence[Any]]
+    reader: ReadService,
+    actor: ActorContext,
+    entry: GraphEntry,
+    usable: Mapping[str, Sequence[Any]],
+    model: CompiledModel | None = None,
 ) -> tuple[RefInput, ...]:
     """The reference inputs the ``lookup`` tool serves for the caller (it is listed when there are
-    some and the caller may find entities)."""
+    some and the caller may find entities); ``model`` is the caller's, when it is at hand."""
     if not reader.may(actor, entry, "read.find"):
         return ()  # the model is read only when it matters
-    model = reader.visible_model(actor, entry)
+    model = model or reader.visible_model(actor, entry)
     return lookup_refs(model, usable[FUNCTION], usable[ACTION], usable[VIEW], find=True)
 
 
-def _usable_names(reader: ReadService, actor: ActorContext, entry: GraphEntry) -> list[str]:
-    """The names of every tool the caller may use, for the suggestions of a name that is none."""
-    usable = _usable(reader, actor, entry)
+def _usable_names(
+    reader: ReadService,
+    actor: ActorContext,
+    entry: GraphEntry,
+    usable: Mapping[str, Sequence[Any]] | None = None,
+    model: CompiledModel | None = None,
+) -> list[str]:
+    """The names of every tool the caller may use, for the suggestions of a name that is none
+    (``usable`` and ``model`` when the caller has worked them out already)."""
+    usable = usable or _usable(reader, actor, entry)
     names = [tool_name(kind, e.name) for kind in KINDS for e in usable[kind]]
-    return [*names, LOOKUP] if _lookup_refs(reader, actor, entry, usable) else names
+    return [*names, LOOKUP] if _lookup_refs(reader, actor, entry, usable, model) else names
 
 
 def _integer(
@@ -287,19 +299,21 @@ def call(
     if expect_hash is not None and found.allowed:  # one the caller may not use is refused below
         obligations = reader.reason_obligations(actor, entry) if kind == ACTION else frozenset()
         model = reader.visible_model(actor, entry)
-        # the other kinds only when they decide whether the lookup tool is listed (and so what
-        # the tool says of its references), or type the rows of a view
-        every = reader.may(actor, entry, "read.find")
         none: tuple[Any, ...] = ()
         parts = {k: none for k in KINDS}
-        for part in KINDS:
-            if every or part == kind or (kind == VIEW and part == FUNCTION):
-                parts[part] = tuple(
-                    allowed_entries(
-                        seen if part == kind else _classified(reader, actor, entry, part)
-                    )
-                )
-        refs = lookup_refs(model, parts[FUNCTION], parts[ACTION], parts[VIEW], find=every)
+        parts[kind] = tuple(allowed_entries(seen))
+        if kind == VIEW:  # the rows sections of a view are typed by the functions it runs
+            parts[FUNCTION] = tuple(allowed_entries(_classified(reader, actor, entry, FUNCTION)))
+        # What the manifest says of a tool's references depends only on read.find and on whether
+        # the tool has a servable one itself (then the lookup tool is listed whatever else
+        # there is), so the entry of this tool alone gives the same flag as every entry.
+        own = {
+            k: tuple(e for e in parts[k] if e.name == found.name) if k == kind else none
+            for k in KINDS
+        }
+        refs = lookup_refs(
+            model, own[FUNCTION], own[ACTION], own[VIEW], find=reader.may(actor, entry, "read.find")
+        )
         (head,) = heads(
             model, parts[FUNCTION], parts[ACTION], parts[VIEW], obligations, only=tool, refs=refs
         )
@@ -338,7 +352,7 @@ def _lookup(
     model = reader.visible_model(actor, entry)
     refs = ref_inputs(model, usable[FUNCTION], usable[ACTION], usable[VIEW])
     if not refs:
-        problem = missing_tools([LOOKUP], _usable_names(reader, actor, entry))
+        problem = missing_tools([LOOKUP], _usable_names(reader, actor, entry, usable, model))
         assert problem is not None
         raise problem
     services(state).usage.ran = RAN[LOOKUP]
@@ -361,7 +375,10 @@ def _lookup(
     view = open_graph(state, graph, "read.find", "lookup", args, None, via=VIA_CALL)
     spec = LookupSpec(text=texts[0], limit=limit)
     data, page = reader.lookup(view, spec, texts, for_use=slot.lookup_for)
-    return Result(data={**data, "page": page.to_json()}, graph=view.envelope_graph())
+    fit = data["fit"]
+    assert isinstance(fit, dict)  # a lookup for a slot always has one
+    data = {**data, "fit": {**fit, "for": slot.value}, "page": page.to_json()}  # the slot as asked
+    return Result(data=data, graph=view.envelope_graph())
 
 
 def _lookup_input(
@@ -523,9 +540,14 @@ CALL_OUTPUT: Final = one_of(RUN_PAGE_OUTPUT, DO_OUTPUT, VIEW_OUTPUT, LOOKUP_PAGE
 _ERRORS: Final = tuple(
     sorted(
         (
-            {*RUN_ERRORS, *DO_ERRORS, *VIEW_ERRORS, *LOOKUP_ERRORS, *CALL_ERRORS}
+            {
+                *RUN_ERRORS,
+                *DO_ERRORS,
+                *VIEW_ERRORS,
+                *(set(LOOKUP_ERRORS) - NOT_FOR_LOOKUP),  # not what only the other tools get
+                *CALL_ERRORS,
+            }
             - NOT_FOR_TOOLS
-            - NOT_FOR_LOOKUP
         )
         | {"graph.not_selected"}
     )
@@ -592,9 +614,10 @@ SPECS: Final = (
                 "Show an entity, only if the tool is still the one the manifest described.",
             ),
             Example(
-                "graph call --input text='\"<value>\"' --input for='\"<name>.<param>\"' lookup "
-                "--json",
-                "Find the entity a name stands for, to give a tool as a reference.",
+                "graph call <name> --input text='\"<value>\"' "
+                "--input for='\"run_<function>.<param>\"' --json",
+                "Run the lookup tool, named lookup: find the entity a name stands for, for a "
+                "reference input of another tool.",
             ),
         ),
         errors=_ERRORS,

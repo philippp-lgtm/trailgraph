@@ -338,7 +338,8 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
         look = ("call", "lookup", "--input", 'text="x"', *for_place)
         call(*look)
         call(*look, "--input", "limit=1")
-        call(*look, "--expect-hash", tools["lookup"]["hash"])
+        # the first release of the ontology has no name to look up: there is no such tool here
+        call(*look, "--expect-hash", tools.get("lookup", {"hash": "sha256:" + "1" * 64})["hash"])
         call(*look, "--expect-hash", "sha256:" + "0" * 64)
         call(*look, "--idempotency-key", "k-read")  # a read takes no key
         call("call", "lookup", "--input", 'text="x"', "--input", 'for="run_nothing.x"')

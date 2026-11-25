@@ -9,7 +9,7 @@
     "version": "1.0.0"
   },
   "tools_format": 1,
-  "version": "sha256:c6a8a5229fe797152b3f6eac66f3103f8f939e361d0e0f32fc154a077f5f3e01",
+  "version": "sha256:a6f623395ff8289db7030ef71c55eaa81197388031b30b8875782610ed98f710",
   "tools": [
     {
       "name": "run_colleague_names",
@@ -804,11 +804,11 @@
         "internal.error",
         "ontology.artifact_missing",
         "remote.unauthorized",
-        "term.no_labels",
         "tool.hash_mismatch",
         "tool.not_found",
         "usage.invalid_argument",
-        "usage.invalid_input"
+        "usage.invalid_input",
+        "usage.missing_argument"
       ]
     }
   ],
@@ -1035,12 +1035,6 @@
       "summary": "An installed skill is older than what it describes.",
       "on_error": "stop"
     },
-    "term.no_labels": {
-      "category": "refused",
-      "retryable": false,
-      "summary": "The requested types have no label roles.",
-      "on_error": "stop"
-    },
     "tool.hash_mismatch": {
       "category": "conflict",
       "retryable": false,
@@ -1063,6 +1057,12 @@
       "category": "usage",
       "retryable": false,
       "summary": "Input is not valid JSON, JSONL or UTF-8.",
+      "on_error": "fix_input"
+    },
+    "usage.missing_argument": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "A required argument is missing.",
       "on_error": "fix_input"
     },
     "write.invalid": {

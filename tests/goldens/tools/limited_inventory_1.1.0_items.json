@@ -1,0 +1,1102 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "inventory",
+    "version": "1.1.0"
+  },
+  "tools_format": 1,
+  "version": "sha256:f295403a56cd7210a76d8ed005c65f2612cce3ac50cf6a0fbdabeb662ce4c55e",
+  "tools": [
+    {
+      "name": "run_items_by_condition",
+      "kind": "function",
+      "entry": "items_by_condition",
+      "description": "Items in a given physical condition.\n\nUse when: Which items are worn or damaged; a list of items by condition.\n\nExamples:\n- Which items are damaged? Arguments: {\"condition\": \"damaged\"}",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "condition": {
+            "type": "string",
+            "enum": [
+              "new",
+              "good",
+              "worn",
+              "damaged",
+              "refurbished"
+            ],
+            "description": "The condition to look for. Values: new - Unused.; good - Used, fully functional.; worn - Visible wear, still functional.; damaged - Not safe or not able to be used.; refurbished - Repaired to working order.."
+          },
+          "_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page, at most 500.",
+            "default": 50
+          },
+          "_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip; the next page starts at page.next_offset.",
+            "default": 0
+          }
+        },
+        "required": [
+          "condition"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "hash"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Name of the item."
+                },
+                "condition": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "new",
+                        "good",
+                        "worn",
+                        "damaged",
+                        "refurbished"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The condition, as asked for."
+                }
+              },
+              "required": [
+                "item",
+                "condition"
+              ]
+            }
+          },
+          "page": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "shown": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "offset": {
+                "type": "integer"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "next_offset": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "total",
+              "shown",
+              "limit",
+              "offset",
+              "truncated",
+              "next_offset"
+            ]
+          }
+        },
+        "required": [
+          "function",
+          "columns",
+          "items",
+          "page"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": "offset"
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": false,
+      "module": "inventory",
+      "hash": "sha256:c0031db8633ee83c8b30a6bfb191d5ed89dce81ff8664584baf38107032ca379",
+      "entry_hash": "sha256:00a7623e4213609e4cc7f002f8eff51f8ae659792628d94822fc201f0786e8fa",
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "function.parameter_invalid",
+        "function.parameter_missing",
+        "function.parameter_type",
+        "function.parameter_unknown",
+        "function.stale",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "query.invalid_value",
+        "query.too_large",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input"
+      ]
+    },
+    {
+      "name": "do_retire_item",
+      "kind": "action",
+      "entry": "retire_item",
+      "description": "Take an item out of service for good.\n\nUse when: An item is scrapped, written off or taken out of service.\n\nExamples:\n- The old label printer is scrapped.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "item": {
+            "type": "string",
+            "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+            "x-graph-cli": {
+              "class": "inv:Item"
+            },
+            "description": "The item to retire. An entity of class inv:Item: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'do_retire_item.item')."
+          },
+          "_reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "\\S",
+            "description": "Why this change is made; recorded in the audit trail. Required for this action."
+          },
+          "_dry_run": {
+            "type": "boolean",
+            "description": "Check the preconditions and report what would change; nothing is written.",
+            "default": false
+          }
+        },
+        "required": [
+          "item",
+          "_reason"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "tx_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "idempotent_replay": {
+            "type": "boolean"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "entity_count": {
+            "type": "integer"
+          },
+          "entities": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "alias": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "rev": {
+                      "type": "integer"
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "ops": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "local": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "changed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "alias",
+                    "rev",
+                    "type",
+                    "ops",
+                    "local",
+                    "changed"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "code": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "message": {
+                  "type": "string"
+                },
+                "expected": {},
+                "actual": {},
+                "rule_id": {
+                  "type": "string"
+                },
+                "hint": {
+                  "type": "string"
+                },
+                "connecting": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "severity",
+                "code",
+                "target",
+                "message"
+              ]
+            }
+          },
+          "action": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "hash"
+            ]
+          }
+        },
+        "required": [
+          "tx_id",
+          "seq",
+          "event_id",
+          "dry_run",
+          "idempotent_replay",
+          "id",
+          "version",
+          "entity_count",
+          "entities",
+          "findings",
+          "action"
+        ]
+      },
+      "annotations": {
+        "read_only": false,
+        "dry_run": true,
+        "reason": "required",
+        "paging": null
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": false,
+      "module": "inventory",
+      "hash": "sha256:ab9c55154c5611cbba2240c82818b4ee77e47d9ac7fd59cb1ea9a94d693f221c",
+      "entry_hash": "sha256:7d89cfa6b5808e64c1f3ec54f5610aa59f4f320d45b792096b82e328ce5beb1c",
+      "errors": [
+        "access.batch_too_large",
+        "access.denied",
+        "access.reason_required",
+        "action.nothing_to_do",
+        "action.parameter_invalid",
+        "action.parameter_missing",
+        "action.parameter_type",
+        "action.parameter_unknown",
+        "action.precondition_failed",
+        "action.reason_required",
+        "action.stale",
+        "actions.slot_invalid",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "changeset.too_large",
+        "config.forbidden_key",
+        "config.invalid",
+        "conflict.idempotency_key_reuse",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.archived",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.readonly",
+        "internal.error",
+        "ontology.artifact_missing",
+        "ontology.pin_mismatch",
+        "remote.unauthorized",
+        "skills.outdated",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input",
+        "write.invalid",
+        "write.migration_incomplete"
+      ]
+    },
+    {
+      "name": "lookup",
+      "kind": "lookup",
+      "entry": null,
+      "description": "Find the entities that go by a name, to fill a reference input of another tool.\n\nUse when: you know the name of an entity where a tool needs a reference. Names are matched whole, ignoring case, against main, alternative and hidden names; each name gets its candidates ranked, best first, and only those of the class that the input in for takes (matches of other classes are counted in texts[].excluded). Pass the id or alias of a candidate as the reference, never a guess: when a name has several candidates, facts tell them apart.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
+                "minItems": 1,
+                "maxItems": 50
+              }
+            ],
+            "description": "A name, or a list of at most 50 names, each looked up on its own."
+          },
+          "for": {
+            "type": "string",
+            "enum": [
+              "do_retire_item.item"
+            ],
+            "description": "The input the entity is for, as <tool>.<input> (<tool>._entity for the entity of an entity view): only candidates of the class that input takes are listed."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Candidates per name, at most 500.",
+            "default": 50
+          }
+        },
+        "required": [
+          "text",
+          "for"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "alias": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": {
+                  "type": "string"
+                },
+                "record_status": {
+                  "type": "string"
+                },
+                "label": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "match": {
+                  "type": "object",
+                  "properties": {
+                    "attr": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "label",
+                        "alt_label",
+                        "hidden_label"
+                      ]
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "lang": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "value": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "attr",
+                    "role",
+                    "kind",
+                    "lang",
+                    "value"
+                  ]
+                },
+                "facts": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rel": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "alias": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "label": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "rel",
+                          "id",
+                          "alias",
+                          "label"
+                        ]
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "text",
+                "id",
+                "alias",
+                "type",
+                "record_status",
+                "label",
+                "match",
+                "facts"
+              ]
+            }
+          },
+          "texts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "exact": {
+                  "type": "integer"
+                },
+                "excluded": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "text",
+                "total",
+                "exact",
+                "excluded"
+              ]
+            }
+          },
+          "fit": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "for": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "for_source": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "types": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "for",
+                  "for_source",
+                  "types"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "shown": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "offset": {
+                "type": "integer"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "next_offset": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "total",
+              "shown",
+              "limit",
+              "offset",
+              "truncated",
+              "next_offset"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "texts",
+          "fit",
+          "page"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": null
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": false,
+      "module": null,
+      "hash": "sha256:9b9fcc6ad7f0b2162d836a0a7b806069409ea19ab098269e0feebb423b51bb4b",
+      "entry_hash": null,
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input",
+        "usage.missing_argument"
+      ]
+    }
+  ],
+  "errors": {
+    "access.batch_too_large": {
+      "category": "denied",
+      "retryable": false,
+      "summary": "The batch exceeds the permitted size.",
+      "on_error": "stop"
+    },
+    "access.denied": {
+      "category": "denied",
+      "retryable": false,
+      "summary": "The action is not permitted.",
+      "on_error": "stop"
+    },
+    "access.reason_required": {
+      "category": "denied",
+      "retryable": false,
+      "summary": "The action requires a reason.",
+      "on_error": "fix_input"
+    },
+    "action.nothing_to_do": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "The action expands to no op in the current state.",
+      "on_error": "check_state"
+    },
+    "action.parameter_invalid": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "An action parameter value does not fit its declared type.",
+      "on_error": "fix_input"
+    },
+    "action.parameter_missing": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "An action parameter has no value.",
+      "on_error": "fix_input"
+    },
+    "action.parameter_type": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "A reference parameter names an entity of the wrong class.",
+      "on_error": "fix_input"
+    },
+    "action.parameter_unknown": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "The action has no such parameter.",
+      "on_error": "fix_input"
+    },
+    "action.precondition_failed": {
+      "category": "invalid",
+      "retryable": false,
+      "summary": "A precondition of the action does not hold in the current state.",
+      "on_error": "check_state"
+    },
+    "action.reason_required": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "The action demands a reason and none was given.",
+      "on_error": "fix_input"
+    },
+    "action.stale": {
+      "category": "invalid",
+      "retryable": false,
+      "summary": "An action no longer compiles against the graph's ontology.",
+      "on_error": "stop"
+    },
+    "actions.slot_invalid": {
+      "category": "invalid",
+      "retryable": false,
+      "summary": "The published action catalog is invalid.",
+      "on_error": "stop"
+    },
+    "audit.unavailable": {
+      "category": "unavailable",
+      "retryable": true,
+      "summary": "The audit log could not be written.",
+      "on_error": "retry"
+    },
+    "backend.corrupt": {
+      "category": "unavailable",
+      "retryable": false,
+      "summary": "The transaction log is damaged.",
+      "on_error": "stop"
+    },
+    "backend.lock_timeout": {
+      "category": "unavailable",
+      "retryable": true,
+      "summary": "The graph lock was not acquired.",
+      "on_error": "retry"
+    },
+    "changeset.too_large": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "The change set exceeds the size limits.",
+      "on_error": "stop"
+    },
+    "config.forbidden_key": {
+      "category": "unavailable",
+      "retryable": false,
+      "summary": "A configuration key is not allowed.",
+      "on_error": "stop"
+    },
+    "config.invalid": {
+      "category": "unavailable",
+      "retryable": false,
+      "summary": "The configuration is invalid.",
+      "on_error": "stop"
+    },
+    "conflict.idempotency_key_reuse": {
+      "category": "conflict",
+      "retryable": false,
+      "summary": "Key reused, content differs.",
+      "on_error": "stop"
+    },
+    "entity.ambiguous_ref": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "The reference matches several entities.",
+      "on_error": "fix_input"
+    },
+    "entity.not_found": {
+      "category": "not_found",
+      "retryable": false,
+      "summary": "The entity does not exist.",
+      "on_error": "fix_input"
+    },
+    "function.parameter_invalid": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "A function parameter value does not fit its declared type.",
+      "on_error": "fix_input"
+    },
+    "function.parameter_missing": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "A function parameter has no value.",
+      "on_error": "fix_input"
+    },
+    "function.parameter_type": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "A reference parameter names an entity of the wrong class.",
+      "on_error": "fix_input"
+    },
+    "function.parameter_unknown": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "The function has no such parameter.",
+      "on_error": "fix_input"
+    },
+    "function.stale": {
+      "category": "invalid",
+      "retryable": false,
+      "summary": "A function no longer resolves against the graph's ontology.",
+      "on_error": "stop"
+    },
+    "graph.archived": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "The graph is archived.",
+      "on_error": "stop"
+    },
+    "graph.not_found": {
+      "category": "not_found",
+      "retryable": false,
+      "summary": "The graph does not exist.",
+      "on_error": "stop"
+    },
+    "graph.not_in_project": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "The graph is not allowed here.",
+      "on_error": "stop"
+    },
+    "graph.readonly": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "The graph is read-only.",
+      "on_error": "stop"
+    },
+    "internal.error": {
+      "category": "internal",
+      "retryable": false,
+      "summary": "Internal error.",
+      "on_error": "stop"
+    },
+    "ontology.artifact_missing": {
+      "category": "unavailable",
+      "retryable": false,
+      "summary": "Ontology release is missing.",
+      "on_error": "stop"
+    },
+    "ontology.pin_mismatch": {
+      "category": "unavailable",
+      "retryable": false,
+      "summary": "Ontology artifact hash differs.",
+      "on_error": "stop"
+    },
+    "query.invalid_value": {
+      "category": "invalid",
+      "retryable": false,
+      "summary": "A query value has the wrong type or cannot be computed.",
+      "on_error": "fix_input"
+    },
+    "query.too_large": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "The query produces too many rows.",
+      "on_error": "fix_input"
+    },
+    "remote.unauthorized": {
+      "category": "denied",
+      "retryable": false,
+      "summary": "The server refused the token.",
+      "on_error": "stop"
+    },
+    "skills.outdated": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "An installed skill is older than what it describes.",
+      "on_error": "stop"
+    },
+    "tool.hash_mismatch": {
+      "category": "conflict",
+      "retryable": false,
+      "summary": "The tool is not the one the caller built its definition from.",
+      "on_error": "refresh"
+    },
+    "tool.not_found": {
+      "category": "not_found",
+      "retryable": false,
+      "summary": "The graph has no such tool for this caller.",
+      "on_error": "refresh"
+    },
+    "usage.invalid_argument": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "An argument has an invalid value.",
+      "on_error": "fix_input"
+    },
+    "usage.invalid_input": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "Input is not valid JSON, JSONL or UTF-8.",
+      "on_error": "fix_input"
+    },
+    "usage.missing_argument": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "A required argument is missing.",
+      "on_error": "fix_input"
+    },
+    "write.invalid": {
+      "category": "invalid",
+      "retryable": false,
+      "summary": "The write violates the ontology.",
+      "on_error": "fix_input"
+    },
+    "write.migration_incomplete": {
+      "category": "unavailable",
+      "retryable": true,
+      "summary": "A data migration is committed but not pinned yet; writes wait.",
+      "on_error": "retry"
+    }
+  }
+}

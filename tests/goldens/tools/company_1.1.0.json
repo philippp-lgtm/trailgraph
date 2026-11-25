@@ -9,7 +9,7 @@
     "version": "1.1.0"
   },
   "tools_format": 1,
-  "version": "sha256:d37559a7b7c070808fa40f2e3b98909be5e4acfe1e7a8796aca2c0ac9ce5dec6",
+  "version": "sha256:ae51d891dda499c68f7f106e051d948a393fbb617c8ef6797033b9680bc9d8e1",
   "tools": [
     {
       "name": "run_employer_of",
@@ -6851,11 +6851,11 @@
         "internal.error",
         "ontology.artifact_missing",
         "remote.unauthorized",
-        "term.no_labels",
         "tool.hash_mismatch",
         "tool.not_found",
         "usage.invalid_argument",
-        "usage.invalid_input"
+        "usage.invalid_input",
+        "usage.missing_argument"
       ]
     }
   ],
@@ -7080,12 +7080,6 @@
       "category": "refused",
       "retryable": false,
       "summary": "An installed skill is older than what it describes.",
-      "on_error": "stop"
-    },
-    "term.no_labels": {
-      "category": "refused",
-      "retryable": false,
-      "summary": "The requested types have no label roles.",
       "on_error": "stop"
     },
     "tool.hash_mismatch": {

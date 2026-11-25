@@ -210,8 +210,8 @@
           "summary": "Show an entity, only if the tool is still the one the manifest described."
         },
         {
-          "command": "graph call --input text='\"<value>\"' --input for='\"<name>.<param>\"' lookup --json",
-          "summary": "Find the entity a name stands for, to give a tool as a reference."
+          "command": "graph call <name> --input text='\"<value>\"' --input for='\"run_<function>.<param>\"' --json",
+          "summary": "Run the lookup tool, named lookup: find the entity a name stands for, for a reference input of another tool."
         }
       ],
       "errors": [
@@ -223,6 +223,7 @@
         "action.parameter_invalid",
         "action.parameter_missing",
         "action.parameter_type",
+        "action.parameter_unknown",
         "action.precondition_failed",
         "action.reason_required",
         "action.stale",
@@ -240,6 +241,7 @@
         "function.parameter_invalid",
         "function.parameter_missing",
         "function.parameter_type",
+        "function.parameter_unknown",
         "function.stale",
         "graph.archived",
         "graph.not_found",
@@ -257,7 +259,6 @@
         "remote.unauthorized",
         "remote.unreachable",
         "skills.outdated",
-        "term.no_labels",
         "tool.hash_mismatch",
         "tool.not_found",
         "usage.invalid_argument",
@@ -268,6 +269,7 @@
         "view.parameter_invalid",
         "view.parameter_missing",
         "view.parameter_type",
+        "view.parameter_unknown",
         "view.stale",
         "write.invalid",
         "write.migration_incomplete"

@@ -20,7 +20,9 @@ from graph_cli.services import describe_tools as dt
 from graph_cli.services.tool_errors import on_error
 
 COMPANY = tools.company()
-INVENTORY = tools.inventory()
+# the release in which items have a label and locations have none; the first has no label at all
+INVENTORY = tools.inventory(version="1.1.0")
+UNNAMED = tools.inventory()
 STAFF = tools.staff()
 NO_OBLIGATIONS: frozenset[str] = frozenset()
 
@@ -52,27 +54,40 @@ def slots(tool: dict[str, Any]) -> list[str]:
     return found
 
 
-def has_class(node: Any) -> bool:
-    """Whether a property schema is one of a reference (it names its class, however it is
-    wrapped: a list, a nullable value)."""
+def class_of(node: Any) -> str | None:
+    """The class a property schema of a reference names, however it is wrapped (a list, a
+    nullable value); ``None`` for any other property."""
     if isinstance(node, list):
-        return any(has_class(item) for item in node)
+        return next((c for c in map(class_of, node) if c), None)
     if not isinstance(node, dict):
-        return False
+        return None
     extension = node.get("x-graph-cli")
-    return (isinstance(extension, dict) and "class" in extension) or any(
-        has_class(v) for v in node.values()
-    )
+    if isinstance(extension, dict) and isinstance(extension.get("class"), str):
+        return str(extension["class"])
+    return next((c for c in map(class_of, node.values()) if c), None)
 
 
-def ref_inputs_of(document: dict[str, Any]) -> list[str]:
-    """``<tool>.<property>`` of every reference input of the tools of the document."""
+def ref_inputs_of(document: dict[str, Any], scene: Scene) -> list[str]:
+    """``<tool>.<property>`` of every reference input of the tools of the document whose class
+    has a name to look up (the slots the tool should serve)."""
+    model = scene.model
     return [
         f"{t['name']}.{name}"
         for t in document["tools"]
         if t["kind"] != "lookup"
         for name, schema in t["input_schema"]["properties"].items()
-        if has_class(schema)
+        if (cls := class_of(schema)) in model.classes
+        and any(model.label_attributes(c) for c in model.subtypes(cls))
+    ]
+
+
+def all_ref_inputs_of(document: dict[str, Any]) -> list[str]:
+    return [
+        f"{t['name']}.{name}"
+        for t in document["tools"]
+        if t["kind"] != "lookup"
+        for name, schema in t["input_schema"]["properties"].items()
+        if class_of(schema)
     ]
 
 
@@ -84,14 +99,17 @@ def test_the_lookup_tool_comes_last_and_serves_every_reference_input() -> None:
         document = manifest(catalog.scene())
         assert [t["name"] for t in document["tools"]][-1] == "lookup"
         assert [t["kind"] for t in document["tools"]].count("lookup") == 1
-        assert slots(lookup_of(document)) == ref_inputs_of(document)
+        assert slots(lookup_of(document)) == ref_inputs_of(document, catalog.scene())
         assert slots(lookup_of(document))  # the example graphs all have some
+    # references of a class without a name are left out
+    leaving = manifest(INVENTORY.scene())
+    assert set(slots(lookup_of(leaving))) < set(all_ref_inputs_of(leaving))
 
 
 def test_a_caller_without_read_find_gets_no_lookup_tool() -> None:
     document = manifest(COMPANY.scene(), find=False)
     assert "lookup" not in by_name(document)
-    assert ref_inputs_of(document)  # the references stay: the caller has the ids already
+    assert all_ref_inputs_of(document)  # the references stay: the caller has the ids already
     assert [t["kind"] for t in document["tools"]] == [
         t["kind"] for t in manifest(COMPANY.scene())["tools"] if t["kind"] != "lookup"
     ]
@@ -103,7 +121,7 @@ def test_no_reference_input_no_lookup_tool() -> None:
     scene = replace(COMPANY.scene(), functions=plain, actions=(), views=())
     document = manifest(scene)
     assert "lookup" not in by_name(document) and document["tools"]
-    assert ref_inputs_of(document) == []
+    assert all_ref_inputs_of(document) == []
     assert manifest(replace(scene, functions=(), views=()))["tools"] == []  # nothing at all
 
 
@@ -114,11 +132,54 @@ def test_the_lookup_tool_is_listed_for_one_entity_view_alone() -> None:
 
 
 def test_a_tool_the_caller_may_not_use_adds_no_slot() -> None:
-    scene = INVENTORY.scene()
+    scene = COMPANY.scene()
     full = slots(lookup_of(manifest(scene)))
-    assert {"do_move_item.item", "view_location_overview._entity"} <= set(full)
+    assert {"do_assign_position.person", "view_unit_overview._entity"} <= set(full)
     functions_only = replace(scene, actions=(), views=())  # what a caller without them is given
-    assert slots(lookup_of(manifest(functions_only))) == ["run_items_in_location.location"]
+    only = slots(lookup_of(manifest(functions_only)))
+    assert only and all(s.startswith("run_") for s in only) and set(only) < set(full)
+
+
+def test_a_class_without_a_name_to_look_up_is_no_slot() -> None:
+    """Items have a label in this release, locations have none: a lookup for a location could
+    find nothing, so no tool offers it and no description sends the model to the lookup tool."""
+    document = manifest(INVENTORY.scene())
+    assert slots(lookup_of(document)) == ["do_move_item.item", "do_retire_item.item"]
+    tool = by_name(document)["run_items_in_location"]
+    assert "lookup" not in json.dumps(tool["input_schema"])
+    assert "looked up first." in json.dumps(tool["input_schema"]["properties"]["location"])
+    entity = by_name(document)["view_location_overview"]
+    assert "lookup" not in json.dumps(entity["input_schema"])
+    # nothing has a name in the first release: no lookup tool at all, every reference is an id
+    bare = manifest(UNNAMED.scene())
+    assert "lookup" not in by_name(bare) and "lookup" not in json.dumps(bare["tools"])
+    assert (
+        tm.lookup_refs(UNNAMED.model, UNNAMED.functions, UNNAMED.actions, UNNAMED.views, find=True)
+        == ()
+    )
+
+
+def test_a_class_is_served_by_the_label_of_a_subclass() -> None:
+    """The candidates of a slot are the class and its subclasses: a parent without a label of its
+    own is served by the names of its subclasses (effective attributes are copied down)."""
+    model = COMPANY.model
+    base = "org:OrgUnit"
+    assert model.label_attributes(base) and len(model.subtypes(base)) > 1
+    stripped = replace(
+        model.classes[base],
+        attributes={n: a for n, a in model.classes[base].attributes.items() if a.role is None},
+    )
+    parent_bare = replace(model, classes={**model.classes, base: stripped})
+    assert not parent_bare.label_attributes(base)
+    assert dt.lookup_slot(parent_bare, dt.ref_type("unit", "", base))
+    # a class and subclasses that all lack a name: not a slot
+    nameless = {
+        name: replace(
+            found, attributes={n: a for n, a in found.attributes.items() if a.role is None}
+        )
+        for name, found in model.classes.items()
+    }
+    assert not dt.lookup_slot(replace(model, classes=nameless), dt.ref_type("unit", "", base))
 
 
 @pytest.mark.doc_claim("security_model.tool_manifest_per_caller")
@@ -136,19 +197,19 @@ def test_the_slots_of_a_reader_without_markings_name_no_marked_attribute() -> No
     text = json.dumps(document)
     for word in ("salary", "badge_code", "PayGrade", "pay_grade", "stf:pay", "email"):
         assert word not in text, word
-    assert slots(lookup_of(document)) == ref_inputs_of(document)
-    assert slots(lookup_of(manifest(STAFF.reader(held=PERSONAL)))) == ref_inputs_of(
-        manifest(STAFF.reader(held=PERSONAL))
-    )
+    assert slots(lookup_of(document)) == ref_inputs_of(document, STAFF.reader(held=NOTHING))
+    personal = STAFF.reader(held=PERSONAL)
+    assert slots(lookup_of(manifest(personal))) == ref_inputs_of(manifest(personal), personal)
 
 
 def test_a_class_the_model_lost_is_no_slot() -> None:
-    scene = INVENTORY.scene()
-    without = {k: v for k, v in scene.model.classes.items() if k != "inv:Location"}
+    scene = COMPANY.scene()
+    without = {k: v for k, v in scene.model.classes.items() if k != "org:Department"}
     stale = replace(scene, model=replace(scene.model, classes=without))
     left = slots(lookup_of(manifest(stale)))
-    assert left and not [s for s in left if s.endswith(".location") or "location_overview" in s]
-    assert "do_move_item.item" in left
+    assert "view_members_report.unit" in slots(lookup_of(manifest(scene)))
+    assert left
+    assert "view_members_report.unit" not in left and "do_assign_position.person" in left
 
 
 # ---- what it says -------------------------------------------------------------------------
@@ -229,11 +290,13 @@ def test_the_errors_of_the_lookup_tool() -> None:
     document = manifest(COMPANY.scene())
     codes = lookup_of(document)["errors"]
     assert codes == sorted(codes) == list(tm.tool_errors("lookup"))
-    assert {"tool.not_found", "tool.hash_mismatch", "access.denied", "term.no_labels"} <= set(codes)
+    assert {"tool.not_found", "tool.hash_mismatch", "access.denied"} <= set(codes)
     assert {"usage.invalid_argument", "usage.invalid_input", "internal.error"} <= set(codes)
+    assert "usage.missing_argument" in codes  # a missing text or for
     # the codes a lookup tool cannot get: it names no type or relation, its slot is an enum
     for never in (
         "term.unknown",
+        "term.no_labels",  # every slot has a name to look up
         "query.ambiguous_term",
         "view.parameter_unknown",
         "graph.not_selected",
@@ -333,19 +396,22 @@ def test_the_lookup_head_alone_types_no_function(monkeypatch: pytest.MonkeyPatch
 
 
 def test_a_slot_is_a_tool_property_and_maps_to_a_kind_qualified_lookup_for() -> None:
-    scene = INVENTORY.scene()
+    scene = COMPANY.scene()
     found = {
         r.value: r for r in dt.ref_inputs(scene.model, scene.functions, scene.actions, scene.views)
     }
-    assert (
-        found["run_items_in_location.location"].lookup_for == "function:items_in_location.location"
+    assert found["run_members_of_unit.unit"].lookup_for == "function:members_of_unit.unit"
+    assert found["view_members_report.unit"].lookup_for == "view:members_report.unit"
+    assert found["view_unit_overview._entity"].lookup_for == "view:unit_overview._entity"
+    assert found["do_assign_position.person"].lookup_for == "action:assign_position.person"
+    assert found["view_unit_overview._entity"].of_class == "org:OrgUnit"
+    # a view may share its name with a function: two tools, two slots, two forms
+    clash = (
+        dt.RefInput("function", "x", "run_x", "p", "c"),
+        dt.RefInput("view", "x", "view_x", "p", "c"),
     )
-    assert found["view_items_in_location.location"].lookup_for == "view:items_in_location.location"
-    assert found["view_location_overview._entity"].lookup_for == "view:location_overview._entity"
-    assert found["do_move_item.item"].lookup_for == "action:move_item.item"
-    assert found["view_location_overview._entity"].of_class == "inv:Location"
-    # a view and the function it runs have one name and two slots
-    assert {"run_items_in_location.location", "view_items_in_location.location"} <= set(found)
+    assert [r.value for r in clash] == ["run_x.p", "view_x.p"]
+    assert [r.lookup_for for r in clash] == ["function:x.p", "view:x.p"]
 
 
 def test_the_slots_follow_the_order_of_the_manifest() -> None:

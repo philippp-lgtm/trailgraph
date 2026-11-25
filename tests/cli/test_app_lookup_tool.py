@@ -16,7 +16,7 @@ from harness import CliRunner
 from jsonschema import Draft202012Validator
 from support.admin import Outcome, admin, init
 from support.app import app, create_graph
-from support.fixtures import EXAMPLES
+from support.fixtures import EXAMPLES, FIXTURES
 from support.functions import VALID as FUNCTION_FIXTURES
 from support.lookup_graph import ENV, EXPLORE, NAME, build
 from support.output_schemas import closed
@@ -105,9 +105,11 @@ def test_every_slot_of_the_enum_is_looked_up_like_the_command_does(
         assert tool.code == 0, (slot, tool.envelope)
         command = app(run_cli, "lookup", NAME, "--for", qualified(slot), env=ENV)
         assert command.code == 0, (slot, command.envelope)
-        assert tool.data == {**command.data, "page": command.envelope["page"]}, slot
+        # the answer names the slot as the tool does; the rest is the answer of the command
+        fit = {**command.data["fit"], "for": slot}
+        assert tool.data == {**command.data, "fit": fit, "page": command.envelope["page"]}, slot
         assert tool.envelope["graph"] == command.envelope["graph"]
-        assert "page" not in tool.envelope and tool.data["fit"]["for"] == qualified(slot)
+        assert "page" not in tool.envelope and command.data["fit"]["for"] == qualified(slot)
 
 
 def test_a_slot_of_a_view_fits_the_class_the_view_takes(run_cli: CliRunner, root: Path) -> None:
@@ -178,12 +180,17 @@ def test_several_names_a_limit_and_null_are_read_like_the_command(
 # ---- refusals ------------------------------------------------------------------------------
 
 
-def code_of(outcome: Outcome) -> tuple[int, str]:
-    return outcome.code, outcome.error["code"]
+def code_of(outcome: Outcome, listed: list[str] | None = None) -> tuple[int, str]:
+    """Exit code and error code of a refusal; with ``listed`` (the ``errors`` of the tool in the
+    manifest) the code must be one the manifest says the tool may return."""
+    code = outcome.error["code"]
+    assert listed is None or code in listed, (code, listed)
+    return outcome.code, code
 
 
 def test_the_input_is_checked(run_cli: CliRunner, root: Path) -> None:
     slot = "run_members_of_unit.unit"
+    listed = manifest(run_cli)["lookup"]["errors"]
     missing = {
         "no text": [f"for={j(slot)}"],
         "null text": ["text=null", f"for={j(slot)}"],
@@ -192,7 +199,7 @@ def test_the_input_is_checked(run_cli: CliRunner, root: Path) -> None:
     }
     for label, given in missing.items():
         refused = call(run_cli, *given)
-        assert code_of(refused) == (2, "usage.missing_argument"), label
+        assert code_of(refused, listed) == (2, "usage.missing_argument"), label
         assert refused.error["details"]["argument"] in ("text", "for"), label
     wrong = {
         "text": [
@@ -214,19 +221,23 @@ def test_the_input_is_checked(run_cli: CliRunner, root: Path) -> None:
         for value in values:
             given = [f"for={j(slot)}"] + ([f"text={j(NAME)}"] if argument != "text" else [])
             refused = call(run_cli, value, *given)
-            assert code_of(refused) == (2, "usage.invalid_argument"), value
+            assert code_of(refused, listed) == (2, "usage.invalid_argument"), value
             assert refused.error["details"]["argument"] == argument, value
     unknown = call(run_cli, f"text={j(NAME)}", f"for={j(slot)}", "offset=1")
-    assert code_of(unknown) == (2, "usage.invalid_argument")
+    assert code_of(unknown, listed) == (2, "usage.invalid_argument")
     assert unknown.error["details"]["expected"] == ["text", "for", "limit"]
     control = call(run_cli, f"text={j(NAME)}", f"for={j(slot)}", "_limit=1")
-    assert code_of(control) == (2, "usage.invalid_argument")
-    assert code_of(call(run_cli, "text")) == (2, "usage.invalid_argument")  # not NAME=<json>
+    assert code_of(control, listed) == (2, "usage.invalid_argument")
+    assert code_of(call(run_cli, "text"), listed) == (
+        2,
+        "usage.invalid_argument",
+    )  # not NAME=<json>
 
 
 def test_a_slot_that_is_none_is_refused_with_the_close_ones(run_cli: CliRunner, root: Path) -> None:
+    listed = manifest(run_cli)["lookup"]["errors"]
     close = find(run_cli, "run_members_of_unt.unit", NAME)
-    assert code_of(close) == (2, "usage.invalid_argument")
+    assert code_of(close, listed) == (2, "usage.invalid_argument")
     assert close.error["details"]["did_you_mean"][0] == "run_members_of_unit.unit"
     for bad in (
         "members_of_unit.unit",  # not a tool
@@ -240,10 +251,10 @@ def test_a_slot_that_is_none_is_refused_with_the_close_ones(run_cli: CliRunner, 
         "",
     ):
         refused = find(run_cli, bad, NAME)
-        assert code_of(refused) == (2, "usage.invalid_argument"), bad
+        assert code_of(refused, listed) == (2, "usage.invalid_argument"), bad
         assert refused.error["details"]["argument"] == "for", bad
     not_a_string = call(run_cli, f"text={j(NAME)}", "for=5")
-    assert code_of(not_a_string) == (2, "usage.invalid_argument")
+    assert code_of(not_a_string, listed) == (2, "usage.invalid_argument")
 
 
 def test_a_call_of_the_lookup_tool_is_a_read(run_cli: CliRunner, root: Path) -> None:
@@ -461,22 +472,40 @@ def test_a_graph_whose_tools_take_no_reference_has_no_lookup_tool(
     assert code_of(app(run_cli, "call", "lookup", env=ENV)) == (1, "tool.not_found")
 
 
-def test_a_graph_without_labels_answers_like_the_command(
+def test_a_graph_without_names_has_no_lookup_tool(
     run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
 ) -> None:
-    """A reference input that no name can fill (the ontology has no label role) is still a slot:
-    the answer is the one of ``lookup``."""
+    """In the first release of the inventory ontology nothing has a label role: no name finds an
+    entity, so no reference input is a slot, the references name no tool and a call finds none."""
     init(run_cli, isolated_env)
     create_graph(run_cli, "example_graph", "inventory")
-    from support.fixtures import FIXTURES
-
     for kind in ("functions", "actions", "views"):
         folder = FIXTURES / kind / "inventory" / "valid"
         assert admin(run_cli, "graph", kind, "publish", "example_graph", str(folder)).code == 0
-    tool = find(run_cli, "run_items_in_location.location", "x")
+    tools = manifest(run_cli)
+    assert "run_items_in_location" in tools and "lookup" not in tools
+    assert "lookup" not in json.dumps(tools)
+    missing = find(run_cli, "run_items_in_location.location", "x")
+    assert code_of(missing) == (1, "tool.not_found")
     command = app(run_cli, "lookup", "x", "--for", "function:items_in_location.location", env=ENV)
-    assert code_of(tool) == code_of(command) == (1, "term.no_labels")
-    assert tool.error["details"] == command.error["details"]
+    assert code_of(command) == (1, "term.no_labels")  # the command still says why
+
+
+def test_a_class_without_a_name_is_no_slot_in_a_graph_that_has_some(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> None:
+    """In the next release items have a label and locations have none."""
+    init(run_cli, isolated_env)
+    create_graph(run_cli, "example_graph", "inventory", version="1.1.0")
+    for kind in ("functions", "actions", "views"):
+        folder = FIXTURES / kind / "inventory" / "valid"
+        assert admin(run_cli, "graph", kind, "publish", "example_graph", str(folder)).code == 0
+    tools = manifest(run_cli)
+    assert slots_of(run_cli) == ["do_move_item.item", "do_retire_item.item"]
+    assert "lookup" not in json.dumps(tools["run_items_in_location"]["input_schema"])
+    refused = find(run_cli, "run_items_in_location.location", "x")
+    assert code_of(refused) == (2, "usage.invalid_argument")
+    assert "did_you_mean" in refused.error["details"]
 
 
 MARKER = "lookup-marker-7c1e"

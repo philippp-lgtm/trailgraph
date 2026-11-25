@@ -347,7 +347,11 @@ def test_the_lookup_tool_answers_like_the_lookup_command(labelled: tuple[ServerA
         {"text": ["Item 3", "Item 4"], "--for": "action:retire_item.item", "limit": 5, **GRAPH},
     )
     assert plain.status == 200, plain.json
-    assert typed.json["data"] == {**plain.json["data"], "page": plain.json["page"]}
+    # the answer names the slot as the tool does, the command as it was asked
+    assert typed.json["data"]["fit"] == {**plain.json["data"]["fit"], "for": "do_retire_item.item"}
+    for name in ("items", "texts"):
+        assert typed.json["data"][name] == plain.json["data"][name]
+    assert typed.json["data"]["page"] == plain.json["page"]
     assert typed.json["page"] is None and typed.json["data"]["page"]["total"] == 2
     held = run(
         app,
@@ -400,18 +404,15 @@ def test_the_lookup_tool_is_refused_like_the_other_tools(labelled: tuple[ServerA
     assert (option.status, option.error["code"]) == (400, "usage.invalid_argument")
 
 
-def test_the_lookup_tool_of_a_graph_without_labels_gives_the_answer_of_lookup(
-    served: tuple[ServerApp, str],
-) -> None:
+def test_a_graph_without_names_has_no_lookup_tool(served: tuple[ServerApp, str]) -> None:
+    """In the first release of the ontology nothing has a label: no name finds an entity."""
     app, token = served
     tools = {t["name"] for t in run(app, token, "describe/tools", GRAPH).json["data"]["tools"]}
-    assert "lookup" in tools
-    typed = run(
+    assert "lookup" not in tools and "run_items_in_location" in tools
+    refused = run(
         app,
         token,
         "call",
         {"tool": "lookup", "input": {"text": "x", "for": "do_retire_item.item"}, **GRAPH},
     )
-    plain = run(app, token, "lookup", {"text": ["x"], "--for": "action:retire_item.item", **GRAPH})
-    assert (typed.status, typed.error["code"]) == (plain.status, plain.error["code"])
-    assert typed.error["code"] == "term.no_labels"
+    assert (refused.status, refused.error["code"]) == (404, "tool.not_found")

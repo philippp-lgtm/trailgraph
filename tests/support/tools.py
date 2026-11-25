@@ -119,11 +119,12 @@ def company() -> Catalog:
     )
 
 
-def inventory(more_functions: dict[str, str] | None = None) -> Catalog:
+def inventory(more_functions: dict[str, str] | None = None, version: str | None = None) -> Catalog:
     """The ``inventory`` toy graph with the valid fixtures of its three kinds, and the function
-    files ``more_functions`` (file name -> content) a test adds."""
+    files ``more_functions`` (file name -> content) a test adds. ``version`` of the ontology
+    (the first one has no label role: no name finds an entity there; the next gives items one)."""
     return _compiled(
-        compiled_model("inventory"),
+        compiled_model("inventory", version),
         {
             **function_files.read_dir(FIXTURES / "functions" / "inventory" / "valid"),
             **(more_functions or {}),
