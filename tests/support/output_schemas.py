@@ -25,6 +25,7 @@ from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator
+from jsonschema.exceptions import best_match
 
 from graph_cli.kernel.canonical import JsonValue
 
@@ -89,16 +90,26 @@ def check(program: str, document: JsonValue, *, short: bool = False) -> list[str
         return []
     whole, shortened, commands = _programs()[program]
     envelope = shortened if short else whole
-    problems = [f"envelope: {_where(e)}: {e.message}" for e in envelope.iter_errors(document)]
+    problems = [f"envelope: {_where(e)}: {_message(e)}" for e in envelope.iter_errors(document)]
     if not isinstance(document, Mapping) or document.get("data") is None:
         return problems
     command = document.get("command")
     data = commands.get(command) if isinstance(command, str) else None
     if data is not None:
         problems += [
-            f"{command} data: {_where(e)}: {e.message}" for e in data.iter_errors(document["data"])
+            f"{command} data: {_where(e)}: {_message(e)}"
+            for e in data.iter_errors(document["data"])
         ]
     return problems
+
+
+def _message(error: Any) -> str:
+    """The message of ``error``; for a value that fits none of the alternatives of an ``anyOf``
+    (a section of a view) the error of the alternative it comes closest to as well."""
+    inner = best_match(error.context) if error.context else None
+    if inner is None:
+        return str(error.message)
+    return f"{str(error.message)[:100]} (closest: {_where(inner)}: {str(inner.message)[:300]})"
 
 
 def _where(error: Any) -> str:

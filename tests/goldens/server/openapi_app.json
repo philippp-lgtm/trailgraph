@@ -6916,8 +6916,166 @@
       "update_data": {
         "$ref": "#/components/schemas/write_result"
       },
+      "view_citation": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "last_page": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ref"
+        ]
+      },
       "view_data": {
         "$ref": "#/components/schemas/view_model"
+      },
+      "view_entity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "rev": {
+            "type": "integer"
+          },
+          "record_status": {
+            "type": "string"
+          },
+          "alias": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "superseded_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "retracted_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "rev",
+          "record_status"
+        ]
+      },
+      "view_field_item": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {},
+          "role": {
+            "type": "string",
+            "enum": [
+              "label",
+              "alt_label",
+              "state"
+            ]
+          },
+          "chars": {
+            "type": "integer"
+          },
+          "more": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ]
+      },
+      "view_file": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "last_page": {
+            "type": "integer"
+          },
+          "locator": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref"
+        ]
+      },
+      "view_group": {
+        "type": "object",
+        "properties": {
+          "relation": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "out",
+              "in"
+            ]
+          },
+          "count": {
+            "type": "integer"
+          },
+          "states": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/view_neighbour"
+            }
+          },
+          "more": {
+            "type": "integer"
+          },
+          "sampled": {
+            "type": "integer"
+          },
+          "approx": {
+            "type": "boolean"
+          },
+          "missing": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "relation",
+          "direction",
+          "count"
+        ]
       },
       "view_model": {
         "type": "object",
@@ -6943,61 +7101,14 @@
           "sections": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "kind"
-              ],
-              "additionalProperties": {}
+              "$ref": "#/components/schemas/view_section"
             }
           },
           "bytes": {
             "type": "integer"
           },
           "entity": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string"
-              },
-              "rev": {
-                "type": "integer"
-              },
-              "record_status": {
-                "type": "string"
-              },
-              "alias": {
-                "type": "string"
-              },
-              "label": {
-                "type": "string"
-              },
-              "superseded_by": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "retracted_by": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            },
-            "required": [
-              "id",
-              "type",
-              "rev",
-              "record_status"
-            ]
+            "$ref": "#/components/schemas/view_entity"
           },
           "cut": {
             "type": "boolean"
@@ -7006,7 +7117,8 @@
             "type": "integer"
           },
           "next": {
-            "type": "string"
+            "type": "string",
+            "description": "Present when more is true: pass it as _cursor, with the same other arguments, to get the next page. view.cursor_stale means a write landed in between: start again from the first page."
           },
           "more": {
             "type": "boolean"
@@ -7019,6 +7131,709 @@
           "view",
           "sections",
           "bytes"
+        ]
+      },
+      "view_neighbour": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "record_status": {
+            "type": "string"
+          },
+          "field": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "value"
+            ]
+          },
+          "qualifiers": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "ref"
+        ]
+      },
+      "view_row": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "record_status": {
+            "type": "string"
+          },
+          "qualifiers": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "chars": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "more": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "relations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/view_row_group"
+            }
+          }
+        },
+        "required": [
+          "ref"
+        ]
+      },
+      "view_row_group": {
+        "type": "object",
+        "properties": {
+          "relation": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "out",
+              "in"
+            ]
+          },
+          "count": {
+            "type": "integer"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/view_row_item"
+            }
+          },
+          "more": {
+            "type": "integer"
+          },
+          "sampled": {
+            "type": "integer"
+          },
+          "approx": {
+            "type": "boolean"
+          },
+          "unread": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "relation",
+          "direction",
+          "count"
+        ]
+      },
+      "view_row_item": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "record_status": {
+            "type": "string"
+          },
+          "qualifiers": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "chars": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "more": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "ref"
+        ]
+      },
+      "view_section": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/view_section_fields"
+          },
+          {
+            "$ref": "#/components/schemas/view_section_relations"
+          },
+          {
+            "$ref": "#/components/schemas/view_section_files"
+          },
+          {
+            "$ref": "#/components/schemas/view_section_cited_by"
+          },
+          {
+            "$ref": "#/components/schemas/view_section_affordances"
+          },
+          {
+            "$ref": "#/components/schemas/view_section_neighbors"
+          },
+          {
+            "$ref": "#/components/schemas/view_section_list"
+          },
+          {
+            "$ref": "#/components/schemas/view_section_rows"
+          },
+          {
+            "$ref": "#/components/schemas/view_section_rows_error"
+          },
+          {
+            "$ref": "#/components/schemas/view_section_stub"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "not": {
+                  "enum": [
+                    "fields",
+                    "relations",
+                    "files",
+                    "affordances",
+                    "neighbors",
+                    "list",
+                    "rows"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          }
+        ]
+      },
+      "view_section_affordances": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "affordances"
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "transitions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "attr": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "allowed": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "allowed_more": {
+                  "type": "integer"
+                },
+                "blocked": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string"
+                      },
+                      "by": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "by"
+                    ]
+                  }
+                },
+                "blocked_more": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "attr"
+              ]
+            }
+          },
+          "transitions_more": {
+            "type": "integer"
+          },
+          "actions": {
+            "type": "object",
+            "properties": {
+              "apply": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "blocked": {
+                "type": "integer"
+              }
+            }
+          },
+          "actions_more": {
+            "type": "integer"
+          },
+          "functions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "functions_more": {
+            "type": "integer"
+          },
+          "views": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "views_more": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "view_section_cited_by": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "files"
+          },
+          "variant": {
+            "const": "cited_by"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "page_min": {
+            "type": "integer"
+          },
+          "page_max": {
+            "type": "integer"
+          },
+          "pages_cited": {
+            "type": "integer"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/view_citation"
+            }
+          },
+          "more": {
+            "type": "integer"
+          },
+          "sampled": {
+            "type": "integer"
+          },
+          "approx": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "variant",
+          "count"
+        ]
+      },
+      "view_section_fields": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "fields"
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/view_field_item"
+            }
+          },
+          "other": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "other_more": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "view_section_files": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "files"
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/view_file"
+            }
+          },
+          "more": {
+            "type": "integer"
+          },
+          "sampled": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "view_section_list": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "list"
+          },
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "count": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/view_row"
+            }
+          },
+          "from": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "type",
+          "count"
+        ]
+      },
+      "view_section_neighbors": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "neighbors"
+          },
+          "id": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "out",
+              "in"
+            ]
+          },
+          "count": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/view_row"
+            }
+          },
+          "more": {
+            "type": "integer"
+          },
+          "sampled": {
+            "type": "integer"
+          },
+          "approx": {
+            "type": "boolean"
+          },
+          "unread": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "relation",
+          "direction",
+          "count"
+        ]
+      },
+      "view_section_relations": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "relations"
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/view_group"
+            }
+          },
+          "more_groups": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "view_section_rows": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "rows"
+          },
+          "id": {
+            "type": "string"
+          },
+          "function": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "count": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {}
+            }
+          },
+          "more": {
+            "type": "integer"
+          },
+          "cells_cut": {
+            "type": "integer"
+          },
+          "from": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "function",
+          "columns",
+          "count"
+        ]
+      },
+      "view_section_rows_error": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "rows"
+          },
+          "id": {
+            "type": "string"
+          },
+          "function": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "function",
+          "error"
+        ]
+      },
+      "view_section_stub": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "cut": {
+            "const": true
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "cut"
         ]
       },
       "warning": {
