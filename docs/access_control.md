@@ -873,7 +873,7 @@ shape every view like every read: what the caller may not see is not counted or 
 
 Published views add three rules.
 
-- **A set view needs `read.find` as well as `read.get`**, because it lists entities as `find` does;
+- **A view needs `read.get`, a set view `read.find` as well**, because it lists entities as `find` does;
   a view with a `rows` section needs `read.function`, and the function must be one the caller sees.
 - **A view is visible exactly when everything it names is**: its classes, attributes, relations and
   enums, and the functions it runs. Otherwise it does not exist for the caller: `view.not_found`
@@ -881,7 +881,7 @@ Published views add three rules.
   the default view of a class falls back to the next one up the class chain or to the card. The whole
   view is hidden, not a section, because its summary, purpose and section titles are authored text
   that may name what the caller may not see. A view the caller sees in full but that needs a
-  `read.find` or `read.function` it lacks is *not allowed*
+  `read.get`, `read.find` or `read.function` it lacks is *not allowed*
   ([Functions, actions and views you may not use](#functions-actions-and-views-you-may-not-use)):
   counted in `not_allowed`, found and described with `allowed: false` and `missing`, and `view --name`
   of it is `access.denied`, recorded like `graph find` without `read.find` (a listing never records a
