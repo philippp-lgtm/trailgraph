@@ -1238,21 +1238,21 @@ quotes), repeated for more members. Over the server the same call is `POST /v1/c
 `args.tool` and `args.input`, the object itself:
 `{"args": {"tool": "run_x", "input": {"since": "2026-01-01", "titles": ["a"]}}}`; the options go by
 their API names like those of every command ([API](server.md#api)): `graph`, `expect_hash` and
-`idempotency_key`. The call answers
-what `run`, `do` or `view` answers for the same arguments: the same service runs, binds the
-parameters by the same types, resolves references the same way, authorizes, audits and refuses the
-same. What differs:
+`idempotency_key`. The call answers what `run`, `do` or `view` answers for the same arguments: the
+same service runs, binds the parameters by the same types, resolves references the same way,
+authorizes, audits and refuses the same. What differs:
 
 - **The tool name** is looked up among the entries you see. One you do not see is `tool.not_found`
   with the close names in `did_you_mean`; one you see but may not use gives what the command gives,
   `access.denied`, recorded like that of the command.
-- **The `lookup` tool** is called like the others, with `text`, `for` and `limit`. It is there only for a
-  caller that holds `read.find` while some tool takes a reference: with that right missing it is
-  `access.denied`, as for `lookup`, with no reference input the lookup tool can serve (a reference whose
-  class has no label attribute does not count) it is `tool.not_found`. A `for` that is none of the slots
-  (a name without its kind prefix, a slot of a tool you cannot use) is `usage.invalid_argument` with the
-  close slots in `did_you_mean`, and so is any input other than `text`, `for` and `limit`; a missing
-  `text` or `for` is `usage.missing_argument`. It is a read: it takes no key.
+- **The `lookup` tool** is called like the others, with `text`, `for` and `limit`. It is there only
+  for a caller that holds `read.find` while some tool takes a reference: with that right missing it
+  is `access.denied`, as for `lookup`, with no reference input the lookup tool can serve (a
+  reference whose class has no label attribute does not count) it is `tool.not_found`. A `for` that
+  is none of the slots (a name without its kind prefix, a slot of a tool you cannot use) is
+  `usage.invalid_argument` with the close slots in `did_you_mean`, and so is any input other than
+  `text`, `for` and `limit`; a missing `text` or `for` is `usage.missing_argument`. It is a read: it
+  takes no key.
 - **`null` is "not given"** for every parameter and control that is not required, and a default
   applies. `input_schema` lets only a property without a default take `null` (a property with a
   default is not nullable there), so a client that validates its input against the schema leaves a
