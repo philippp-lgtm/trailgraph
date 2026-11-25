@@ -9837,7 +9837,7 @@
             }
           },
           "400": {
-            "description": "Bad Request: action.parameter_invalid, action.parameter_missing, action.reason_required, function.parameter_invalid, function.parameter_missing, graph.not_selected, usage.invalid_argument, usage.missing_argument, view.cursor_invalid, view.parameter_invalid, view.parameter_missing.",
+            "description": "Bad Request: action.parameter_invalid, action.parameter_missing, action.parameter_unknown, action.reason_required, function.parameter_invalid, function.parameter_missing, function.parameter_unknown, graph.not_selected, usage.invalid_argument, usage.missing_argument, view.cursor_invalid, view.parameter_invalid, view.parameter_missing, view.parameter_unknown.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -9858,15 +9858,18 @@
             "x-graph-cli-error-codes": [
               "action.parameter_invalid",
               "action.parameter_missing",
+              "action.parameter_unknown",
               "action.reason_required",
               "function.parameter_invalid",
               "function.parameter_missing",
+              "function.parameter_unknown",
               "graph.not_selected",
               "usage.invalid_argument",
               "usage.missing_argument",
               "view.cursor_invalid",
               "view.parameter_invalid",
-              "view.parameter_missing"
+              "view.parameter_missing",
+              "view.parameter_unknown"
             ]
           },
           "401": {
@@ -9969,7 +9972,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: action.nothing_to_do, action.parameter_type, action.precondition_failed, action.stale, actions.slot_invalid, changeset.too_large, entity.ambiguous_ref, function.parameter_type, function.stale, graph.archived, graph.not_in_project, graph.readonly, query.invalid_value, query.too_large, remote.client_outdated, skills.outdated, term.no_labels, view.class_mismatch, view.cursor_stale, view.parameter_type, view.stale, write.invalid.",
+            "description": "Unprocessable Content: action.nothing_to_do, action.parameter_type, action.precondition_failed, action.stale, actions.slot_invalid, changeset.too_large, entity.ambiguous_ref, function.parameter_type, function.stale, graph.archived, graph.not_in_project, graph.readonly, query.invalid_value, query.too_large, remote.client_outdated, skills.outdated, view.class_mismatch, view.cursor_stale, view.parameter_type, view.stale, write.invalid.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -10004,7 +10007,6 @@
               "query.too_large",
               "remote.client_outdated",
               "skills.outdated",
-              "term.no_labels",
               "view.class_mismatch",
               "view.cursor_stale",
               "view.parameter_type",

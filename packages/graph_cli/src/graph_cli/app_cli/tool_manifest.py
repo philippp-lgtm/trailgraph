@@ -76,12 +76,13 @@ NOT_FOR_TOOLS: Final = frozenset(
         "view.not_found",
     }
 )
-# what the lookup tool never gets: it has no type, relation or entry name to be unknown or
-# ambiguous (its input is an enum of the slots it serves)
+# What the lookup tool never gets: it has no type, relation or entry name to be unknown or
+# ambiguous (its input is an enum of the slots it serves), and every slot has a name to look up.
 NOT_FOR_LOOKUP: Final = frozenset(
     {
         "term.unknown",
         "query.ambiguous_term",
+        "term.no_labels",
         "function.parameter_unknown",
         "action.parameter_unknown",
         "view.parameter_unknown",
@@ -160,7 +161,8 @@ def tool_errors(kind: str) -> tuple[str, ...]:
     ]
     codes = {*command, *CALL_ERRORS, *TRANSPORT_ERRORS} - NOT_FOR_TOOLS
     if kind == LOOKUP:
-        codes -= NOT_FOR_LOOKUP
+        # a call of the tool names its input as an object, which the command's options do not
+        codes = (codes - NOT_FOR_LOOKUP) | {"usage.missing_argument"}
     return tuple(sorted(codes))
 
 

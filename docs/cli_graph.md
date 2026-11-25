@@ -1206,17 +1206,21 @@ the options of the commands:
 
 **The `lookup` tool** finds the entity a name stands for, so that a harness can fill a `ref` input of
 another tool: a reference takes an id, an alias or trailing hex digits, never a name. It is listed when
-some tool you may use has a `ref` input of a class your model has and you hold `read.find`; without that
-right the references stay and their descriptions name no tool (until a narrower lookup exists, a caller
-without `read.find` works with the ids it has). Its input is closed like that of every tool: `text` (a
+some tool you may use has a `ref` input of a class that has a name to look up (the class or a subclass
+has a label attribute you see) and you hold `read.find`; without that right the references stay and
+their descriptions name no tool (until a narrower lookup exists, a caller without `read.find` works with
+the ids it has), and a graph in which nothing has a name has no `lookup` tool. Its input is closed like that of every tool: `text` (a
 name, or a list of names; at most the number `lookup` takes), `for` and `limit` (candidates per name, as
 `lookup --limit`). `for` is one of the slots the tool serves, written `<tool>.<input>`: `run_NAME.param`,
 `do_NAME.param`, `view_NAME.param` or `view_NAME._entity` for the entity of an entity view; the enum lists
-exactly the `ref` inputs of the tools you see in the manifest, so a hidden class, view or function is no
-slot. The tool runs `lookup --for` for that slot with the kind written out
+the `ref` inputs of every tool you may use that a lookup can serve, so a hidden class, view or function
+is no slot. The tool and the descriptions of the references are rendered over every tool you may use,
+whatever `--tool`, `--kind` or `--module` select, so a selection that leaves `lookup` out still keeps
+descriptions that name it: add `--tool lookup` to an allow list. The tool runs `lookup --for` for that slot with the kind written out
 ([Names and lookup](#names-and-lookup): `function:NAME.param`, `action:NAME.param`, `view:NAME.param`), keeps
 the candidates of the class the input takes and counts the others in `data.texts[].excluded`; its answer
-is the answer of `lookup` and `page`, the paging, as for a function. A harness passes the `id` or `alias`
+is the answer of `lookup` and `page`, the paging, as for a function, with the `for` in its `fit` naming
+the slot as the tool writes it (`run_NAME.param`). A harness passes the `id` or `alias`
 of a candidate as the reference; a name with several candidates carries `facts` that tell them apart.
 
 **Calling a tool.** `graph call TOOL` runs a tool with exactly the object its `input_schema`
@@ -1244,11 +1248,10 @@ same. What differs:
   `access.denied`, recorded like that of the command.
 - **The `lookup` tool** is called like the others, with `text`, `for` and `limit`. It is there only for a
   caller that holds `read.find` while some tool takes a reference: with that right missing it is
-  `access.denied`, as for `lookup`, with no reference input the tool can serve it is
-  `tool.not_found`. A `for` that is none of the slots (a name without its kind prefix, a slot of a
-  tool you cannot use) is `usage.invalid_argument` with the close slots in `did_you_mean`, and so is
-  any input other than `text`, `for` and `limit`. It is a read: it takes no key. A graph whose ontology gives no entity a name
-  answers as `lookup` does (`term.no_labels`).
+  `access.denied`, as for `lookup`, with no reference input at all it is `tool.not_found`. A `for` that is
+  none of the slots (a name without its kind prefix, a slot of a tool you cannot use) is
+  `usage.invalid_argument` with the close slots in `did_you_mean`, and so is any input other than `text`,
+  `for` and `limit`; a missing `text` or `for` is `usage.missing_argument`. It is a read: it takes no key.
 - **`null` is "not given"** for every parameter and control that is not required, and a default
   applies. `input_schema` lets only a property without a default take `null` (a property with a
   default is not nullable there), so a client that validates its input against the schema leaves a

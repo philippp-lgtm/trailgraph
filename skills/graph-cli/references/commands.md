@@ -54,7 +54,7 @@ Usage: `graph call TOOL [OPTIONS]`
 | `graph call <name> --input <name>=<json> --input _dry_run=true --json` | See what an action would change. |
 | `graph call <name> --input <name>=<json> --input _reason='"<value>"' --idempotency-key <value> --json` | Run an action that needs a reason, safe to repeat. |
 | `graph call <name> --input _entity='"<id>"' --expect-hash <value> --json` | Show an entity, only if the tool is still the one the manifest described. |
-| `graph call --input text='"<value>"' --input for='"<name>.<param>"' lookup --json` | Find the entity a name stands for, to give a tool as a reference. |
+| `graph call <name> --input text='"<value>"' --input for='"run_<function>.<param>"' --json` | Run the lookup tool, named lookup: find the entity a name stands for, for a reference input of another tool. |
 
 ## graph changes
 

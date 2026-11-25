@@ -513,6 +513,9 @@ def test_goldens_of_the_example_graphs() -> None:
 
 def test_goldens_of_a_reader_of_items() -> None:
     golden("limited_inventory_items", manifest(INVENTORY.reader(ITEMS), find=True))
+    # the release in which items have a label: a lookup tool for the one reference it may use
+    named = tools.inventory(version="1.1.0")
+    golden("limited_inventory_1.1.0_items", manifest(named.reader(ITEMS), find=True))
 
 
 @pytest.mark.parametrize(

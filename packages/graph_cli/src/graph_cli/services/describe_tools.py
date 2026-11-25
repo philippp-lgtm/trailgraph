@@ -166,8 +166,14 @@ def _ref_text(of_class: str | None, lookup_for: str | None) -> str:
 
 def lookup_slot(model: CompiledModel, param: ParamType) -> bool:
     """Whether the ``lookup`` tool can serve ``param``: a ``ref`` of a class the model has (an
-    entry that names a class the model lost is stale and has none to search)."""
-    return param.kind == "ref" and param.of_class in model.classes
+    entry that names a class the model lost is stale and has none to search) of which the class
+    or a subclass has a name to look up (a label attribute the caller's model keeps)."""
+    return (
+        param.kind == "ref"
+        and param.of_class is not None
+        and param.of_class in model.classes
+        and any(model.label_attributes(c) for c in model.subtypes(param.of_class))
+    )
 
 
 def _scalar(

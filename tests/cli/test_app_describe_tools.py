@@ -29,7 +29,6 @@ NAMES = [
     "view_item_catalog",
     "view_items_in_location",
     "view_location_overview",
-    "lookup",
 ]
 
 
@@ -87,6 +86,8 @@ def test_the_manifest_lists_every_tool_with_its_schemas(run_cli: CliRunner, root
     assert manifest["schema"] == "graph_cli.model/1" and manifest["tools_format"] == 1
     assert manifest["graph"]["name"] == "example_graph"
     assert [t["name"] for t in manifest["tools"]] == NAMES
+    # no entity of this ontology release has a name to look up: no lookup tool
+    assert "lookup" not in [t["kind"] for t in manifest["tools"]]
     for tool in manifest["tools"]:
         Draft202012Validator.check_schema(tool["input_schema"])
         Draft202012Validator.check_schema(tool["output_schema"])
@@ -249,13 +250,7 @@ def test_a_caller_with_a_read_limit_gets_a_manifest_without_what_it_may_not_see(
 ) -> None:
     install(run_cli, tmp_path / "policies", READS_ITEMS)
     manifest = listed(run_cli, ENV)
-    assert [t["name"] for t in manifest["tools"]] == [
-        "run_items_by_condition",
-        "do_retire_item",
-        "lookup",
-    ]
-    (lookup,) = [t for t in manifest["tools"] if t["kind"] == "lookup"]
-    assert lookup["input_schema"]["properties"]["for"]["enum"] == ["do_retire_item.item"]
+    assert [t["name"] for t in manifest["tools"]] == ["run_items_by_condition", "do_retire_item"]
     text = json.dumps(manifest)
     for word in (
         "Location",
