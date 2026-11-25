@@ -14,8 +14,10 @@ hidden when:
   the full model either, an umbrella, is not hidden by that);
 - it no longer compiles against the filtered model although it compiles against the full one:
   an unlabelled node can name an attribute only a hidden type has, which no ``touches`` list
-  shows. A function that was already stale against the full model is not hidden by this check,
-  its answer does not depend on what the reader sees.
+  shows. The same holds for a declared column type that the filtered model makes contradict the
+  query (``function.returns_type_mismatch``): a reader who sees fewer classes may get a column
+  typed exactly where the full model left it ambiguous. A function that was already stale against
+  the full model is not hidden by this check, its answer does not depend on what the reader sees.
 
 Every other function runs over the filtered view (``services.visibility.VisibleSnapshot``), so
 its answer holds what the reader may see. ``HiddenCatalog`` caches the names hidden per

@@ -6,14 +6,19 @@ Every rule of the inference has a test that fails when the rule is broken (check
 ``compile.column_types``, which is what the manifest and ``describe function`` use.
 """
 
+from typing import Any
+
 import pytest
 
-from graph_cli.kinetic.compile import column_types, compile_catalog
+from graph_cli.kinetic.compile import check_catalog, column_types, compile_catalog
+from graph_cli.kinetic.entries import load_entries
 from graph_cli.kinetic.format import load_function
 from graph_cli.kinetic.return_types import COLUMN_KINDS, ColumnType, contradicts, merge
 from graph_cli.ontology_layer.bundle import LayeredSource, MappingSource
 from graph_cli.ontology_layer.compiler import compile_bundle
 from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli.services.visibility import filter_model
+from graph_cli.services.visible_catalog import hidden_functions
 
 ONTOLOGY = """\
 format: graph_cli.ir/1
@@ -630,6 +635,120 @@ def test_a_declaration_reads_back_from_the_entry() -> None:
     (entry,) = document["functions"]
     again = FunctionDef.from_json(entry, str(entry["source_query"]))
     assert again.returns[0].declared == ColumnType("integer", many=True)
+
+
+# ---- a release judges the stored declarations again -------------------------------------
+
+
+def other_model(*edits: tuple[str, str]) -> CompiledModel:
+    """The sample ontology with each ``(old, new)`` edit applied."""
+    text = ONTOLOGY
+    for old, new in edits:
+        assert old in text, old
+        text = text.replace(old, new, 1)
+    outcome = compile_bundle("sample", LayeredSource(MappingSource({"sample": text.encode()})))
+    assert outcome.model is not None, [f.to_json() for f in outcome.findings]
+    return outcome.model
+
+
+WITHOUT_KIND = (
+    (
+        "enums:\n  Kind:\n    summary: A kind.\n    values:\n      big: {summary: Big.}\n"
+        "      small: {summary: Small.}\n",
+        "",
+    ),
+    ("      kind: {summary: Kind., type: Kind}\n", ""),
+)
+WITHOUT_OTHER = (
+    (
+        "  Other:\n    summary: Something else.\n    attributes:\n"
+        "      size: {summary: Size as text., type: string}\n"
+        "      name: {summary: Name., type: string}\n",
+        "",
+    ),
+    (
+        "  owns:\n    summary: A thing owns another thing.\n    domain: Thing\n    range: Other\n",
+        "",
+    ),
+)
+
+
+def published(query: str, declared: str) -> dict[str, Any]:
+    text = source(query, ["c"], declared={"c": declared})
+    document, problems = compile_catalog({"probe.yaml": text}, MODEL)
+    assert [p.to_json() for p in problems] == []
+    return document
+
+
+def release_problems(
+    document: dict[str, Any], other: CompiledModel
+) -> list[tuple[str, str | None]]:
+    return [(p.code, p.path) for p in check_catalog(document, other)]
+
+
+def test_a_release_that_removes_the_enum_of_a_declared_column_is_found() -> None:
+    document = published(
+        "MATCH (t:Thing) RETURN CASE WHEN t.name = 'a' THEN 'big' ELSE 'small' END AS c",
+        "type: enum; enum: smp:Kind",
+    )
+    assert release_problems(document, MODEL) == []
+    assert release_problems(document, other_model(*WITHOUT_KIND)) == [
+        ("function.unknown_enum", "returns[0].enum")
+    ]
+
+
+def test_a_release_that_removes_the_class_of_a_declared_column_is_found() -> None:
+    document = published(
+        "MATCH (t:Thing) RETURN coalesce(t.name, 'x') AS c", "type: ref; class: smp:Other"
+    )
+    assert release_problems(document, MODEL) == []
+    assert release_problems(document, other_model(*WITHOUT_OTHER)) == [
+        ("function.unknown_class", "returns[0].class")
+    ]
+
+
+def test_a_release_that_changes_the_type_under_an_agreeing_declaration_is_found() -> None:
+    document = published("MATCH (t:Thing) RETURN t.born AS c", "type: date")
+    assert release_problems(document, MODEL) == []
+    other = other_model(
+        ("born: {summary: Born., type: date}", "born: {summary: Born., type: string}")
+    )
+    assert release_problems(document, other) == [
+        ("function.returns_type_mismatch", "returns[0].type")
+    ]
+
+
+def test_a_release_that_makes_an_inferred_column_ambiguous_keeps_an_agreeing_declaration() -> None:
+    document = published("MATCH (x) RETURN x.born AS c", "type: date")
+    assert release_problems(document, MODEL) == []
+    other = other_model(
+        (
+            "      name: {summary: Name., type: string}\nrelations:",
+            "      name: {summary: Name., type: string}\n"
+            "      born: {summary: Born as text., type: string}\nrelations:",
+        )
+    )
+    assert release_problems(document, other) == []  # nothing is certain now: the declaration stands
+
+
+def test_a_published_entry_without_declarations_has_no_type_to_break() -> None:
+    document = published("MATCH (t:Thing) RETURN t.born AS c", "")
+    other = other_model(
+        ("born: {summary: Born., type: date}", "born: {summary: Born., type: string}")
+    )
+    assert release_problems(document, other) == []  # inferred again, nothing declared
+
+
+def test_a_reader_who_sees_fewer_classes_may_make_a_declaration_contradict_the_query() -> None:
+    """Over the full model ``x.size`` is ambiguous, so a declaration stands; a reader who sees one
+    of the classes gets the query typed exactly, a declaration of the other type then contradicts
+    it and the function is hidden from that reader (safe: hidden, never wrong)."""
+    document = published("MATCH (x) RETURN x.size AS c", "type: integer")
+    entries = load_entries(document)
+    only_other = filter_model(MODEL, frozenset({"smp:Other"}))
+    only_thing = filter_model(MODEL, frozenset({"smp:Thing"}))
+    assert hidden_functions(entries, document, MODEL, only_other) == {"probe"}
+    assert hidden_functions(entries, document, MODEL, only_thing) == frozenset()
 
 
 # ---- comparing and merging -------------------------------------------------------------------
