@@ -254,7 +254,7 @@ def test_an_optional_match_does_not_give_a_node_bound_before_a_class() -> None:
     entity, size, ident = types_of(query, "c", "d", "e")
     assert entity == ColumnType("entity", nullable=False)
     assert size is None  # the classes of x still disagree on size
-    assert ident == ColumnType("ref", nullable=False)
+    assert ident is None  # the resolver's view of x derives from the optional pattern
 
 
 def test_an_optional_match_does_not_narrow_the_relations_of_a_relationship_bound_before() -> None:
@@ -263,6 +263,50 @@ def test_an_optional_match_does_not_narrow_the_relations_of_a_relationship_bound
         "MATCH (a:Thing)-[r]->(b:Thing) OPTIONAL MATCH (a)-[r:knows]->(b) RETURN r.since AS c"
     )
     assert one(plain) is None and one(optional) is None
+
+
+def test_the_fields_of_a_name_an_optional_match_narrowed_stay_untyped_in_later_clauses() -> None:
+    later = "MATCH (x) OPTIONAL MATCH (x:Thing) MATCH (x:Special|Other) RETURN x.size AS c"
+    assert one(later) is None
+    assert one("MATCH (x) MATCH (x:Special|Other) RETURN x.size AS c") is None  # also without
+    renamed = "MATCH (x) OPTIONAL MATCH (x:Other) WITH x AS y MATCH (y) RETURN y.size AS c"
+    assert one(renamed) is None
+    passed = "MATCH (x) OPTIONAL MATCH (x:Thing) WITH x MATCH (x:Special|Other) RETURN x.born AS c"
+    assert one(passed) is None
+    star = "MATCH (x) OPTIONAL MATCH (x:Thing) WITH * MATCH (x:Special|Other) RETURN x.born AS c"
+    assert one(star) is None
+    ids = "MATCH (x:Thing) OPTIONAL MATCH (x:Special) RETURN x.id AS c, x.alias AS d"
+    assert types_of(ids, "c", "d") == (None, None)
+
+
+def test_the_qualifiers_of_a_relationship_an_optional_match_narrowed_stay_untyped() -> None:
+    chain = (
+        "MATCH (a:Thing)-[r]->(b) OPTIONAL MATCH (a)-[r:knows|likes]->(b) "
+        "MATCH (a)-[r:knows|owns]->(b) RETURN r.since AS c"
+    )
+    assert one(chain) is None
+    renamed = (
+        "MATCH (a:Thing)-[r]->(b) OPTIONAL MATCH (a)-[r:knows]->(b) "
+        "WITH a, r AS s, b MATCH (a)-[s]->(b) RETURN s.since AS c"
+    )
+    assert one(renamed) is None
+
+
+def test_the_entity_of_a_name_an_optional_match_narrowed_keeps_its_first_class() -> None:
+    query = "MATCH (x:Thing) OPTIONAL MATCH (x:Special) WITH x, x AS y MATCH (y) RETURN x AS c"
+    assert one(query) == ColumnType("entity", of_class="smp:Thing", nullable=False)
+
+
+def test_an_optional_match_that_only_names_a_bound_variable_narrows_nothing() -> None:
+    plain = "MATCH (a:Thing) OPTIONAL MATCH (a)-[:knows]->(b:Thing) RETURN a.born AS c, a.id AS d"
+    assert types_of(plain, "c", "d") == (
+        ColumnType("date"),
+        ColumnType("ref", of_class="smp:Thing", nullable=False),
+    )
+    typed = (
+        "MATCH (:Thing)-[k:knows]->(b) OPTIONAL MATCH (b)-[:likes]->(:Thing) RETURN k.since AS c"
+    )
+    assert one(typed) == ColumnType("date")
 
 
 def test_an_optional_match_leaves_a_value_from_with_or_unwind_untyped() -> None:
