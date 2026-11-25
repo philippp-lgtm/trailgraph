@@ -241,6 +241,54 @@ def test_a_node_of_a_variable_length_pattern_is_typed() -> None:
     assert found == ColumnType("entity", of_class="smp:Special", nullable=False)
 
 
+# ---- an OPTIONAL MATCH does not narrow what was bound before ------------------------------
+
+
+def test_an_optional_match_does_not_give_a_node_bound_before_a_class() -> None:
+    query = "MATCH (x) OPTIONAL MATCH (x:Other) RETURN x AS c, x.size AS d, x.id AS e"
+    entity, size, ident = types_of(query, "c", "d", "e")
+    assert entity == ColumnType("entity", nullable=False)
+    assert size is None  # the classes of x still disagree on size
+    assert ident == ColumnType("ref", nullable=False)
+
+
+def test_an_optional_match_does_not_narrow_the_relations_of_a_relationship_bound_before() -> None:
+    plain = "MATCH (a:Thing)-[r]->(b:Thing) RETURN r.since AS c"
+    optional = (
+        "MATCH (a:Thing)-[r]->(b:Thing) OPTIONAL MATCH (a)-[r:knows]->(b) RETURN r.since AS c"
+    )
+    assert one(plain) is None and one(optional) is None
+
+
+def test_an_optional_match_leaves_a_value_from_with_or_unwind_untyped() -> None:
+    assert one("MATCH (t:Thing) WITH t AS u OPTIONAL MATCH (u:Special) RETURN u AS c") is None
+    query = (
+        "MATCH (t:Thing) WITH collect(t) AS ts UNWIND ts AS u "
+        "OPTIONAL MATCH (u:Special) RETURN u AS c"
+    )
+    assert one(query) is None
+
+
+def test_an_optional_match_keeps_the_nullability_and_class_of_a_node_bound_before() -> None:
+    query = "MATCH (t:Thing) OPTIONAL MATCH (t:Special)-[:knows]->(u) RETURN t AS c, u AS d"
+    first, second = types_of(query, "c", "d")
+    assert first == ColumnType("entity", of_class="smp:Thing", nullable=False)
+    assert second == ColumnType("entity", nullable=True)
+
+
+def test_an_optional_match_types_a_name_that_went_out_of_scope_before_it() -> None:
+    query = "MATCH (t:Thing) WITH t.name AS n OPTIONAL MATCH (t:Other) RETURN t AS c"
+    assert one(query) == ColumnType("entity", of_class="smp:Other", nullable=True)
+
+
+def test_a_match_still_narrows_what_was_bound_before_it() -> None:
+    assert one("MATCH (x) MATCH (x:Special) RETURN x AS c") == ColumnType(
+        "entity", of_class="smp:Special", nullable=False
+    )
+    found = one("MATCH (x) MATCH (x:Other) RETURN x.size AS c")
+    assert found == ColumnType("string")
+
+
 # ---- system fields and qualifiers ------------------------------------------------------------
 
 
@@ -260,10 +308,23 @@ def test_the_id_of_an_optional_node_is_nullable() -> None:
 
 
 def test_the_other_system_fields_have_their_kinds() -> None:
-    names = ["rev", "tx_seq", "created_at", "recorded_at", "type", "record_status"]
-    query = "MATCH (t:Thing) RETURN " + ", ".join(f"t.{n} AS {n}" for n in names)
-    kinds = [None if t is None else t.kind for t in types_of(query, *names)]
-    assert kinds == ["integer", "integer", "datetime", "datetime", "string", "string"]
+    expected = {
+        "rev": "integer",
+        "tx_seq": "integer",
+        "created_at": "datetime",
+        "recorded_at": "datetime",
+        "type": "string",
+        "record_status": "string",
+        "tx_id": "string",
+        "content_hash": "string",
+        "ontology_version": "string",
+    }
+    query = "MATCH (t:Thing) RETURN " + ", ".join(f"t.{n} AS {n}" for n in expected)
+    found = types_of(query, *expected)
+    assert {
+        n: (None if t is None else t.kind) for n, t in zip(expected, found, strict=True)
+    } == expected
+    assert all(t is not None and not t.nullable for t in found)
 
 
 def test_a_validity_field_is_not_typed() -> None:
@@ -415,6 +476,24 @@ def test_an_agreeing_declaration_keeps_the_inferred_nullability() -> None:
 def test_a_declared_class_is_kept_for_a_node_of_no_known_class() -> None:
     found = one("MATCH (t) RETURN t.id AS c", declared="type: ref; class: smp:Thing")
     assert found == ColumnType("ref", of_class="smp:Thing", nullable=False)
+
+
+def test_a_declared_any_never_contradicts_but_its_list_must_match() -> None:
+    for query in (
+        "MATCH (t:Thing) RETURN count(t) AS c",
+        "MATCH (t:Thing) RETURN t AS c",
+        "MATCH (t:Thing) RETURN t.born AS c",
+    ):
+        assert one(query, "type: any") is not None
+    assert one("MATCH (t:Thing) RETURN t.tags AS c", "type: any; many: true") is not None
+    for query, declared in (
+        ("MATCH (t:Thing) RETURN t.tags AS c", "type: any"),
+        ("MATCH (t:Thing) RETURN t.born AS c", "type: any; many: true"),
+    ):
+        text = source(query, ["c"], declared={"c": declared})
+        _, problems = compile_catalog({"probe.yaml": text}, MODEL)
+        assert [p.code for p in problems] == ["function.returns_type_mismatch"], declared
+    assert not contradicts(ColumnType("any"), ColumnType("entity", of_class="smp:Thing"))
 
 
 def test_a_declaration_may_not_contradict_what_the_query_makes_certain() -> None:

@@ -132,17 +132,23 @@ there:
 | `RETURN v.attribute` | the attribute's type, a list when the attribute is `many`, `lang` for language-tagged text, `enum` of its enum; nullable (a marking can hide an attribute from a reader). Left open when the classes the variable can have declare the attribute differently |
 | `RETURN r.qualifier` of a one-hop relationship variable of a `MATCH` | the qualifier's type, nullable |
 | `RETURN v.id`, `v.alias` | `ref` of the label's class (`alias` can be null) |
-| `RETURN v.rev`, `v.tx_seq` | `integer`; `v.created_at`, `v.recorded_at` are `datetime`; `v.type`, `v.record_status` are `string` |
+| `RETURN v.rev`, `v.tx_seq` | `integer`; `v.created_at`, `v.recorded_at` are `datetime`; `v.type`, `v.record_status`, `v.tx_id`, `v.content_hash`, `v.ontology_version` are `string` |
 | `count(...)` | `integer`, never null |
 | `collect(x)` | a list of what `x` is (a list of `any` when `x` is open or a list itself), never null |
 | a literal | its type, never null |
+
+An `OPTIONAL MATCH` never narrows a variable bound before it, since it keeps the rows when its
+pattern fails: such a variable keeps the type, class and nullability it had (one that was a value
+from `WITH ... AS` or `UNWIND` stays untyped), and only a name the clause binds for the first time
+is typed, as nullable. A `MATCH` filters, so it narrows.
 
 Everything else is not typed by the query, so declare it when you want it typed: `sum` and
 `avg`, `min` and `max`, `coalesce`, `CASE`, arithmetic, `size()` and the other functions,
 relationships, the validity fields `valid_from` and `valid_to`, and every value that went
 through `WITH ... AS` (a node passed on as `WITH v` keeps its type). A declaration may not
 contradict an inferred type (`function.returns_type_mismatch` names both; state the same type or
-drop the `type`); where the query names no class, a declared `class` is kept.
+drop the `type`); a declared `any` is accepted as long as `many` matches what the query makes
+certain; where the query names no class, a declared `class` is kept.
 
 ```yaml
 returns:

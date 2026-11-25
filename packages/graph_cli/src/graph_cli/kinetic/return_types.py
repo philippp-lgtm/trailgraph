@@ -15,10 +15,17 @@ exactly those, and only where the text of the query makes the type certain:
 - ``RETURN r.qualifier`` of a relationship variable of a ``MATCH`` pattern (one hop): the
   qualifier's datatype, like an attribute, always nullable.
 - ``RETURN v.id`` and ``v.alias``: a ``ref`` (of the label's class), ``v.rev``, ``v.tx_seq`` an
-  integer, ``v.created_at`` and ``v.recorded_at`` a datetime, ``v.type``, ``v.record_status`` text.
+  integer, ``v.created_at`` and ``v.recorded_at`` a datetime, ``v.type``, ``v.record_status``,
+  ``v.tx_id``, ``v.content_hash`` and ``v.ontology_version`` text; ``v.valid_from`` and
+  ``v.valid_to`` stay untyped.
 - ``count(...)``: an integer, never null. ``collect(x)``: a list of what ``x`` is, never null
   (null values are skipped); a list of anything when ``x`` is untyped or a list itself.
 - literals.
+
+An ``OPTIONAL MATCH`` never narrows a variable bound before it: such a clause keeps its rows, so
+the variable keeps the type, the class and the nullability it had (a name that was a value, from
+``WITH ... AS`` or ``UNWIND``, stays untyped), and only a name it binds for the first time is typed,
+as nullable. A ``MATCH`` filters, so it narrows.
 
 Everything else stays untyped: ``sum`` and ``avg``, ``coalesce``, ``CASE``, arithmetic,
 relationships, and values that went through ``WITH ... AS`` (a bare ``WITH v`` keeps ``v``). A
@@ -33,6 +40,7 @@ are shown (``compile.column_types``).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Final
@@ -47,6 +55,7 @@ from graph_cli.query.cypher.ast import (
     FunctionCall,
     Match,
     Property,
+    Unwind,
     Variable,
     With,
 )
@@ -132,7 +141,10 @@ class ColumnType:
 
 def contradicts(declared: ColumnType, inferred: ColumnType) -> bool:
     """Whether a declared type says something other than what the query makes certain: another
-    kind, list or not, or another enum or class where the inference names one."""
+    kind, list or not, or another enum or class where the inference names one. ``any`` is the top
+    type, so a declared ``any`` (of the same list-ness) says nothing false."""
+    if declared.kind == "any":
+        return declared.many != inferred.many
     return (
         declared.kind != inferred.kind
         or declared.many != inferred.many
@@ -191,29 +203,47 @@ class _Typer:
         self.scope: dict[str, VarInfo] = {}
         self.bound: dict[str, _Bound] = {}
         self.rels: set[str] = set()  # relationship variables of one hop
+        self.live: set[str] = set()  # the names in scope now (``scope`` also holds stale ones)
         for clause, introduced in zip(resolved.query.clauses, resolved.introduced, strict=True):
-            self.scope.update(introduced)
             if isinstance(clause, Match):
-                self.match(clause)
-            elif isinstance(clause, With):
+                self.match(clause, introduced)
+                continue
+            self.scope.update(introduced)
+            if isinstance(clause, With):
                 self.with_(clause)
+            elif isinstance(clause, Unwind):
+                self.live.add(clause.variable)
 
-    def match(self, clause: Match) -> None:
+    def match(self, clause: Match, introduced: Mapping[str, VarInfo]) -> None:
+        """A ``MATCH`` binds and narrows; an ``OPTIONAL MATCH`` only binds the names that were not
+        in scope (its rows are kept when the pattern fails, so a name bound before keeps what it
+        was: no new class, no narrower relations, no change of nullability)."""
+        before = frozenset(self.live)
+
+        def settled(name: str | None) -> bool:
+            return clause.optional and name in before
+
+        for name, info in introduced.items():
+            if not settled(name):
+                self.scope[name] = info
         for part in clause.patterns:
             for node in part.nodes:
-                if node.variable is None:
+                if node.variable is None or settled(node.variable):
                     continue
-                of_class = (
-                    node.labels[0][0]
-                    if len(node.labels) == 1 and len(node.labels[0]) == 1
-                    else None
-                )
+                single = len(node.labels) == 1 and len(node.labels[0]) == 1
+                of_class = node.labels[0][0] if single else None
                 known = self.bound.get(node.variable)
                 if known is None:
                     self.bound[node.variable] = _Bound(of_class, clause.optional)
                 elif known.of_class is None and of_class is not None:
                     self.bound[node.variable] = _Bound(of_class, known.optional)
-            self.rels.update(r.variable for r in part.rels if r.variable and r.length is None)
+            self.rels.update(
+                r.variable
+                for r in part.rels
+                if r.variable and r.length is None and not settled(r.variable)
+            )
+            self.live.update(n.variable for n in part.nodes if n.variable)
+            self.live.update(r.variable for r in part.rels if r.variable)
 
     def with_(self, clause: With) -> None:
         """A node or relationship variable survives a ``WITH`` that passes it on by its own name;
@@ -221,7 +251,9 @@ class _Typer:
         projection = clause.projection
         kept = dict(self.bound) if projection.star else {}
         rels = set(self.rels) if projection.star else set()
+        live = set(self.live) if projection.star else set()
         for item in projection.items:
+            live.add(item.name)
             if isinstance(item.expr, Variable) and item.expr.name == item.name:
                 if item.name in self.bound:
                     kept[item.name] = self.bound[item.name]
@@ -230,7 +262,7 @@ class _Typer:
             else:
                 kept.pop(item.name, None)
                 rels.discard(item.name)
-        self.bound, self.rels = kept, rels
+        self.bound, self.rels, self.live = kept, rels, live
 
     def of(self, e: Expr) -> ColumnType | None:
         match e:
