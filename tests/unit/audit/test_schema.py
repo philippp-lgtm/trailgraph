@@ -278,6 +278,8 @@ BROKEN: dict[str, tuple[Callable[[], Event], Callable[[Event], None], str]] = {
         _set("request.source", {"name": "inventory", "x": 1}),
         "request.source is not",
     ),
+    "via_unknown": (intent, _set("request.via", "proxy"), "request.via is not"),
+    "via_type": (intent, _set("request.via", ["call"]), "request.via is not"),
     "graph_missing": (intent, _set("graph", DELETE), "needs graph"),
     "graph_other": (intent, _set("graph.id", ENTITY), "graph.id differs"),
     "graph_shape": (intent, _set("graph.ontology", DELETE), "graph is not"),
@@ -440,6 +442,19 @@ def test_a_request_may_name_its_source(source: JsonValue) -> None:
         "action": {"name": "assign_position", "hash": H3},
         "source": source,
     }
+    assert event_problems(event) == []
+
+
+def test_a_request_may_say_it_was_made_by_a_call() -> None:
+    event = intent()
+    event["request"] = {
+        "command": "do",
+        "args_digest": H2,
+        "action": {"name": "assign_position", "hash": H3},
+        "via": "call",
+    }
+    assert event_problems(event) == []
+    event["request"] = {"command": "run", "args_digest": H2, "via": "call"}
     assert event_problems(event) == []
 
 
