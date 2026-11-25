@@ -126,6 +126,9 @@ class CommandSpec:
     # the command table of skill 1's SKILL.md leaves it out; the generated reference, the
     # inventory and the OpenAPI document keep it
     skill_table: bool = True
+    # False: the answer is never moved to a file when it is large (``cli_kit.spill``), for a command
+    # whose answer is the data a program asked for and must read from stdout
+    spill: bool = True
     # The kind of one invocation when it depends on the arguments (``call`` is a write for an
     # action and a read for a function or a view): the arguments by inventory name, as
     # ``given_args`` gives them. ``kind`` is then the strongest the command can be (a write), for
@@ -221,6 +224,7 @@ def _command(spec: CommandSpec) -> click.Command:
         state.kind = (
             spec.kind if spec.kind_by_args is None else spec.kind_of(spec.given_args(kwargs))
         )
+        state.spill = spec.spill
         return spec.handler(state, **kwargs)
 
     callback = leaf(call)

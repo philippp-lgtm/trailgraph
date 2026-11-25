@@ -281,3 +281,40 @@ def test_the_remote_client_keys_and_retries_by_the_kind_of_the_invocation() -> N
     assert str(args["--idempotency-key"]).startswith("r-")
     probe: dict[str, Any] = {"type": "ex:T", "--set": ["probe=1"]}
     assert write_of(keyed, probe, generate=True) is None and "--idempotency-key" not in probe
+
+
+# ---- an answer that never goes to a file ------------------------------------------------------
+
+
+class _Spill:
+    """A spill target that spills every answer larger than a few bytes."""
+
+    def __init__(self) -> None:
+        self.written: list[bytes] = []
+
+    def limit(self) -> int:
+        return 10
+
+    def write(self, graph: str | None, command: str | None, content: bytes) -> str:
+        self.written.append(content)
+        return "/spilled"
+
+
+def test_a_command_can_keep_its_answer_out_of_a_file() -> None:
+    from dataclasses import replace
+
+    def big(state: CommandState, **kwargs: Any) -> Result:
+        return Result(data={"text": "x" * 200})
+
+    plain = replace(SPECS[1], handler=big)
+    kept = replace(plain, spill=False)
+    for spec, spilled in ((plain, True), (kept, False)):
+        target = _Spill()
+        out = io.StringIO()
+        group = build_click(click.Group("prog"), (spec,))
+        invocation = Invocation("prog", spill=target)
+        run(group, ["whoami", "--json"], invocation, out=out, err=io.StringIO())
+        document = json.loads(out.getvalue())
+        assert (document["data"] is None) is spilled and bool(target.written) is spilled
+        if not spilled:
+            assert document["data"] == {"text": "x" * 200} and document["warnings"] == []
