@@ -1193,8 +1193,57 @@ the options of the commands:
 | `_entity` | entity view | the reference of the entity to show (required), of the class the view takes |
 | `_cursor`, `_page_bytes` | set view | `view --cursor` and `--page-bytes`: the next page and the page size |
 
-A harness that calls the commands maps a tool call to them: the parameters become `--param`
-options, the controls the options and the reference above.
+**Calling a tool.** `graph call TOOL` runs a tool with exactly the object its `input_schema`
+describes, whatever the kind of the tool:
+
+```sh
+graph call run_<function> --input <name>=<json> --input _limit=<json> --json
+graph call do_<action> --input <name>=<json> --input _dry_run=true --json
+graph call view_<view> --input _entity='"<id>"' --json
+```
+
+Each `--input` is one member of the object, its value a JSON value (a string is written with its
+quotes), repeated for more members. Over the server the same call is `POST /v1/commands/call` with
+`args.tool` and `args.input`, the object itself:
+`{"args": {"tool": "run_x", "input": {"since": "2026-01-01", "titles": ["a"]}}}`. The call answers
+what `run`, `do` or `view` answers for the same arguments: the same service runs, binds the
+parameters by the same types, resolves references the same way, authorizes, audits and refuses the
+same. What differs:
+
+- **The tool name** is looked up among the entries you see. One you do not see is `tool.not_found`
+  with the close names in `did_you_mean`; one you see but may not use gives what the command gives,
+  `access.denied`, recorded like that of the command.
+- **`null` is "not given"** for every parameter and control that is not required: a typed client
+  sends `null` for an argument it leaves out, and a default applies. For a required parameter it is
+  as good as missing (`function.parameter_missing`, `action.parameter_missing` or
+  `view.parameter_missing`). A number written with a fraction or an exponent (`5.0`) is an integer
+  when it is a whole number, so a client that writes every number as a float still binds `integer`
+  parameters and controls; for any other type, and for a number with a fraction, it is refused.
+- **Unknown input is refused**: a parameter the entry does not have is `function.parameter_unknown`
+  (`action.` or `view.` for those kinds), a control the tool does not have (`_reason` of a function)
+  or one with a value of the wrong type is `usage.invalid_argument`, and the entity of an entity view
+  is required (`usage.missing_argument`).
+- **A function's `page`** is part of `data` (for `run` it is in the envelope next to it), so the
+  answer is the one object `output_schema` describes. A call never writes its answer to a file, so
+  `data` is never `null` on success: how much comes back is bounded by the controls of the tool
+  (`_limit` for a function, `_page_bytes` for a set view), not by the output setting of the program.
+  A function's next page starts at `page.next_offset`; the next page of a set view is the `next` of
+  the answer as `_cursor` while `more` is true, and `view.cursor_stale` says a write landed between
+  two pages: start again from the first.
+- **`--expect-hash HASH`** refuses with `tool.hash_mismatch` (a conflict, not retryable) when the
+  `hash` the manifest gives your tool is not HASH, before anything runs: the harness built its tool
+  from an older manifest and fetches it again. A tool you may not use is refused as `access.denied`
+  first, and a tool you cannot see is `tool.not_found`.
+- **Idempotency.** Only an action that is not a dry run writes, and only that call takes
+  `--idempotency-key` (over the server also the `Idempotency-Key` header, as for `do`); the remote
+  `graph` generates a key when it gets none, so a lost answer can be repeated. A `call` and a `do`
+  with the same key and the same bound parameters are one request: either replays the recorded
+  result of the other (`idempotent_replay`), and other content under the key is
+  `conflict.idempotency_key_reuse`. Every other call, a dry run included, is a read: it repeats
+  safely and refuses a key with `usage.invalid_argument`.
+- **The audit** records what the command does: the command it ran (`do`, `run` or `view`), the hash
+  of the entry and `request.via`, `call` ([Audit](audit.md)); the access log names the command it
+  ran as well, so the calls of a harness count like any other call of a function.
 
 **Answers.** `output_schema` describes `data`, and the schemas stay open like every output schema of
 `describe commands`: a consumer ignores keys it does not know, so an answer can grow without
@@ -1224,9 +1273,12 @@ tightening an input schema, or changing what an `on_error` value means. A harnes
 | `stop` | nothing the harness can change helps: report it (`access.denied`, a stale entry, a graph that is archived) |
 
 A precondition failure is `action.precondition_failed`, and `error.details.failed` lists each failing
-precondition with its `precondition`, `parameter`, `entity`, `summary` and, for a count, `actual`.
-A dry run raises the same errors as the real run and writes and audits nothing. Each
-tool lists the codes of its command (`run`, `do` or `view`), `tool.not_found`, `tool.hash_mismatch`
-and the codes of the transport. A large manifest goes to a file on the command line like any large
-answer ([Large answers go to a file](#large-answers-go-to-a-file)); a harness fetches it over the
-server API.
+precondition with its `precondition`, `parameter`, `entity`, `summary` and, for a count, `actual`;
+the arguments were fine, so the call is not repeated unchanged: read what failed and change the
+graph or the plan. A dry run (`_dry_run`) raises the same errors as the real run and writes and
+audits nothing, so a harness can check a call before it makes it. Each tool lists the codes of its
+command (`run`, `do` or `view`) that a call can raise, `tool.not_found`, `tool.hash_mismatch` and
+the codes of the transport; the `not_found` codes of the three kinds of entry are left out, because
+a call of an entry you cannot see is `tool.not_found`. A large manifest goes to a file on the command
+line like any large answer ([Large answers go to a file](#large-answers-go-to-a-file)); a harness
+fetches it over the server API.
