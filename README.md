@@ -102,3 +102,13 @@ See [`docs/README.md`](docs/README.md) for the full documentation: the
 command references, configuration, access control, stored files, agent
 skills and the internals. To work on graph_cli itself, see
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+## License
+
+graph_cli is source-available under the
+[PolyForm Noncommercial License](LICENSE.md): free for personal use,
+research, hobby projects and noncommercial organizations. Any commercial
+use, including a company's internal use, needs a commercial license; ask at
+github.philippplgtm@icloud.com. Contributions are welcome under the
+[Contributor License Agreement](CLA.md), see
+[`CONTRIBUTING.md`](CONTRIBUTING.md#contributions-and-the-cla).

@@ -29,6 +29,12 @@ That covers, for example:
 - Credentials, tokens, API keys, account or tenant IDs
 - Personal workflow preferences, schedules, contacts, private URLs
 
+The one exception is the licensing: `LICENSE.md`, `CLA.md` and the license
+section of `README.md` may name the copyright holder by the GitHub account
+(not a real name) and give the contact address for license requests. Nothing
+else from that list goes there, and no other file repeats either; link to
+`LICENSE.md` instead.
+
 Where it goes instead:
 
 | Destination | Use for |
