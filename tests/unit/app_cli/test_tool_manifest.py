@@ -508,7 +508,7 @@ def golden(name: str, document: dict[str, Any]) -> None:
 
 def test_goldens_of_the_example_graphs() -> None:
     golden("company_1.1.0", manifest(COMPANY.scene(), find=True))
-    golden("inventory_1.1.0", manifest(INVENTORY.scene(), find=True))
+    golden("inventory_1.0.0", manifest(INVENTORY.scene(), find=True))
 
 
 def test_goldens_of_a_reader_of_items() -> None:

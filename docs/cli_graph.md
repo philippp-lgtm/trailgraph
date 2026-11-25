@@ -1242,10 +1242,10 @@ same. What differs:
   `access.denied`, recorded like that of the command.
 - **The `lookup` tool** is called like the others, with `text`, `for` and `limit`. It is there only for a
   caller that holds `read.find` while some tool takes a reference: with that right missing it is
-  `access.denied`, as for `lookup`, with no reference input at all it is `tool.not_found`. A `for` that is
-  none of the slots (a name without its kind prefix, a slot of a tool you cannot use) is
-  `usage.invalid_argument` with the close slots in `did_you_mean`, and so is any input other than `text`,
-  `for` and `limit`. It is a read: it takes no key. A graph whose ontology gives no entity a name
+  `access.denied`, as for `lookup`, with no reference input the tool can serve it is
+  `tool.not_found`. A `for` that is none of the slots (a name without its kind prefix, a slot of a
+  tool you cannot use) is `usage.invalid_argument` with the close slots in `did_you_mean`, and so is
+  any input other than `text`, `for` and `limit`. It is a read: it takes no key. A graph whose ontology gives no entity a name
   answers as `lookup` does (`term.no_labels`).
 - **`null` is "not given"** for every parameter and control that is not required: a typed client
   sends `null` for an argument it leaves out, and a default applies. For a required parameter it is
