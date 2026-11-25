@@ -440,7 +440,7 @@ The API never takes a path: `--data-root` is not part of it, a file
 parameter (a policy) takes an upload, and a directory parameter (an
 ontology, a skill) takes `{"files": {"<relative path>": "sha256:<hex>"},
 "name": "<dir>"}`, every file an upload of the same token. Relative paths
-have no empty, `.` or `..` parts; at most 1000 files. The server builds the
+have no empty, `.` or `..` parts; at most 1,000 files. The server builds the
 directory under the name's last part and removes it after the command;
 answers name the client's arguments, never the server's copy. `graph-admin graph skill
 render` takes `--out` as an empty directory and answers `path: null` with

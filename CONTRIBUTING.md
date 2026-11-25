@@ -194,9 +194,9 @@ with options it takes (`tests/support/command_lines.py`, also used for the
 admin skills).
 
 `uv run pytest tests/test_doc_facts.py` checks that every number in the
-prose of the documents it scans is a fact that matches the code or a listed
-exemption, and that every exit code a document gives is the exit code of the
-error code next to it.
+prose of `README.md` and `docs/` is a fact that matches the code or a listed
+exemption, that every exit code a document gives is the exit code of the
+error code next to it, and that every format number names a real format.
 
 ## Generated files
 
