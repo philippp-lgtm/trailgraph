@@ -5,7 +5,8 @@ name: check
 #   test:  the suite on Linux as a non-root user (the Dockerfile's `test` stage), then
 #          the runtime image: it builds, starts, answers /v1/health and its data root verifies.
 #          A pull request runs the tests its change affects (scripts/select_tests.py, decided by
-#          scripts/ci-select-tests.sh: the selector of the base branch, label ci:full forces everything);
+#          scripts/ci-select-tests.sh: the selector of the base branch, label ci:full forces everything;
+#          a change to this workflow, its scripts or the Dockerfile controls its own run, so main runs it again);
 #          a push to main and every other event run the whole suite, so it stays the gate of a release
 #   object-store: tests/integration against a real S3-compatible store (the pinned Garage image,
 #          tests/integration/run_garage.sh); the suite of `test` skips it
@@ -25,6 +26,8 @@ env:
   # A push to main reuses a pull request run only when its test job ran the whole suite (scripts/ci-reuse-pr-run.sh):
   # job/step names that must have succeeded in that run. A run that tested a selection never counts.
   CI_REUSE_REQUIRE: 'test/Test suite (full)'
+  # A pull request runs the workflow and scripts it carries: when it changed any of these, main runs the change itself.
+  CI_REUSE_REFUSE_PATHS: '^(\.github/workflows/check\.yml|\.github/actions/|scripts/ci-|tests/ci-|Dockerfile$|\.dockerignore$)'
 
 # A newer push to the same branch or pull request supersedes a running check.
 concurrency:
@@ -75,10 +78,10 @@ jobs:
       actions: read
       pull-requests: read
     steps:
-      # The whole history: a pull request selects its tests by the diff to its base commit.
+      # The whole history for a pull request: it selects its tests by the diff to its base commit.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
           persist-credentials: false
 
       - name: Reuse the pull request run

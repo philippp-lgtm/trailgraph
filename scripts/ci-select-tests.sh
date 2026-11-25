@@ -6,7 +6,9 @@
 #   - the event is a pull request, and the pull request does not carry the label ci:full (read from the API when
 #     the job runs, not from the event, so a re-run sees a label added later),
 #   - the base commit of the pull request (BASE_SHA) is in the checkout and holds scripts/select_tests.py: the
-#     selector that RUNS is the base branch's, never the pull request's own, so a change cannot weaken its selection,
+#     selector that RUNS is the base branch's, never the pull request's own, so a change to the selector cannot judge
+#     itself. (This script, the workflow and the Dockerfile do come from the pull request: a change to them controls
+#     its own run, and ci-reuse-pr-run.sh makes main run such a change itself.)
 #   - the selector answers with test paths (not `full`), every one of the form tests/<name>.py without anything a shell
 #     or pytest would read as more than a path.
 # The change is `git diff BASE_SHA HEAD` (HEAD is the merge of the pull request into its base). The selector runs in the

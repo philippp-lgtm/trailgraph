@@ -122,6 +122,7 @@ check "the full suite step runs unless the selection says selected" bash -c "$(d
 check "the full suite step passes no selection" bash -c "$(declare -f step); workflow='$workflow'; ! step 'Test suite (full)' | grep -q 'build-args'"
 check "the selected suite step runs only when the selection says selected" bash -c "$(declare -f step); workflow='$workflow'; step 'Test suite (selected)' | grep -qF \"steps.select.outputs.mode == 'selected'\" && step 'Test suite (selected)' | grep -qF 'PYTEST_ARGS=\${{ steps.select.outputs.args }}'"
 check "the reuse rule names the whole-suite step" grep -qxF "  CI_REUSE_REQUIRE: 'test/Test suite (full)'" "$workflow"
+check "the reuse rule refuses a pull request that changed the CI itself" grep -qE "^  CI_REUSE_REFUSE_PATHS: .*check.*ci-.*Dockerfile" "$workflow"
 check "the test job is named test" bash -c "grep -q '^  test:\$' '$workflow'"
 check "only pull requests can select: the selection step sees the event" bash -c "$(declare -f step); workflow='$workflow'; step 'Select the tests' | grep -qF 'run: scripts/ci-select-tests.sh'"
 check "the Dockerfile test stage takes PYTEST_ARGS and defaults to the whole suite" bash -c "grep -qx 'ARG PYTEST_ARGS=\"\"' '$root/Dockerfile' && grep -qF 'RUN uv run pytest -q -p no:cacheprovider -n 8 \${PYTEST_ARGS}' '$root/Dockerfile'"
