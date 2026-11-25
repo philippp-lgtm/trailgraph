@@ -362,5 +362,6 @@ they open a graph's store (`storage.files.store_format`); another backend or
 layout version is `format.unsupported_version`. The maintenance port leaves a
 manifest that cannot be read at all to `verify`, which reports it
 (`pin_mismatch`). Every manifest rewrite (the pin switch of a release) keeps
-`[store]` as read, so the location is never dropped; `graph-admin graph show`
+`[store]` as read, so the location is never dropped.
+<!-- claim: storage.manifest_rewrite_keeps_store --> `graph-admin graph show`
 reports it as `store.blob_location` and `store.store_id`.

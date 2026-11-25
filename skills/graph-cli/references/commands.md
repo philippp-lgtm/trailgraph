@@ -502,7 +502,7 @@ Usage: `graph file add PATH [OPTIONS]`
 
 ## graph file check
 
-Compare the origins of stored files with their content: same, changed, missing.
+Compare the origins of stored files with their content.
 
 Kind: read. Surface: retrieve. Action: `read.get`. Exit codes: 0, 1, 2, 3, 5, 6.
 

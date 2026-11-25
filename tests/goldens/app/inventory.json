@@ -1907,7 +1907,7 @@
       "kind": "read",
       "surface": "retrieve",
       "action": "read.get",
-      "summary": "Compare the origins of stored files with their content: same, changed, missing.",
+      "summary": "Compare the origins of stored files with their content.",
       "args": [
         {
           "name": "refs",

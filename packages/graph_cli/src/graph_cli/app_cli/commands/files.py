@@ -385,7 +385,7 @@ SPECS: Final = (
         kind="read",
         surface="retrieve",
         action="read.get",
-        summary="Compare the origins of stored files with their content: same, changed, missing.",
+        summary="Compare the origins of stored files with their content.",
         description=(
             "Statuses: same, changed, missing, root_unknown, no_origin. On changed, store the "
             "new version with file add and supersede the old file with a reason."
