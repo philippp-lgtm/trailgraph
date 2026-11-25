@@ -334,6 +334,17 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
             "--input",
             "x=1",
         )
+        for_place = ("--input", 'for="view_location_overview._entity"')
+        look = ("call", "lookup", "--input", 'text="x"', *for_place)
+        call(*look)
+        call(*look, "--input", "limit=1")
+        call(*look, "--expect-hash", tools["lookup"]["hash"])
+        call(*look, "--expect-hash", "sha256:" + "0" * 64)
+        call(*look, "--idempotency-key", "k-read")  # a read takes no key
+        call("call", "lookup", "--input", 'text="x"', "--input", 'for="run_nothing.x"')
+        call("call", "lookup", "--input", 'text="x"')
+        call("call", "lookup", "--input", 'text=["x", "y"]', "--input", 'for="do_move_item.item"')
+        text(*look)
         call("call", "run_items_by_condition", "--input", '"condition"="damaged"')
         call("call", "run_items_by_condition", "--input", 'condition="damaged"')
         call("call", "run_items_by_condition", "--input", 'condition="mint"')

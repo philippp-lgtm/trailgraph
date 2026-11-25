@@ -20,6 +20,12 @@ Controls are the arguments that are not parameters of the entry; their names sta
 underscore, which a parameter name cannot (``kinetic.params.PARAM_RE``), so they never clash with
 authored names: ``_limit`` and ``_offset`` of a function, ``_reason`` and ``_dry_run`` of an
 action, ``_entity`` of an entity view, ``_cursor`` and ``_page_bytes`` of a set view.
+
+The ``lookup`` tool finds the entity a name stands for, so that a harness can fill a ``ref``
+input. It is listed when some tool has such an input and the caller may find entities; its ``for``
+names the input (``<tool>.<property>``, ``_entity`` for the entity of an entity view) and the tool
+maps it to ``lookup --for`` with the kind of the entry written out (``view:<name>.<param>``),
+because a view may share its name with a function.
 """
 
 from __future__ import annotations
@@ -41,6 +47,7 @@ from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.kinetic.view_format import MIN_BYTES, PAGE_BYTES_MAX, RowsSection
 from graph_cli.kinetic.view_page import PAGE_BYTES
 from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli.query.lookup import MAX_LOOKUP_TEXTS
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT
 from graph_cli.services.describe import column_types_of
 
@@ -48,6 +55,8 @@ FUNCTION: Final = "function"
 ACTION: Final = "action"
 VIEW: Final = "view"
 KINDS: Final = (FUNCTION, ACTION, VIEW)
+LOOKUP: Final = "lookup"  # the name and the kind of the tool that looks a name up
+TOOL_KINDS: Final = (*KINDS, LOOKUP)
 PREFIXES: Final = {FUNCTION: "run_", ACTION: "do_", VIEW: "view_"}
 MAX_TOOL_NAME: Final = 64
 _DIGEST_CHARS: Final = 8
@@ -63,6 +72,11 @@ DRY_RUN: Final = "_dry_run"
 ENTITY: Final = "_entity"
 CURSOR: Final = "_cursor"
 PAGE_BYTES_ARG: Final = "_page_bytes"
+
+# The properties of the lookup tool.
+LOOKUP_TEXT: Final = "text"
+LOOKUP_FOR: Final = "for"
+LOOKUP_LIMIT: Final = "limit"
 
 
 def tool_name(kind: str, entry_name: str) -> str:
@@ -103,11 +117,11 @@ class ToolHead:
     """A tool without its answer: everything of the manifest that follows from the entry, the
     model the caller sees and the caller's obligations. ``columns`` are the result columns of a
     function, ``sections`` the sections of a view and ``entity`` whether it shows one entity (none
-    of them for the other kinds)."""
+    of them for the other kinds); the ``lookup`` tool has no entry and no entry hash."""
 
     name: str
     kind: str
-    entry: str
+    entry: str | None
     description: str
     input_schema: JsonObject
     annotations: JsonObject
@@ -115,7 +129,7 @@ class ToolHead:
     replaced_by: str | None
     featured: bool
     module: str | None
-    entry_hash: str
+    entry_hash: str | None
     columns: tuple[ToolColumn, ...] = ()
     sections: tuple[ToolSection, ...] = ()
     entity: bool = False
@@ -138,14 +152,27 @@ def _enum_text(values: Sequence[tuple[str, str | None]]) -> str:
     return "Values: " + "; ".join(f"{n} - {s}" if s else n for n, s in values) + "."
 
 
-def _ref_text(of_class: str | None) -> str:
-    return (
+def _ref_text(of_class: str | None, lookup_for: str | None) -> str:
+    """What a ``ref`` input takes; ``lookup_for`` is the ``for`` of the ``lookup`` tool that finds
+    the entity by name (``None``: the tool is not listed)."""
+    text = (
         f"An entity of class {of_class}: its id, its alias or 8 to 32 trailing hex digits of "
-        "its id; a name has to be looked up first."
+        "its id; a name has to be looked up first"
     )
+    if lookup_for is None:
+        return text + "."
+    return text + f", with the {LOOKUP} tool (for: {lookup_for!r})."
 
 
-def _scalar(param: ParamType, model: CompiledModel) -> tuple[JsonObject, str]:
+def lookup_slot(model: CompiledModel, param: ParamType) -> bool:
+    """Whether the ``lookup`` tool can serve ``param``: a ``ref`` of a class the model has (an
+    entry that names a class the model lost is stale and has none to search)."""
+    return param.kind == "ref" and param.of_class in model.classes
+
+
+def _scalar(
+    param: ParamType, model: CompiledModel, lookup_for: str | None
+) -> tuple[JsonObject, str]:
     """The schema of one value of a parameter and the text it adds to the description."""
     schema: dict[str, JsonValue] = {"type": param.json_type}
     text = ""
@@ -162,15 +189,18 @@ def _scalar(param: ParamType, model: CompiledModel) -> tuple[JsonObject, str]:
             text = _enum_text(values)
     if param.kind == "ref":
         schema[EXTENSION] = {"class": param.of_class}
-        text = _ref_text(param.of_class)
+        text = _ref_text(param.of_class, lookup_for)
     return schema, text
 
 
-def param_schema(param: ParamType, model: CompiledModel) -> JsonObject:
+def param_schema(
+    param: ParamType, model: CompiledModel, lookup_for: str | None = None
+) -> JsonObject:
     """The property schema of a parameter (TM5): the type of one value, an array of at least one
     for ``many``, the default, and ``null`` as "not given" unless the parameter is required or has
-    a default."""
-    scalar, text = _scalar(param, model)
+    a default. ``lookup_for`` is the ``for`` of the ``lookup`` tool for a ``ref`` parameter (the
+    description names the tool)."""
+    scalar, text = _scalar(param, model, lookup_for)
     description = " ".join(part for part in (param.summary, text) if part)
     schema: dict[str, JsonValue] = {"type": "array", "items": scalar, "minItems": 1}
     if not param.many:
@@ -203,14 +233,22 @@ def _control(
     return {**schema, "description": description}
 
 
+def _lookup_for(tool: str | None, param: ParamType, model: CompiledModel) -> str | None:
+    """The ``for`` of the ``lookup`` tool for ``param`` of ``tool``; ``None`` when the tool is not
+    listed (``tool`` is ``None``) or cannot serve the parameter."""
+    return f"{tool}.{param.name}" if tool is not None and lookup_slot(model, param) else None
+
+
 def _input(
     head: Sequence[tuple[str, JsonObject, bool]],
     params: Sequence[ParamType],
     tail: Sequence[tuple[str, JsonObject, bool]],
     model: CompiledModel,
+    lookup: str | None = None,
 ) -> JsonObject:
     """The closed object of ``head`` controls, the parameters and ``tail`` controls; a control is
-    ``(name, schema, required)``."""
+    ``(name, schema, required)``. ``lookup`` is the name of the tool when the ``lookup`` tool is
+    listed."""
     properties: dict[str, JsonValue] = {}
     required: list[str] = []
     for name, schema, needed in head:
@@ -218,7 +256,7 @@ def _input(
         if needed:
             required.append(name)
     for param in params:
-        properties[param.name] = param_schema(param, model)
+        properties[param.name] = param_schema(param, model, _lookup_for(lookup, param, model))
         if param.required:
             required.append(param.name)
     for name, schema, needed in tail:
@@ -244,13 +282,17 @@ def _offset_schema() -> JsonObject:
     )
 
 
-def function_input(entry: FunctionEntry, model: CompiledModel) -> JsonObject:
-    """The input of ``run_<function>``: its parameters, then ``_limit`` and ``_offset``."""
+def function_input(
+    entry: FunctionEntry, model: CompiledModel, *, lookup: bool = False
+) -> JsonObject:
+    """The input of ``run_<function>``: its parameters, then ``_limit`` and ``_offset``
+    (``lookup``: the ``lookup`` tool is listed)."""
     return _input(
         (),
         param_types(entry.defn.params),
         ((LIMIT, _limit_schema(), False), (OFFSET, _offset_schema(), False)),
         model,
+        tool_name(FUNCTION, entry.name) if lookup else None,
     )
 
 
@@ -261,9 +303,11 @@ def reason_required(entry: ActionEntry, obligations: frozenset[str]) -> bool:
     return entry.defn.reason == "required" or any(n.action in obligations for n in entry.needs)
 
 
-def action_input(entry: ActionEntry, model: CompiledModel, *, reason_needed: bool) -> JsonObject:
+def action_input(
+    entry: ActionEntry, model: CompiledModel, *, reason_needed: bool, lookup: bool = False
+) -> JsonObject:
     """The input of ``do_<action>``: its parameters, then ``_reason`` (required when
-    ``reason_needed``) and ``_dry_run``."""
+    ``reason_needed``) and ``_dry_run`` (``lookup``: the ``lookup`` tool is listed)."""
     reason = _control(
         # \S: a reason of blanks only is refused, as the binder refuses it
         {"type": "string", "minLength": 1, "maxLength": MAX_REASON, "pattern": r"\S"},
@@ -281,17 +325,20 @@ def action_input(entry: ActionEntry, model: CompiledModel, *, reason_needed: boo
         param_types(entry.defn.params),
         ((REASON, reason, reason_needed), (DRY_RUN, dry_run, False)),
         model,
+        tool_name(ACTION, entry.name) if lookup else None,
     )
 
 
-def view_input(entry: ViewEntry, model: CompiledModel) -> JsonObject:
+def view_input(entry: ViewEntry, model: CompiledModel, *, lookup: bool = False) -> JsonObject:
     """The input of ``view_<view>``: ``_entity`` first for an entity view (required: a reference
     to an entity of the class it takes), the parameters, then ``_cursor`` and ``_page_bytes`` for
-    a set view."""
+    a set view (``lookup``: the ``lookup`` tool is listed)."""
     params = param_types(entry.defn.params)
+    tool = tool_name(VIEW, entry.name) if lookup else None
     if entry.takes is not None:
-        entity = param_schema(ref_type(ENTITY, "The entity to show.", entry.takes), model)
-        return _input(((ENTITY, entity, True),), params, (), model)
+        shown = ref_type(ENTITY, "The entity to show.", entry.takes)
+        entity = param_schema(shown, model, _lookup_for(tool, shown, model))
+        return _input(((ENTITY, entity, True),), params, (), model, tool)
     cursor = _control(
         {"type": "string", "minLength": 1},
         "The next of the previous page of this view, with the same parameters; leave it out for "
@@ -303,7 +350,8 @@ def view_input(entry: ViewEntry, model: CompiledModel) -> JsonObject:
         f"Page size in bytes, at least {MIN_BYTES}; the view's own size, else {PAGE_BYTES}.",
         nullable=True,
     )
-    return _input((), params, ((CURSOR, cursor, False), (PAGE_BYTES_ARG, page_bytes, False)), model)
+    tail = ((CURSOR, cursor, False), (PAGE_BYTES_ARG, page_bytes, False))
+    return _input((), params, tail, model, tool)
 
 
 REFERENCES_NOTE: Final = "Supply the references it needs."
@@ -362,7 +410,11 @@ def function_columns(entry: FunctionEntry, model: CompiledModel) -> tuple[ToolCo
 
 
 def function_head(
-    entry: FunctionEntry, model: CompiledModel, visible: Sequence[FunctionEntry]
+    entry: FunctionEntry,
+    model: CompiledModel,
+    visible: Sequence[FunctionEntry],
+    *,
+    lookup: bool = False,
 ) -> ToolHead:
     defn = entry.defn
     replaced = _replacement(FUNCTION, defn.replaced_by, visible)
@@ -374,7 +426,7 @@ def function_head(
         description=description_text(
             defn.summary, defn.use_when, examples, deprecated=entry.deprecated, replaced_by=replaced
         ),
-        input_schema=function_input(entry, model),
+        input_schema=function_input(entry, model, lookup=lookup),
         annotations={"read_only": True, "dry_run": False, "reason": None, "paging": "offset"},
         status=defn.status,
         replaced_by=replaced,
@@ -390,6 +442,8 @@ def action_head(
     model: CompiledModel,
     visible: Sequence[ActionEntry],
     obligations: frozenset[str],
+    *,
+    lookup: bool = False,
 ) -> ToolHead:
     defn = entry.defn
     replaced = _replacement(ACTION, defn.replaced_by, visible)
@@ -402,7 +456,7 @@ def action_head(
         description=description_text(
             defn.summary, defn.use_when, examples, deprecated=entry.deprecated, replaced_by=replaced
         ),
-        input_schema=action_input(entry, model, reason_needed=needed),
+        input_schema=action_input(entry, model, reason_needed=needed, lookup=lookup),
         annotations={
             "read_only": False,
             "dry_run": True,
@@ -447,6 +501,8 @@ def view_head(
     visible: Sequence[ViewEntry],
     functions: Sequence[FunctionEntry],
     known: dict[str, tuple[ToolColumn, ...]] | None = None,
+    *,
+    lookup: bool = False,
 ) -> ToolHead:
     defn = entry.defn
     replaced = _replacement(VIEW, defn.replaced_by, visible)
@@ -461,7 +517,7 @@ def view_head(
         description=description_text(
             defn.summary, defn.use_when, examples, deprecated=entry.deprecated, replaced_by=replaced
         ),
-        input_schema=view_input(entry, model),
+        input_schema=view_input(entry, model, lookup=lookup),
         annotations={
             "read_only": True,
             "dry_run": False,
@@ -475,6 +531,114 @@ def view_head(
         entry_hash=entry.hash,
         sections=view_sections(entry, model, functions, {} if known is None else known),
         entity=entry.entity,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class RefInput:
+    """A ``ref`` input of a tool the ``lookup`` tool can be asked about: ``kind`` and ``entry`` of
+    the tool, its ``tool`` name, the input's ``name`` (``_entity`` for the entity of an entity
+    view) and the class it takes."""
+
+    kind: str
+    entry: str
+    tool: str
+    name: str
+    of_class: str
+
+    @property
+    def value(self) -> str:
+        """What ``for`` of the ``lookup`` tool says: ``<tool>.<input>``."""
+        return f"{self.tool}.{self.name}"
+
+    @property
+    def lookup_for(self) -> str:
+        """The same slot as ``lookup --for`` takes it: the kind of the entry written out, because
+        a view may share its name with a function."""
+        return f"{self.kind}:{self.entry}.{self.name}"
+
+
+def ref_inputs(
+    model: CompiledModel,
+    functions: Sequence[FunctionEntry],
+    actions: Sequence[ActionEntry],
+    views: Sequence[ViewEntry],
+) -> tuple[RefInput, ...]:
+    """Every ``ref`` input the ``lookup`` tool can serve over the entries the caller may use, in
+    the order of the manifest (functions, actions, views, each by name; an entity view's
+    ``_entity`` before its parameters)."""
+    entries: list[tuple[str, FunctionEntry | ActionEntry | ViewEntry]] = [
+        *((FUNCTION, e) for e in sorted(functions, key=lambda e: e.name)),
+        *((ACTION, e) for e in sorted(actions, key=lambda e: e.name)),
+        *((VIEW, e) for e in sorted(views, key=lambda e: e.name)),
+    ]
+    found: list[RefInput] = []
+    for kind, entry in entries:
+        params = param_types(entry.defn.params)
+        takes = entry.takes if isinstance(entry, ViewEntry) else None
+        if takes is not None:
+            params = (ref_type(ENTITY, "", takes), *params)
+        tool = tool_name(kind, entry.name)
+        found.extend(
+            RefInput(kind, entry.name, tool, p.name, p.of_class)
+            for p in params
+            if p.of_class is not None and lookup_slot(model, p)
+        )
+    return tuple(found)
+
+
+def lookup_input(refs: Sequence[RefInput]) -> JsonObject:
+    """The input of the ``lookup`` tool: ``text`` (a name or a list of names), ``for`` (one of
+    the ``refs``) and ``limit``."""
+    name: JsonObject = {"type": "string", "minLength": 1, "pattern": r"\S"}  # not blanks only
+    text: JsonObject = {
+        "anyOf": [
+            name,
+            {"type": "array", "items": name, "minItems": 1, "maxItems": MAX_LOOKUP_TEXTS},
+        ],
+        "description": f"A name, or a list of at most {MAX_LOOKUP_TEXTS} names, each looked up on "
+        "its own.",
+    }
+    slot: JsonObject = {
+        "type": "string",
+        "enum": [r.value for r in refs],
+        "description": "The input the entity is for, as <tool>.<input> (<tool>._entity for the "
+        "entity of an entity view): only candidates of the class that input takes are listed.",
+    }
+    limit = _control(
+        {"type": "integer", "minimum": 1, "maximum": MAX_LIMIT},
+        f"Candidates per name, at most {MAX_LIMIT}.",
+        default=DEFAULT_LIMIT,
+    )
+    properties: dict[str, JsonValue] = {LOOKUP_TEXT: text, LOOKUP_FOR: slot, LOOKUP_LIMIT: limit}
+    return _closed(properties, [LOOKUP_TEXT, LOOKUP_FOR])
+
+
+def lookup_head(refs: Sequence[RefInput]) -> ToolHead:
+    """The ``lookup`` tool over ``refs``, the ``ref`` inputs of the tools that are listed."""
+    description = description_text(
+        "Find the entities that go by a name, to fill a reference input of another tool.",
+        "you know the name of an entity where a tool needs a reference. Names are matched whole, "
+        "ignoring case, against main, alternative and hidden names; each name gets its candidates "
+        "ranked, best first, and only those of the class that the input in for takes (matches of "
+        "other classes are counted in texts[].excluded). Pass the id or alias of a candidate as "
+        "the reference, never a guess: when a name has several candidates, facts tell them apart.",
+        (),
+        deprecated=False,
+        replaced_by=None,
+    )
+    return ToolHead(
+        name=LOOKUP,
+        kind=LOOKUP,
+        entry=None,
+        description=description,
+        input_schema=lookup_input(refs),
+        annotations={"read_only": True, "dry_run": False, "reason": None, "paging": None},
+        status="active",
+        replaced_by=None,
+        featured=False,
+        module=None,
+        entry_hash=None,
     )
 
 

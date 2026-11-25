@@ -373,6 +373,239 @@
           },
           {
             "$ref": "#/components/schemas/view_model"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "alias": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "record_status": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "match": {
+                      "type": "object",
+                      "properties": {
+                        "attr": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "label",
+                            "alt_label",
+                            "hidden_label"
+                          ]
+                        },
+                        "kind": {
+                          "type": "string"
+                        },
+                        "lang": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "value": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "attr",
+                        "role",
+                        "kind",
+                        "lang",
+                        "value"
+                      ]
+                    },
+                    "facts": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "rel": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "alias": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "label": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "rel",
+                              "id",
+                              "alias",
+                              "label"
+                            ]
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "id",
+                    "alias",
+                    "type",
+                    "record_status",
+                    "label",
+                    "match",
+                    "facts"
+                  ]
+                }
+              },
+              "texts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "exact": {
+                      "type": "integer"
+                    },
+                    "excluded": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "total",
+                    "exact",
+                    "excluded"
+                  ]
+                }
+              },
+              "fit": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "for": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "for_source": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "types": {
+                        "anyOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "for",
+                      "for_source",
+                      "types"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "page": {
+                "$ref": "#/components/schemas/page"
+              }
+            },
+            "required": [
+              "items",
+              "texts",
+              "fit",
+              "page"
+            ]
           }
         ]
       },
@@ -9604,7 +9837,7 @@
             }
           },
           "400": {
-            "description": "Bad Request: action.parameter_invalid, action.parameter_missing, action.parameter_unknown, action.reason_required, function.parameter_invalid, function.parameter_missing, function.parameter_unknown, graph.not_selected, usage.invalid_argument, usage.missing_argument, view.cursor_invalid, view.parameter_invalid, view.parameter_missing, view.parameter_unknown.",
+            "description": "Bad Request: action.parameter_invalid, action.parameter_missing, action.reason_required, function.parameter_invalid, function.parameter_missing, graph.not_selected, usage.invalid_argument, usage.missing_argument, view.cursor_invalid, view.parameter_invalid, view.parameter_missing.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -9625,18 +9858,15 @@
             "x-graph-cli-error-codes": [
               "action.parameter_invalid",
               "action.parameter_missing",
-              "action.parameter_unknown",
               "action.reason_required",
               "function.parameter_invalid",
               "function.parameter_missing",
-              "function.parameter_unknown",
               "graph.not_selected",
               "usage.invalid_argument",
               "usage.missing_argument",
               "view.cursor_invalid",
               "view.parameter_invalid",
-              "view.parameter_missing",
-              "view.parameter_unknown"
+              "view.parameter_missing"
             ]
           },
           "401": {
@@ -9739,7 +9969,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: action.nothing_to_do, action.parameter_type, action.precondition_failed, action.stale, actions.slot_invalid, changeset.too_large, entity.ambiguous_ref, function.parameter_type, function.stale, graph.archived, graph.not_in_project, graph.readonly, query.invalid_value, query.too_large, remote.client_outdated, skills.outdated, view.class_mismatch, view.cursor_stale, view.parameter_type, view.stale, write.invalid.",
+            "description": "Unprocessable Content: action.nothing_to_do, action.parameter_type, action.precondition_failed, action.stale, actions.slot_invalid, changeset.too_large, entity.ambiguous_ref, function.parameter_type, function.stale, graph.archived, graph.not_in_project, graph.readonly, query.invalid_value, query.too_large, remote.client_outdated, skills.outdated, term.no_labels, view.class_mismatch, view.cursor_stale, view.parameter_type, view.stale, write.invalid.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -9774,6 +10004,7 @@
               "query.too_large",
               "remote.client_outdated",
               "skills.outdated",
+              "term.no_labels",
               "view.class_mismatch",
               "view.cursor_stale",
               "view.parameter_type",
@@ -14894,7 +15125,7 @@
                         "items": {
                           "type": "string"
                         },
-                        "description": "Only this tool (run_NAME, do_NAME or view_NAME); repeat for several."
+                        "description": "Only this tool (run_NAME, do_NAME, view_NAME or lookup); repeat for several."
                       },
                       "--tool": {
                         "type": "array",
@@ -14909,16 +15140,18 @@
                         "enum": [
                           "function",
                           "action",
-                          "view"
+                          "view",
+                          "lookup"
                         ],
-                        "description": "Only the tools of this kind of entry."
+                        "description": "Only the tools of this kind: function, action, view or lookup."
                       },
                       "--kind": {
                         "type": "string",
                         "enum": [
                           "function",
                           "action",
-                          "view"
+                          "view",
+                          "lookup"
                         ],
                         "description": "The inventory name of kind; never both.",
                         "deprecated": true
@@ -14934,7 +15167,7 @@
                       },
                       "featured": {
                         "type": "boolean",
-                        "description": "Only featured functions and actions (views stay)."
+                        "description": "Only featured functions and actions (views and lookup stay)."
                       },
                       "--featured": {
                         "type": "boolean",

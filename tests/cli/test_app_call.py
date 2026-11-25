@@ -471,7 +471,7 @@ def test_an_unknown_tool_is_not_found_with_the_names_that_are_close(
     assert (missing.code, missing.error["code"]) == (1, "tool.not_found")
     assert missing.error["details"]["did_you_mean"][0] == "run_items_by_condition"
     assert missing.error["hint"] == "graph describe tools"
-    for tool in ("items_by_condition", "run_", "move_item", "view_move_item", "lookup"):
+    for tool in ("items_by_condition", "run_", "move_item", "view_move_item", "lookups"):
         assert call(run_cli, tool).error["code"] == "tool.not_found", tool
     assert (
         call(run_cli, "do_move_item", env={**ENV, "GRAPH_CLI_GRAPH": "nowhere"}).error["code"]

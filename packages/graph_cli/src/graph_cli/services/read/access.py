@@ -121,8 +121,9 @@ class ReadAccess(ReadState):
             policy = self._policy.current(entry.id)
             return authorize(actor, action, f"graph:{entry.id}", VISIBLE, policy)
 
-    def _may(self, actor: ActorContext, entry: GraphEntry, action: str) -> bool:
-        """Whether the policy lets ``actor`` do ``action`` on the graph (``_probe``)."""
+    def may(self, actor: ActorContext, entry: GraphEntry, action: str) -> bool:
+        """Whether the policy lets ``actor`` do ``action`` on the graph (``_probe``): a probe,
+        nothing is recorded (for listings that depend on a right, like the tool manifest)."""
         return self._probe(actor, entry, action).effect == "allow"
 
     def refuse_hidden(

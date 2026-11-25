@@ -29,6 +29,7 @@ NAMES = [
     "view_item_catalog",
     "view_items_in_location",
     "view_location_overview",
+    "lookup",
 ]
 
 
@@ -248,7 +249,13 @@ def test_a_caller_with_a_read_limit_gets_a_manifest_without_what_it_may_not_see(
 ) -> None:
     install(run_cli, tmp_path / "policies", READS_ITEMS)
     manifest = listed(run_cli, ENV)
-    assert [t["name"] for t in manifest["tools"]] == ["run_items_by_condition", "do_retire_item"]
+    assert [t["name"] for t in manifest["tools"]] == [
+        "run_items_by_condition",
+        "do_retire_item",
+        "lookup",
+    ]
+    (lookup,) = [t for t in manifest["tools"] if t["kind"] == "lookup"]
+    assert lookup["input_schema"]["properties"]["for"]["enum"] == ["do_retire_item.item"]
     text = json.dumps(manifest)
     for word in (
         "Location",

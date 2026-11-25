@@ -3,10 +3,13 @@
 ``graph describe tools`` hands an agent harness one tool per function, action and view it may use,
 each with the JSON Schema of its input. ``graph call TOOL --input NAME=<json> ...`` runs a tool
 with exactly the object that schema describes: a ``run_<function>``, ``do_<action>`` or
-``view_<view>`` tool. ``--input`` is repeatable like ``--set-json`` (over the server ``input`` is
-the object itself); the names that start with an underscore are the tool's controls (``_limit``,
+``view_<view>`` tool, or ``lookup``, which finds the entity a name stands for. ``--input`` is
+repeatable like ``--set-json`` (over the server ``input`` is the object itself); the names that
+start with an underscore are the tool's controls (``_limit``,
 ``_offset``, ``_reason``, ``_dry_run``, ``_entity``, ``_cursor``, ``_page_bytes``), the others its
-parameters.
+parameters. The input of ``lookup`` is ``text`` (a name or a list of names), ``for`` (the
+reference input the entity is for, ``<tool>.<input>``) and ``limit``; the tool runs the service of
+``lookup`` and is there for a caller who holds ``read.find`` when some tool takes a reference.
 
 The call resolves the tool among the entries the caller sees: one it does not see is
 ``tool.not_found``, one it sees but may not use gives the answer the command gives
@@ -22,6 +25,7 @@ its ``page`` in ``data``; a call never moves its answer to a file, so ``data`` i
 
 from __future__ import annotations
 
+import difflib
 import json
 import re
 from collections.abc import Mapping, Sequence
@@ -31,14 +35,17 @@ from typing import Any, Final
 from graph_cli.app_cli.commands.common import GRAPH, context, services
 from graph_cli.app_cli.commands.do import DO_ERRORS, DO_OUTPUT
 from graph_cli.app_cli.commands.read.entity import VIEW_ERRORS, VIEW_OUTPUT
+from graph_cli.app_cli.commands.read.find import LOOKUP_ERRORS, LOOKUP_PAGE_OUTPUT
 from graph_cli.app_cli.commands.read.query import RUN_ERRORS, RUN_PAGE_OUTPUT, table_text
 from graph_cli.app_cli.commands.read.shared import open_graph
 from graph_cli.app_cli.commands.view_text import view_text
 from graph_cli.app_cli.commands.write import check_reason_and_key, usage
 from graph_cli.app_cli.tool_manifest import (
     CALL_ERRORS,
+    NOT_FOR_LOOKUP,
     NOT_FOR_TOOLS,
     heads,
+    lookup_refs,
     missing_tools,
     tool_hash,
 )
@@ -55,6 +62,7 @@ from graph_cli.kernel.records import VIA_CALL
 from graph_cli.kinetic.params import number_value
 from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.kinetic.view_format import PAGE_BYTES_MAX
+from graph_cli.query.lookup import MAX_LOOKUP_TEXTS, LookupSpec
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT, split_assignment
 from graph_cli.services.catalog_access import Classified, allowed_entries
 from graph_cli.services.describe_tools import (
@@ -63,13 +71,20 @@ from graph_cli.services.describe_tools import (
     DRY_RUN,
     ENTITY,
     FUNCTION,
+    KINDS,
     LIMIT,
+    LOOKUP,
+    LOOKUP_FOR,
+    LOOKUP_LIMIT,
+    LOOKUP_TEXT,
     OFFSET,
     PAGE_BYTES_ARG,
     PREFIXES,
     REASON,
     VIEW,
+    RefInput,
     control_names,
+    ref_inputs,
     tool_name,
 )
 from graph_cli.services.read import ReadService, graph_json
@@ -77,7 +92,7 @@ from graph_cli.services.read import ReadService, graph_json
 INPUT_NAME_RE: Final = re.compile(r"^_?[a-z][a-z0-9_]*$")  # a parameter or a control
 INPUT: Final = "--input"
 KEY: Final = "--idempotency-key"
-RAN: Final = {FUNCTION: "run", ACTION: "do", VIEW: "view"}  # the command a tool runs
+RAN: Final = {FUNCTION: "run", ACTION: "do", VIEW: "view", LOOKUP: "lookup"}  # what a tool runs
 
 
 def parse_input(pairs: Sequence[str]) -> dict[str, JsonValue]:
@@ -164,14 +179,29 @@ def _find(tool: str, kind: str, seen: Sequence[Classified[Any]]) -> _Found | Non
     return None
 
 
+def _usable(
+    reader: ReadService, actor: ActorContext, entry: GraphEntry
+) -> dict[str, tuple[Any, ...]]:
+    """The entries of each kind the caller may use."""
+    return {kind: tuple(allowed_entries(_classified(reader, actor, entry, kind))) for kind in KINDS}
+
+
+def _lookup_refs(
+    reader: ReadService, actor: ActorContext, entry: GraphEntry, usable: Mapping[str, Sequence[Any]]
+) -> tuple[RefInput, ...]:
+    """The reference inputs the ``lookup`` tool serves for the caller (it is listed when there are
+    some and the caller may find entities)."""
+    if not reader.may(actor, entry, "read.find"):
+        return ()  # the model is read only when it matters
+    model = reader.visible_model(actor, entry)
+    return lookup_refs(model, usable[FUNCTION], usable[ACTION], usable[VIEW], find=True)
+
+
 def _usable_names(reader: ReadService, actor: ActorContext, entry: GraphEntry) -> list[str]:
     """The names of every tool the caller may use, for the suggestions of a name that is none."""
-    return [
-        tool_name(kind, item.entry.name)
-        for kind in (FUNCTION, ACTION, VIEW)
-        for item in _classified(reader, actor, entry, kind)
-        if item.allowed
-    ]
+    usable = _usable(reader, actor, entry)
+    names = [tool_name(kind, e.name) for kind in KINDS for e in usable[kind]]
+    return [*names, LOOKUP] if _lookup_refs(reader, actor, entry, usable) else names
 
 
 def _integer(
@@ -244,6 +274,8 @@ def call(
     ctx = context(state)
     entry = ctx.select(graph)
     reader, actor = ctx.reader, ctx.actor
+    if tool == LOOKUP:
+        return _lookup(state, graph, entry, values, expect_hash)
     kind = _kind_of(tool)
     seen = () if kind is None else _classified(reader, actor, entry, kind)
     found = None if kind is None else _find(tool, kind, seen)
@@ -253,27 +285,125 @@ def call(
         raise problem
     services(state).usage.ran = RAN[kind]  # from here on the log says what ran
     if expect_hash is not None and found.allowed:  # one the caller may not use is refused below
-        usable = tuple(allowed_entries(seen))
-        none: tuple[Any, ...] = ()
         obligations = reader.reason_obligations(actor, entry) if kind == ACTION else frozenset()
-        parts = {FUNCTION: none, ACTION: none, VIEW: none, kind: usable}
-        if kind == VIEW:  # the rows sections of a view are typed by the functions it runs
-            parts[FUNCTION] = tuple(allowed_entries(_classified(reader, actor, entry, FUNCTION)))
         model = reader.visible_model(actor, entry)
-        (head,) = heads(model, parts[FUNCTION], parts[ACTION], parts[VIEW], obligations, only=tool)
-        current = tool_hash(head, model)
-        if current != expect_hash:
-            raise GraphCliError(
-                "tool.hash_mismatch",
-                f"tool {tool} is not the one this call was built for: its hash is now {current}",
-                details={"tool": tool, "expected": expect_hash, "actual": current},
-            )
+        # the other kinds only when they decide whether the lookup tool is listed (and so what
+        # the tool says of its references), or type the rows of a view
+        every = reader.may(actor, entry, "read.find")
+        none: tuple[Any, ...] = ()
+        parts = {k: none for k in KINDS}
+        for part in KINDS:
+            if every or part == kind or (kind == VIEW and part == FUNCTION):
+                parts[part] = tuple(
+                    allowed_entries(
+                        seen if part == kind else _classified(reader, actor, entry, part)
+                    )
+                )
+        refs = lookup_refs(model, parts[FUNCTION], parts[ACTION], parts[VIEW], find=every)
+        (head,) = heads(
+            model, parts[FUNCTION], parts[ACTION], parts[VIEW], obligations, only=tool, refs=refs
+        )
+        _check_hash(tool, expect_hash, tool_hash(head, model))
     params, controls = _split(values, found)
     if found.kind == FUNCTION:
         return _run(state, graph, found.name, params, controls)
     if found.kind == ACTION:
         return _do(state, graph, found.name, params, controls, idempotency_key)
     return _view(state, graph, found, params, controls)
+
+
+def _check_hash(tool: str, expected: str, current: str) -> None:
+    """``tool.hash_mismatch`` unless the tool is the one the caller built its call for."""
+    if current != expected:
+        raise GraphCliError(
+            "tool.hash_mismatch",
+            f"tool {tool} is not the one this call was built for: its hash is now {current}",
+            details={"tool": tool, "expected": expected, "actual": current},
+        )
+
+
+def _lookup(
+    state: CommandState,
+    graph: str | None,
+    entry: GraphEntry,
+    values: Mapping[str, JsonValue],
+    expect_hash: str | None,
+) -> Result:
+    """A call of the ``lookup`` tool: the lookup service for the entity a name stands for, for the
+    reference input ``for`` names. The tool is there only when some tool takes a reference; a
+    caller that may not find entities gets the ``access.denied`` of ``lookup``."""
+    ctx = context(state)
+    reader, actor = ctx.reader, ctx.actor
+    usable = _usable(reader, actor, entry)
+    model = reader.visible_model(actor, entry)
+    refs = ref_inputs(model, usable[FUNCTION], usable[ACTION], usable[VIEW])
+    if not refs:
+        problem = missing_tools([LOOKUP], _usable_names(reader, actor, entry))
+        assert problem is not None
+        raise problem
+    services(state).usage.ran = RAN[LOOKUP]
+    if expect_hash is not None and reader.may(actor, entry, "read.find"):
+        (head,) = heads(model, (), (), (), frozenset(), only=LOOKUP, refs=refs)
+        _check_hash(LOOKUP, expect_hash, tool_hash(head, model))
+    texts, slot, limit = _lookup_input(values, refs)
+    args: dict[str, JsonValue] = {
+        "text": list(texts),
+        "type": [],
+        "for": slot.lookup_for,
+        "for_source": None,
+        "match": "exact",
+        "ignore_accents": False,
+        "include_inactive": False,
+        "lang": None,
+        "limit": limit,
+        "offset": 0,
+    }
+    view = open_graph(state, graph, "read.find", "lookup", args, None, via=VIA_CALL)
+    spec = LookupSpec(text=texts[0], limit=limit)
+    data, page = reader.lookup(view, spec, texts, for_use=slot.lookup_for)
+    return Result(data={**data, "page": page.to_json()}, graph=view.envelope_graph())
+
+
+def _lookup_input(
+    values: Mapping[str, JsonValue], refs: Sequence[RefInput]
+) -> tuple[tuple[str, ...], RefInput, int]:
+    """The names, the reference input and the limit of a call of ``lookup``; ``null`` is not given,
+    anything else the input schema refuses is ``usage.invalid_argument``."""
+    known = (LOOKUP_TEXT, LOOKUP_FOR, LOOKUP_LIMIT)
+    for name in values:
+        if name not in known:
+            raise GraphCliError(
+                "usage.invalid_argument",
+                f"{name}: {LOOKUP} has no such input; it takes {', '.join(known)}",
+                details={"argument": name, "expected": list(known)},
+            )
+    names = values.get(LOOKUP_TEXT)
+    slot = values.get(LOOKUP_FOR)
+    for given, argument in ((names, LOOKUP_TEXT), (slot, LOOKUP_FOR)):
+        if given is None:
+            raise GraphCliError(
+                "usage.missing_argument",
+                f"{argument} is required by the {LOOKUP} tool",
+                details={"argument": argument},
+            )
+    texts = names if isinstance(names, list) else [names]
+    if not 1 <= len(texts) <= MAX_LOOKUP_TEXTS:
+        raise usage(LOOKUP_TEXT, f"expected 1 to {MAX_LOOKUP_TEXTS} names", str(len(texts)))
+    for text in texts:
+        if not isinstance(text, str) or isinstance(text, FloatLiteral):
+            raise usage(LOOKUP_TEXT, "expected a name or a list of names", str(text))
+        if not text.strip():
+            raise usage(LOOKUP_TEXT, "a name is blank", text)
+    found = next((r for r in refs if r.value == slot), None)
+    if found is None:
+        close = difflib.get_close_matches(str(slot), [r.value for r in refs], n=5)
+        raise GraphCliError(
+            "usage.invalid_argument",
+            f"{LOOKUP_FOR}: {slot!r} is none of the reference inputs of your tools",
+            details={"argument": LOOKUP_FOR, "actual": str(slot), "did_you_mean": close},
+        )
+    limit = _integer(values, LOOKUP_LIMIT, DEFAULT_LIMIT, 1, MAX_LIMIT)
+    return tuple(str(t) for t in texts), found, limit
 
 
 def _digestible(value: JsonValue) -> JsonValue:
@@ -388,11 +518,15 @@ def _view(
     return Result(data=data, graph=reading.envelope_graph(), text=view_text(data))
 
 
-CALL_OUTPUT: Final = one_of(RUN_PAGE_OUTPUT, DO_OUTPUT, VIEW_OUTPUT)
+CALL_OUTPUT: Final = one_of(RUN_PAGE_OUTPUT, DO_OUTPUT, VIEW_OUTPUT, LOOKUP_PAGE_OUTPUT)
 # every code a tool may return (the manifest's per-tool lists are subsets), and the graph choice
 _ERRORS: Final = tuple(
     sorted(
-        ({*RUN_ERRORS, *DO_ERRORS, *VIEW_ERRORS, *CALL_ERRORS} - NOT_FOR_TOOLS)
+        (
+            {*RUN_ERRORS, *DO_ERRORS, *VIEW_ERRORS, *LOOKUP_ERRORS, *CALL_ERRORS}
+            - NOT_FOR_TOOLS
+            - NOT_FOR_LOOKUP
+        )
         | {"graph.not_selected"}
     )
 )
@@ -406,13 +540,15 @@ SPECS: Final = (
         summary="Run one tool of the tool manifest with typed JSON input.",
         description=(
             "For agent harnesses that built their tools from describe tools: TOOL is run_NAME, "
-            "do_NAME or view_NAME and each --input NAME=<json> is one member of the input "
+            "do_NAME, view_NAME or lookup and each --input NAME=<json> is one member of the input "
             "object of its input_schema (over the server, args.input is that object). Names "
             "that start with an underscore are the tool's controls: _limit and _offset of a "
             "function, _reason and _dry_run of an action, _entity of an entity view, _cursor and "
             "_page_bytes of a set view. null means not given; a whole number written as 5.0 is "
-            "an integer. It runs what run, do or view runs, with the same answers and errors; "
-            "the page of a function is in data. A tool you may not see is tool.not_found, one "
+            "an integer. It runs what run, do, view or lookup runs, with the same answers and "
+            "errors; the page of a function or a lookup is in data. The lookup tool takes text "
+            "(a name or a list of names), for (the reference input the entity is for, as "
+            "TOOL.INPUT) and limit. A tool you may not see is tool.not_found, one "
             "you may not use access.denied. --expect-hash makes the call refuse "
             "(tool.hash_mismatch) when the tool is no longer the one with that hash in the "
             "manifest. An action that is not a dry run takes --idempotency-key; any other call "
@@ -454,6 +590,11 @@ SPECS: Final = (
             Example(
                 "graph call <name> --input _entity='\"<id>\"' --expect-hash <value> --json",
                 "Show an entity, only if the tool is still the one the manifest described.",
+            ),
+            Example(
+                "graph call --input text='\"<value>\"' --input for='\"<name>.<param>\"' lookup "
+                "--json",
+                "Find the entity a name stands for, to give a tool as a reference.",
             ),
         ),
         errors=_ERRORS,

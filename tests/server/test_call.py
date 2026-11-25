@@ -27,12 +27,16 @@ PUBLISHED = {
 }
 
 
-@pytest.fixture
-def served(
-    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+def serve(
+    run_cli: CliRunner,
+    isolated_env: dict[str, str],
+    tmp_path: Path,
+    version: str | None = None,
 ) -> tuple[ServerApp, str]:
+    """A server over ``example_graph``; ``version`` of the ontology (the first one has no label
+    role, so no name finds an entity there)."""
     root = init(run_cli, isolated_env)
-    create_graph(run_cli, "example_graph")
+    create_graph(run_cli, "example_graph", version=version)
     for kind, folder in PUBLISHED.items():
         published = admin(run_cli, "graph", kind, "publish", "example_graph", str(folder))
         assert published.code == 0, published.envelope
@@ -64,6 +68,21 @@ def served(
     grant_server(run_cli, tmp_path)
     token = new_token(run_cli, "ci")
     return ServerApp(Settings.load(isolated_env, tmp_path), log=io.StringIO()), token
+
+
+@pytest.fixture
+def served(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> tuple[ServerApp, str]:
+    return serve(run_cli, isolated_env, tmp_path)
+
+
+@pytest.fixture
+def labelled(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> tuple[ServerApp, str]:
+    """The same graph over the ontology release in which items have a label."""
+    return serve(run_cli, isolated_env, tmp_path, "1.1.0")
 
 
 def run(app: ServerApp, token: str, path: str, args: dict[str, Any], **headers: str) -> Reply:
@@ -291,3 +310,108 @@ def test_a_number_with_a_fraction_is_no_string_control(served: tuple[ServerApp, 
         assert (reply.status, reply.error["code"]) == (400, "usage.invalid_argument"), members
         if argument is not None:
             assert reply.error["details"]["argument"] == argument, members
+
+
+def test_the_lookup_tool_answers_like_the_lookup_command(labelled: tuple[ServerApp, str]) -> None:
+    app, token = labelled
+    tools = {t["name"]: t for t in run(app, token, "describe/tools", GRAPH).json["data"]["tools"]}
+    assert list(tools)[-1] == "lookup"
+    assert "do_retire_item.item" in tools["lookup"]["input_schema"]["properties"]["for"]["enum"]
+    typed = run(
+        app,
+        token,
+        "call",
+        {
+            "tool": "lookup",
+            "input": {"text": ["Item 3", "Item 4"], "for": "do_retire_item.item", "limit": 5},
+            **GRAPH,
+        },
+    )
+    assert typed.status == 200, typed.json
+    assert {i["label"] for i in typed.json["data"]["items"]} == {"Item 3", "Item 4"}
+    cli = run(
+        app,
+        token,
+        "call",
+        {
+            "tool": "lookup",
+            "input": ['text=["Item 3", "Item 4"]', 'for="do_retire_item.item"', "limit=5"],
+            **GRAPH,
+        },
+    )
+    assert normalized(typed.json) == normalized(cli.json)
+    plain = run(
+        app,
+        token,
+        "lookup",
+        {"text": ["Item 3", "Item 4"], "--for": "action:retire_item.item", "limit": 5, **GRAPH},
+    )
+    assert plain.status == 200, plain.json
+    assert typed.json["data"] == {**plain.json["data"], "page": plain.json["page"]}
+    assert typed.json["page"] is None and typed.json["data"]["page"]["total"] == 2
+    held = run(
+        app,
+        token,
+        "call",
+        {"tool": "lookup", "input": {"text": "Item 3", "for": "do_retire_item.item"}, **GRAPH}
+        | {"expect_hash": tools["lookup"]["hash"]},
+    )
+    assert held.status == 200, held.json
+    stale = run(
+        app,
+        token,
+        "call",
+        {"tool": "lookup", "input": {"text": "Item 3", "for": "do_retire_item.item"}, **GRAPH}
+        | {"expect_hash": "sha256:" + "0" * 64},
+    )
+    assert (stale.status, stale.error["code"]) == (409, "tool.hash_mismatch")
+    assert stale.error["details"]["actual"] == tools["lookup"]["hash"]
+
+
+def test_the_lookup_tool_is_refused_like_the_other_tools(labelled: tuple[ServerApp, str]) -> None:
+    app, token = labelled
+    slot = "do_retire_item.item"
+    for tool_input, code in (
+        ({"for": slot}, "usage.missing_argument"),
+        ({"text": "Item 3"}, "usage.missing_argument"),
+        ({"text": None, "for": slot}, "usage.missing_argument"),
+        ({"text": "Item 3", "for": "do_retire_itm.item"}, "usage.invalid_argument"),
+        ({"text": "Item 3", "for": "view:location_overview._entity"}, "usage.invalid_argument"),
+        ({"text": "  ", "for": slot}, "usage.invalid_argument"),
+        ({"text": [], "for": slot}, "usage.invalid_argument"),
+        ({"text": "Item 3", "for": slot, "limit": 0}, "usage.invalid_argument"),
+        ({"text": "Item 3", "for": slot, "_limit": 1}, "usage.invalid_argument"),
+        ({"text": "Item 3", "for": slot, "offset": 1}, "usage.invalid_argument"),
+    ):
+        reply = run(app, token, "call", {"tool": "lookup", "input": tool_input, **GRAPH})
+        assert (reply.status, reply.error["code"]) == (400, code), tool_input
+    close = run(
+        app,
+        token,
+        "call",
+        {"tool": "lookup", "input": {"text": "Item 3", "for": "do_retire_itm.item"}, **GRAPH},
+    )
+    assert close.error["details"]["did_you_mean"][0] == "do_retire_item.item"
+    # a read: no key, in the header or in args
+    body = {"tool": "lookup", "input": {"text": "Item 3", "for": slot}, **GRAPH}
+    header = run(app, token, "call", body, **{"Idempotency-Key": '"k-9"'})
+    assert (header.status, header.error["code"]) == (400, "usage.invalid_argument")
+    option = run(app, token, "call", {**body, "idempotency_key": "k-9"})
+    assert (option.status, option.error["code"]) == (400, "usage.invalid_argument")
+
+
+def test_the_lookup_tool_of_a_graph_without_labels_gives_the_answer_of_lookup(
+    served: tuple[ServerApp, str],
+) -> None:
+    app, token = served
+    tools = {t["name"] for t in run(app, token, "describe/tools", GRAPH).json["data"]["tools"]}
+    assert "lookup" in tools
+    typed = run(
+        app,
+        token,
+        "call",
+        {"tool": "lookup", "input": {"text": "x", "for": "do_retire_item.item"}, **GRAPH},
+    )
+    plain = run(app, token, "lookup", {"text": ["x"], "--for": "action:retire_item.item", **GRAPH})
+    assert (typed.status, typed.error["code"]) == (plain.status, plain.error["code"])
+    assert typed.error["code"] == "term.no_labels"

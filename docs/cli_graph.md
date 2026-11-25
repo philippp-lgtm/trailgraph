@@ -87,7 +87,7 @@ agent harnesses](#tools-for-agent-harnesses)).
 | `describe function NAME` | one function completely: summary, `use_when`, parameters, the result columns with their types, examples, the types and relations its query touches, the normalized query text (copy it as the start of an ad-hoc query) and its hash; an unknown name is `function.not_found` with `did_you_mean`; a function you may not run is shown marked `allowed: false` with `missing`, without its query, examples, touched terms and hash (see [Entries you may not use](#entries-you-may-not-use)) |
 | `describe views [--module M] [--include-deprecated] [--include-not-allowed]` | the published views of the graph you can call (`graph_cli.model/1`), one item per view: `name`, `module`, `summary`, `takes` (the class an entity view shows; left out for a set view), `default` (only when true), `signature` and `status`; deprecated views only with `--include-deprecated`. A view you cannot see in full (it names a type, attribute, relation or function that is hidden from you) does not exist for you; one you see in full but that needs `read.get`, `read.find` or `read.function` that you lack is counted in `not_allowed` (`--include-not-allowed` lists it) |
 | `describe view NAME` | one view completely: summary, `use_when`, `takes`, `default`, parameters, every section with the types, relations, fields and function it reads, examples, `touches` (types, relations, attributes, functions), `hash` and `call`, the command that calls it; `replaced_by` names a view only when you see it; an unknown or hidden name is `view.not_found` with `did_you_mean` over the names you see and a hint to search the views by words; a view you may not use is shown marked `allowed: false` with `missing`, without its sections, examples, touched terms, hash and call command |
-| `describe tools [--tool NAME] [--kind K] [--module M] [--featured] [--exclude-deprecated]` | the tool manifest of the graph for an agent harness (`graph_cli.model/1`): one tool per function, action and view you may use, each with a JSON Schema for its input and its answer, and the error codes it may return with what to do about each; made for programs, not for agents that work in a shell. See [Tools for agent harnesses](#tools-for-agent-harnesses) |
+| `describe tools [--tool NAME] [--kind K] [--module M] [--featured] [--exclude-deprecated]` | the tool manifest of the graph for an agent harness (`graph_cli.model/1`): one tool per function, action and view you may use, plus a `lookup` tool for the references they take when you may find entities, each with a JSON Schema for its input and its answer, and the error codes it may return with what to do about each; made for programs, not for agents that work in a shell. See [Tools for agent harnesses](#tools-for-agent-harnesses) |
 | `describe schema` | the ontology as `graph query` sees it: labels with their properties, one relationship pattern per relation (`(:A)-[:rel]->(:B)`), names written as a query needs them (see [Cypher queries](#cypher-queries)); `--compact` leaves out the properties; `--module M` limits it to the module's relations and labels plus the labels at the other end of its links |
 | `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them; `--rev N` shows an earlier revision; `--fields` keeps only named parts and `--full` adds the system fields (see [Fewer fields](#fewer-fields)); `--affordances` adds what applies next (see [What an entity can do next](#what-an-entity-can-do-next)) |
 | `view [REF]` | what is known about one entity in one answer, at most 6 KiB: key fields, relations with counts and the first neighbours, files with pages, what applies next; what is cut is counted and named in a hint; `--as-of` reads an earlier state (see [An entity at a glance](#an-entity-at-a-glance)). A graph can publish views: `--name NAME` picks one (`--name card` is always the generated card), an entity view takes the REF of an entity of its class, and without `--name` the default view of the entity's class answers instead of the card; a set view takes no REF and lists entities and function rows in pages of `--page-bytes` bytes, `--cursor` continues a page (`view.cursor_stale` once the graph changed; `--as-of tx:<seq>` pages the state you started with); `--param name=value` gives a view parameter. A set view needs `read.find` as well as `read.get`, one that runs functions `read.function`; a view that names what the caller may not see is `view.not_found`, and one that needs a right the caller lacks is `access.denied`, recorded. Not `graph-admin view`, the live view |
@@ -102,7 +102,7 @@ agent harnesses](#tools-for-agent-harnesses)).
 | `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed; `update --add`/`--remove` change a list attribute (see [References, filters and writes](#references-filters-and-writes)) |
 | `transition REF STATE`, `supersede BY TARGET...`, `retract REF` | lifecycle and provenance; `supersede` and `retract` need `--reason`; over a relation with `on_target_inactive: refuse` they are refused while active entities still point at the target (`data.referential.target_referenced` lists them; relink or retract them in the same change set) |
 | `do NAME` | run a named action of the graph: a reviewed write the maintainer published (`--param name=value`, once per value for a list parameter; `--dry-run`, `--reason`, `--idempotency-key`, `--graph`). The parameters are read by the types the action declares, a reference takes an id, alias or trailing hex digits, never a name. The service checks the action's preconditions and expands it in the state it finds under the graph lock, then writes one transaction with one audit intent that names the action; `--dry-run` shows every entity it would write. The answer is the write result plus `data.action` (`name`, `hash`). A retry with the same `--idempotency-key` and parameters returns the recorded result; the caller needs the write rights of every op it expands to, and an action it sees but may not run is `access.denied` (recorded, naming the right); one that names what the caller may not see is `action.not_found`. See [Actions](#actions) |
-| `call TOOL` | run one tool of the [tool manifest](#tools-for-agent-harnesses) with typed JSON input, for agent harnesses: each `--input NAME=<json>` is one member of the object `input_schema` describes (`_limit`, `_reason` and the other controls start with an underscore); it runs what `run`, `do` or `view` runs and answers the same, with the page of a function in `data`; `--expect-hash` refuses a tool that is no longer the one the manifest described (`tool.hash_mismatch`); `--idempotency-key` is taken by an action that is not a dry run only; a tool you may not see is `tool.not_found`. See [Tools for agent harnesses](#tools-for-agent-harnesses) |
+| `call TOOL` | run one tool of the [tool manifest](#tools-for-agent-harnesses) with typed JSON input, for agent harnesses: each `--input NAME=<json>` is one member of the object `input_schema` describes (`_limit`, `_reason` and the other controls start with an underscore); it runs what `run`, `do`, `view` or `lookup` runs and answers the same, with the page of a function or a lookup in `data`; `--expect-hash` refuses a tool that is no longer the one the manifest described (`tool.hash_mismatch`); `--idempotency-key` is taken by an action that is not a dry run only; a tool you may not see is `tool.not_found`. See [Tools for agent harnesses](#tools-for-agent-harnesses) |
 | `apply FILE` | change set documents (one JSON document or JSONL; `-` reads stdin); `--summary` leaves out the entities of each result and keeps `entity_count` and the findings |
 | `file add PATH` | store a file as `files:File` (or `--type` subclass) with its origin; known content is returned, not stored twice; then extract its metadata records (size, type, page count, ...) and answer them in `metadata`, `--no-extract` skips that, and a failure to extract is a warning, never a failed add (see [Files](files.md), [Metadata](files.md#metadata)) |
 | `file path REF` | the read-only path of a stored file; `--origin` the path it came from on this machine |
@@ -1136,13 +1136,14 @@ they keep `describe`, `run`, `do` and `view`.
 **The manifest** is a `graph_cli.model/1` document with these keys, in this order: `tools_format`
 (the shape of a tool, see the compatibility policy below), `version` (a hash of everything listed:
 it changes when any tool or error entry listed changes), `tools` and `errors`. The options narrow
-the list: `--tool NAME` (repeatable) keeps the named tools, `--kind` one kind of entry, `--module M`
-one module, `--featured` the featured functions and actions (a view has no such flag and stays),
+the list: `--tool NAME` (repeatable) keeps the named tools, `--kind` one kind of tool, `--module M`
+one module (the `lookup` tool belongs to none), `--featured` the featured functions and actions (a view
+and the `lookup` tool have no such flag and stay),
 `--exclude-deprecated` leaves out the tools of deprecated entries, which are listed by default with
 their `status` and `replaced_by` so that a tool a harness allows does not vanish when its entry is
 deprecated. A `--tool` that names no tool you may use is `tool.not_found` (exit 1) with the close
 names in `did_you_mean` and every unknown name in `missing`. Tools come functions first, then
-actions, then views, each by name.
+actions, then views, each by name, and the `lookup` tool last.
 
 **Rendered for you.** The manifest is built per request from the entries you may use and the model
 you see. An entry you may not use is absent (the other `describe` commands can mark such an entry, the
@@ -1156,20 +1157,20 @@ Each tool has these keys, in this order:
 | Tool key | Holds |
 | --- | --- |
 | `name` | the tool name, see below |
-| `kind` | `function`, `action` or `view` (`lookup` is reserved for a later tool) |
-| `entry` | the name of the function, action or view |
+| `kind` | `function`, `action`, `view` or `lookup` |
+| `entry` | the name of the function, action or view; null for `lookup` |
 | `description` | the summary, a deprecation line, `use_when` and the examples of the entry: a function's and a view's with the arguments they give in the form of the input (an example never gives a reference, the line says to supply it), an action's request |
 | `input_schema` | the JSON Schema (2020-12) of the arguments, closed |
 | `output_schema` | the JSON Schema of the answer (`data`), open |
 | `annotations` | `read_only`; `dry_run` (the tool has `_dry_run`); `reason` (`required` or `optional` for an action, else null); `paging` (`offset` for a function, `cursor` for a set view, else null) |
 | `status`, `replaced_by`, `featured`, `module` | as `describe function`, `action` and `view` show them; `replaced_by` names the replacing tool, only when you may use it |
 | `hash` | the hash of the name, description, both schemas and annotations: it changes when an ontology release changes an enum's values although the entry's `hash` does not |
-| `entry_hash` | the `hash` of the entry, the one `run`, `do` and `view` record in the audit |
+| `entry_hash` | the `hash` of the entry, the one `run`, `do` and `view` record in the audit; null for `lookup` |
 | `errors` | the codes the tool may return, sorted |
 
 **Names.** A tool is named by the kind of its entry and the entry's name: `run_NAME` for a function,
-`do_NAME` for an action, `view_NAME` for a view. Functions and actions share one namespace and views
-have their own, so a view may be named like the function it runs: the prefix keeps the tools apart,
+`do_NAME` for an action, `view_NAME` for a view; the name `lookup` is the lookup tool (below). Functions
+and actions share one namespace and views have their own, so a view may be named like the function it runs: the prefix keeps the tools apart,
 and a name stays when other entries are published. A name is a valid identifier and short enough for
 the model APIs that limit tool names; a longer entry name keeps its first characters and ends in `_`
 and eight hex digits of the hash of the name. A harness may rename a tool (it knows `kind` and
@@ -1188,7 +1189,7 @@ property that is not required and has no default also accepts `null`, which mean
 | `boolean` | a boolean |
 | `date`, `datetime` | a string with `format` `date` or `date-time` and a `pattern` (a timestamp needs an offset) |
 | `enum` | a string, `enum` the values of the enum as you see them; the summaries the ontology gives are in `description` |
-| `ref` | a string with the grammar of a reference (a full id, an alias or trailing hex digits, never a name) and `x-graph-cli: {class}`, the class; `description` says so |
+| `ref` | a string with the grammar of a reference (a full id, an alias or trailing hex digits, never a name) and `x-graph-cli: {class}`, the class; `description` says so and, when the `lookup` tool is listed, names it with the `for` that finds the entity by name |
 
 A `pattern` is stricter than the parser it describes: every text it accepts binds. The properties
 that start with an underscore are the **controls**, the arguments that are not parameters of the
@@ -1203,6 +1204,21 @@ the options of the commands:
 | `_entity` | entity view | the reference of the entity to show (required), of the class the view takes |
 | `_cursor`, `_page_bytes` | set view | `view --cursor` and `--page-bytes`: the next page and the page size |
 
+**The `lookup` tool** finds the entity a name stands for, so that a harness can fill a `ref` input of
+another tool: a reference takes an id, an alias or trailing hex digits, never a name. It is listed when
+some tool you may use has a `ref` input of a class your model has and you hold `read.find`; without that
+right the references stay and their descriptions name no tool (until a narrower lookup exists, a caller
+without `read.find` works with the ids it has). Its input is closed like that of every tool: `text` (a
+name, or a list of names; at most the number `lookup` takes), `for` and `limit` (candidates per name, as
+`lookup --limit`). `for` is one of the slots the tool serves, written `<tool>.<input>`: `run_NAME.param`,
+`do_NAME.param`, `view_NAME.param` or `view_NAME._entity` for the entity of an entity view; the enum lists
+exactly the `ref` inputs of the tools you see in the manifest, so a hidden class, view or function is no
+slot. The tool runs `lookup --for` for that slot with the kind written out
+([Names and lookup](#names-and-lookup): `function:NAME.param`, `action:NAME.param`, `view:NAME.param`), keeps
+the candidates of the class the input takes and counts the others in `data.texts[].excluded`; its answer
+is the answer of `lookup` and `page`, the paging, as for a function. A harness passes the `id` or `alias`
+of a candidate as the reference; a name with several candidates carries `facts` that tell them apart.
+
 **Calling a tool.** `graph call TOOL` runs a tool with exactly the object its `input_schema`
 describes, whatever the kind of the tool:
 
@@ -1210,6 +1226,7 @@ describes, whatever the kind of the tool:
 graph call run_<function> --input <name>=<json> --input _limit=<json> --json
 graph call do_<action> --input <name>=<json> --input _dry_run=true --json
 graph call view_<view> --input _entity='"<id>"' --json
+graph call lookup --input text='"<value>"' --input for='"run_<function>.<param>"' --json
 ```
 
 Each `--input` is one member of the object, its value a JSON value (a string is written with its
@@ -1223,6 +1240,13 @@ same. What differs:
 - **The tool name** is looked up among the entries you see. One you do not see is `tool.not_found`
   with the close names in `did_you_mean`; one you see but may not use gives what the command gives,
   `access.denied`, recorded like that of the command.
+- **The `lookup` tool** is called like the others, with `text`, `for` and `limit`. It is there only for a
+  caller that holds `read.find` while some tool takes a reference: with that right missing it is
+  `access.denied`, as for `lookup`, with no reference input at all it is `tool.not_found`. A `for` that is
+  none of the slots (a name without its kind prefix, a slot of a tool you cannot use) is
+  `usage.invalid_argument` with the close slots in `did_you_mean`, and so is any input other than `text`,
+  `for` and `limit`. It is a read: it takes no key. A graph whose ontology gives no entity a name
+  answers as `lookup` does (`term.no_labels`).
 - **`null` is "not given"** for every parameter and control that is not required: a typed client
   sends `null` for an argument it leaves out, and a default applies. For a required parameter it is
   as good as missing (`function.parameter_missing`, `action.parameter_missing` or
