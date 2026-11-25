@@ -34,7 +34,8 @@ def _guard(spec: CommandSpec) -> Callable[..., Result]:
     handler = spec.handler
 
     def guard(state: CommandState, **values: Any) -> Result:
-        check_app_skill(state, write=spec.kind == "write")
+        write = spec.kind_of(spec.given_args(values)) == "write"
+        check_app_skill(state, write=write)
         return handler(state, **values)
 
     return guard

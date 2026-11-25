@@ -54,13 +54,7 @@ def api_name(name: str) -> str:
 def request_args(spec: CommandSpec, values: Mapping[str, Any]) -> dict[str, JsonValue]:
     """The parsed values of ``spec`` (by handler keyword) by inventory name; what was not
     given (``None``, ``False``, an empty repeat) is left out."""
-    args: dict[str, JsonValue] = {}
-    for param in spec.params:
-        value = values.get(param.dest)
-        if value is None or value is False or value == ():
-            continue
-        args[param.name] = list(value) if isinstance(value, tuple) else value
-    return args
+    return spec.given_args(values)
 
 
 def api_args(args: Mapping[str, JsonValue]) -> dict[str, JsonValue]:

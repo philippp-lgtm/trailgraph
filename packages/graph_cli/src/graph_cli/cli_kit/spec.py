@@ -126,6 +126,30 @@ class CommandSpec:
     # the command table of skill 1's SKILL.md leaves it out; the generated reference, the
     # inventory and the OpenAPI document keep it
     skill_table: bool = True
+    # The kind of one invocation when it depends on the arguments (``call`` is a write for an
+    # action and a read for a function or a view): the arguments by inventory name, as
+    # ``given_args`` gives them. ``kind`` is then the strongest the command can be (a write), for
+    # what is judged without arguments (the inventory); everything that decides per invocation
+    # (the skill check, the idempotency key and the retry of the remote client, the context of
+    # the command) asks ``kind_of``.
+    kind_by_args: Callable[[Mapping[str, JsonValue]], Kind] | None = field(
+        default=None, compare=False, repr=False
+    )
+
+    def kind_of(self, args: Mapping[str, JsonValue]) -> Kind:
+        """The kind of an invocation with ``args`` (by inventory name)."""
+        return self.kind if self.kind_by_args is None else self.kind_by_args(args)
+
+    def given_args(self, values: Mapping[str, Any]) -> dict[str, JsonValue]:
+        """The parsed values of a call (by handler keyword) by inventory name; what was not
+        given (``None``, ``False``, an empty repeat) is left out."""
+        args: dict[str, JsonValue] = {}
+        for param in self.params:
+            value = values.get(param.dest)
+            if value is None or value is False or value == ():
+                continue
+            args[param.name] = list(value) if isinstance(value, tuple) else value
+        return args
 
 
 def _click_type(param: ParamSpec) -> click.ParamType[Any]:
@@ -194,7 +218,9 @@ def _help(spec: CommandSpec) -> str:
 
 def _command(spec: CommandSpec) -> click.Command:
     def call(state: CommandState, **kwargs: Any) -> Result:
-        state.kind = spec.kind
+        state.kind = (
+            spec.kind if spec.kind_by_args is None else spec.kind_of(spec.given_args(kwargs))
+        )
         return spec.handler(state, **kwargs)
 
     callback = leaf(call)

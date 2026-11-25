@@ -227,3 +227,57 @@ def test_the_inventory_marks_a_command_left_out_of_the_skill_table_and_only_that
     assert isinstance(commands, list)
     assert commands[0].get("skill_table") is False  # type: ignore[union-attr]
     assert "skill_table" not in commands[1]  # type: ignore[operator]
+
+
+# ---- the kind of one invocation ------------------------------------------------------------------
+
+
+def either(args: Any) -> Any:
+    return "read" if args.get("--dry-run") is True else "write"
+
+
+def test_a_command_may_be_a_read_or_a_write_by_its_arguments() -> None:
+    from dataclasses import replace
+
+    spec = replace(SPECS[0], kind_by_args=either)
+    assert spec.kind_of({}) == "write" and spec.kind_of({"--dry-run": True}) == "read"
+    assert SPECS[0].kind_of({"--dry-run": True}) == "write"  # a static kind ignores the arguments
+    assert spec == SPECS[0]  # the hook is not part of what the declaration says
+    assert spec.given_args({"type": "ex:T", "set": ("a=1",), "dry_run": False, "limit": 5}) == {
+        "type": "ex:T",
+        "--set": ["a=1"],
+        "--limit": 5,
+    }
+
+    seen: list[str | None] = []
+
+    def handler(state: CommandState, **kwargs: Any) -> Result:
+        seen.append(state.kind)
+        return Result(data={})
+
+    live = replace(spec, handler=handler)
+    group = build_click(click.Group("prog"), (live,))
+    for argv in (["thing", "make", "ex:T"], ["thing", "make", "ex:T", "--dry-run"]):
+        run(group, [*argv, "--json"], Invocation("prog"), out=io.StringIO(), err=io.StringIO())
+    assert seen == ["write", "read"]
+    # the inventory judges without arguments: the static kind
+    inventory = build_inventory((spec,), program="prog", version="0.1.0", surface="app")
+    assert inventory["commands"][0]["kind"] == "write"  # type: ignore[index]
+
+
+def test_the_remote_client_keys_and_retries_by_the_kind_of_the_invocation() -> None:
+    from dataclasses import replace
+
+    from graph_cli.app_cli.remote import write_of
+
+    keyed = replace(
+        SPECS[0],
+        params=(*SPECS[0].params, ParamSpec("--idempotency-key", "string", "Key.")),
+        kind_by_args=lambda args: "read" if args.get("--set") == ["probe=1"] else "write",
+    )
+    args: dict[str, Any] = {"type": "ex:T", "--set": ["a=1"]}
+    found = write_of(keyed, args, generate=True)
+    assert found is not None and found.idempotency_key == args["--idempotency-key"]
+    assert str(args["--idempotency-key"]).startswith("r-")
+    probe: dict[str, Any] = {"type": "ex:T", "--set": ["probe=1"]}
+    assert write_of(keyed, probe, generate=True) is None and "--idempotency-key" not in probe
