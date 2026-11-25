@@ -4,6 +4,7 @@
 [project]
 name = "graph_cli_workspace"
 version = "0.0.0"
+license = "PolyForm-Noncommercial-1.0.0"
 requires-python = ">=3.12"
 dependencies = ["graph_cli", "graph_cli_admin", "graph_cli_server"]
 

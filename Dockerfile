@@ -59,6 +59,8 @@ RUN pip install --no-cache-dir --require-hashes -r /wheels/requirements.txt \
 COPY docker/entrypoint.sh /usr/local/bin/graph-container
 COPY docker/default_policy.yaml /usr/local/share/graph_cli/default_policy.yaml
 COPY --from=build /dist /usr/local/share/graph_cli/dist
+COPY LICENSE.md /usr/local/share/graph_cli/LICENSE.md
+LABEL org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0"
 ENV HOME=/state XDG_CONFIG_HOME=/config XDG_DATA_HOME=/data XDG_STATE_HOME=/state \
     GRAPH_CLI_DIST_DIR=/usr/local/share/graph_cli/dist PYTHONUNBUFFERED=1
 USER graph

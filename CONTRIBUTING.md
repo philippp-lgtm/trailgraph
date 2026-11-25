@@ -4,6 +4,18 @@ Setup is in the [README](README.md#install). The design of the code base
 (layers, import contracts, packages) is in
 [`docs/architecture.md`](docs/architecture.md).
 
+## Contributions and the CLA
+
+graph_cli is source-available under the PolyForm Noncommercial license
+([`LICENSE.md`](LICENSE.md)), and the owner also licenses it to companies
+on commercial terms. A pull request can only be merged once its author has
+agreed to the [Contributor License Agreement](CLA.md): it lets the owner
+publish your contribution under both. You agree once, by posting the
+sentence from the CLA as a comment on your pull request; the `cla` check
+(`.github/workflows/cla.yml`) records it and turns green. Contributions from
+outside are never merged without it, and code you did not write yourself
+needs its source and license named in the pull request.
+
 ## Development
 
 ```sh
@@ -101,7 +113,8 @@ reader looks for it:
 
 | Document | Reader | Holds |
 | --- | --- | --- |
-| `README.md` | newcomers | what graph_cli is, status, install, quickstart, links; nothing else |
+| `README.md` | newcomers | what graph_cli is, status, install, quickstart, links, license in short; nothing else |
+| `LICENSE.md`, `CLA.md` | everyone, contributors | the license terms with the contact for commercial licenses; the contributor license agreement |
 | `CONTRIBUTING.md` | contributors | development, tests, fixtures, generated files, these rules |
 | `docs/README.md` | everyone | the index of `docs/`, one line per document |
 | `docs/overview.md`, `deployment_options.md`, `design_decisions.md` | everyone who wants the big picture, people and agents | what graph_cli is and is for, the core concepts, how the parts fit together, the ways to run it, the foundational design decisions and their trade-offs; plain language and diagrams, every detail a link to its home |
