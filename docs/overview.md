@@ -58,18 +58,20 @@ What graph_cli does not do:
 
 | Concept | In short |
 | --- | --- |
-| Data root | the directory on one machine that holds all graphs, policies and audit streams of an installation |
-| Graph | one knowledge graph in the data root, pinned to one version of its ontology |
+| Data root | the directory on one machine that holds all graphs, policies and audit streams of an installation ([Storage](storage.md#filestore)) |
+| Graph | one knowledge graph in the data root, pinned to one version of its ontology ([Manifest](storage.md#manifest)) |
 | Ontology | the schema of a graph: classes, attributes, relations, enums, lifecycles and rules, written as YAML and released in versions ([ontology authoring](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/SKILL.md)) |
-| Entity | one thing in a graph, with an id, a type from the ontology, attributes and revisions |
-| Relation (edge) | a typed link between two entities |
-| Change set | one validated write: one or more operations applied together or not at all |
-| Lifecycle | the states an entity of a type can be in and the allowed transitions between them |
+| Entity | one thing in a graph, with an id, a type from the ontology, attributes and revisions ([entity fields](../skills/graph-cli/references/output.md#entities)) |
+| Relation (edge) | a typed link between two entities ([relations in the ontology](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/references/ir_format.md#relations)) |
+| Change set | one validated write: one or more operations applied together or not at all ([Change sets](../skills/graph-cli/references/changesets.md)) |
+| Lifecycle | the states an entity of a type can be in and the allowed transitions between them ([lifecycles in the ontology](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/references/ir_format.md#lifecycles)) |
 | Audit trail | the chained record of every change and maintenance step, checked by `graph-admin audit verify` ([Audit](audit.md)) |
 | Policy | the rules that decide who may read or write what, per caller, project and graph ([Access control](access_control.md)) |
 | Project pointer | a small file in a project directory that names the graphs the project uses ([Configuration](configuration.md#project-pointer)) |
 | Skill | generated instructions for coding agents: one for the CLI, one per graph ([Skills](skills.md)) |
-| Function, action, view | named, reviewed reads, writes and compositions of reads that a maintainer publishes for recurring questions and changes ([Functions](cli_graph.md#functions), [Actions](cli_graph.md#actions), [Views](cli_graph.md#authored-views-and-set-views)) |
+| Function | a named, typed read that a maintainer publishes for a question people ask again and again ([Functions](cli_graph.md#functions)) |
+| Action | a named, typed write that a maintainer publishes for a recurring change, where it matters with checks of the state it changes ([Actions](cli_graph.md#actions)) |
+| View | a named composition of reads that a maintainer publishes, answered in one call ([Views](cli_graph.md#authored-views-and-set-views)) |
 
 ## How the parts fit together
 

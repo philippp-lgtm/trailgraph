@@ -124,7 +124,11 @@ Rules:
 - **The big-picture documents stay coarse.** `overview.md`,
   `deployment_options.md` and `design_decisions.md` explain and link; they
   hold no limits, defaults, key lists or procedures, so a code change rarely
-  touches them.
+  touches them. They hold no number, environment variable, error or finding
+  code or policy action (checked); config keys may name an option. Each row
+  of the "Core concepts" table of `overview.md` is one term with one link to
+  its home, a technical document or a skill reference that names the term
+  (checked): the table is the map from the big picture to the details.
 - **Diagrams are Mermaid blocks** (text, reviewed in the diff, rendered by
   GitHub). A diagram that mirrors code gets a check, like the layer diagram
   of `docs/architecture.md`.
@@ -185,7 +189,7 @@ Update the documentation in the same change as the code:
 | an on-disk format or a verification check | `docs/storage.md` or `docs/audit.md`; `tests/cli/test_storage_doc.py` checks that the directory tree of `storage.md` names every path of a real data root and that its manifest example matches the golden |
 | an error code, finding code or policy action renamed or removed | every document that names it (checked) |
 | an example graph's files or setup | `examples/<name>/README.md`; `tests/cli/test_company_example.py` keeps the example buildable |
-| a way to run graph_cli, a core concept or a foundational design decision | `docs/deployment_options.md`, `docs/overview.md` or `docs/design_decisions.md` |
+| a way to run graph_cli, a core concept or a foundational design decision | `docs/deployment_options.md`, `docs/overview.md` (a core concept is a row of "Core concepts" with one link to its home, checked) or `docs/design_decisions.md` |
 | a value of a closed set (a status, kind, verb or parameter type), an answer key, a migration step, a module, a phase or an access-log key, the commands of a project admin, the parts push uploads | the list that names the set (checked by `tests/test_doc_sets.py`, which names the place) |
 | a limit, default, size or time a document states | the document and its fact in `tests/test_doc_facts.py` (a changed constant fails there until both follow) |
 | a guarantee of `docs/security_model.md` (what is refused, hidden, detected or never written) | the sentence and its claim marker, and the `doc_claim` marker of the tests that check it (checked by `tests/test_doc_claims.py`) |
@@ -208,11 +212,14 @@ exists (a dotted span that names a field instead goes into `NOT_CODES`),
 that every policy example in `docs/access_control.md` compiles, and that every
 `graph` and `graph-admin` command line of the documents names a real command
 with options it takes (`tests/support/command_lines.py`, also used for the
-admin skills).
+admin skills), that every row of the "Core concepts" table of
+`docs/overview.md` links exactly one home that names its term and is no
+big-picture document, and that the big-picture documents name no
+environment variable, error or finding code or policy action.
 
 `uv run pytest tests/test_doc_facts.py` checks that every number in the
 prose of `README.md` and `docs/` is a fact that matches the code or a listed
-exemption, that every exit code a document gives is the exit code of the
+exemption (the big-picture documents hold none), that every exit code a document gives is the exit code of the
 error code next to it, and that every format number names a real format.
 `uv run pytest tests/test_doc_sets.py` checks that the lists of the documents
 that mirror a code set name exactly that set: value sets and statuses, the
