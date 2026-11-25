@@ -11,6 +11,9 @@
 #     (into this repository's main; the head commit must belong to that pull request only, always checked,
 #     because a run cannot name its pull request once the head branch is deleted); ALL its runs are completed, successful
 #     first attempts (a green re-run hides a failed attempt and must stay visible to the tag check),
+#   - when CI_REUSE_REFUSE_PATHS (an ERE) is set: none of the files of the pull request (nor a name one was renamed from)
+#     matches it. A pull request runs the workflow it carries, so a change to the CI itself (the workflow, its scripts,
+#     the image build) was tested by its own, possibly different, CI; main must run such a change itself,
 #   - when CI_REUSE_REQUIRE is set (one `<job name>/<step name>` per line): in that run, each named step succeeded in its
 #     job (jobs of that name: exactly one). A workflow that tests only what a change affects on a pull request names the
 #     step that ran the whole suite, so a push to main reuses only a run that tested everything.
@@ -75,6 +78,17 @@ decide() {
     end // empty' <<<"$runs") \
     || { echo "unreadable run list"; return 1; }
   [ -n "$run" ] || { echo "no usable green first-attempt pull_request run of $wf for head ${head:0:7} of #$n (none, or one of them not a first-attempt success, or too many runs)"; return 1; }
+
+  local refuse=${CI_REUSE_REFUSE_PATHS:-} page=1 files hit count
+  while [ -n "$refuse" ]; do
+    files=$(api "pulls/$n/files?per_page=100&page=$page") || { echo "cannot list the files of #$n"; return 1; }
+    hit=$(jq -r --arg re "$refuse" 'first(.[] | (.filename, (.previous_filename // empty)) | select(test($re))) // empty' <<<"$files" 2>/dev/null) \
+      && count=$(jq 'length' <<<"$files" 2>/dev/null) || { echo "unreadable file list of #$n"; return 1; }
+    [ -z "$hit" ] || { echo "#$n changed $hit, which controls its own CI run: the commit runs in full"; return 1; }
+    [ "$count" -ge 100 ] || break
+    page=$((page + 1))
+    [ "$page" -le 10 ] || { echo "#$n has too many files to check"; return 1; }
+  done
 
   local need jobs job step ok
   need=${CI_REUSE_REQUIRE:-}
