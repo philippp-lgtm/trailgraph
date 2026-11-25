@@ -10,7 +10,7 @@ from support.fixtures import compiled_model
 
 from graph_cli.kinetic.params import ParamDef, bind_json
 from graph_cli.ontology_layer.values import DECIMAL_RE
-from graph_cli.query.cypher.values import MAX_PLAIN_EXPONENT, decimal_text, plain_json
+from graph_cli.query.cypher.values import MAX_PLAIN_CHARS, decimal_text, plain_json
 
 
 @pytest.mark.parametrize(
@@ -38,16 +38,29 @@ def test_a_decimal_inside_a_list_or_a_map_is_shown_the_same_way() -> None:
     assert plain_json([Decimal("1E-7"), {"a": Decimal("1E+3")}]) == ["0.0000001", {"a": "1000"}]
 
 
-def test_an_exponent_beyond_the_bound_keeps_the_exponent_notation() -> None:
-    near = Decimal(f"1E+{MAX_PLAIN_EXPONENT}")
-    assert decimal_text(near) == "1" + "0" * MAX_PLAIN_EXPONENT
-    assert decimal_text(Decimal(f"1E+{MAX_PLAIN_EXPONENT + 1}")) == f"1E+{MAX_PLAIN_EXPONENT + 1}"
+def test_a_long_stored_decimal_still_comes_back_in_plain_notation() -> None:
+    """A decimal parsed from plain text has the exponent minus its fractional digits: a bound on
+    the exponent would turn a long fraction into ``1.33E-7`` that no parameter takes."""
+    long = "0.0000001" + "3" * 200
+    assert decimal_text(Decimal(long)) == long
+    assert decimal_text(Decimal("-" + long)) == "-" + long
+    assert decimal_text(Decimal("1" + "0" * 500)) == "1" + "0" * 500
+
+
+def test_a_value_whose_plain_text_would_be_too_long_keeps_the_exponent_notation() -> None:
+    width = MAX_PLAIN_CHARS - 2
+    assert decimal_text(Decimal(f"1E+{width - 1}")) == "1" + "0" * (width - 1)
+    assert decimal_text(Decimal(f"1E+{width}")) == f"1E+{width}"
+    assert decimal_text(Decimal(f"1E-{width}")) == "0." + "0" * (width - 1) + "1"
+    assert decimal_text(Decimal(f"1E-{width + 1}")) == f"1E-{width + 1}"
     # a valid literal must not become a text of a billion digits
     assert decimal_text(Decimal("1E+999999999")) == "1E+999999999"
     assert decimal_text(Decimal("1E-999999999")) == "1E-999999999"
 
 
-@pytest.mark.parametrize("value", ["1E-7", "1E+3", "-0", "0.1", "12345E-3", "-1E+5"])
+@pytest.mark.parametrize(
+    "value", ["1E-7", "1E+3", "-0", "0.1", "12345E-3", "-1E+5", "0.0000001" + "3" * 200]
+)
 def test_a_shown_decimal_binds_as_a_decimal_parameter_with_the_same_value(value: str) -> None:
     shown = plain_json(Decimal(value))
     assert isinstance(shown, str)
