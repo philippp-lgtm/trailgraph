@@ -21,6 +21,7 @@ from support.skills import ADMIN_SKILLS_DIR
 from graph_cli.kernel.error_codes import all_error_codes
 from graph_cli.kinetic.compile import compile_catalog
 from graph_cli.kinetic.format import FUNCTION_SCHEMA, PARAM_TYPES, STATUSES, load_function
+from graph_cli.kinetic.return_types import COLUMN_KINDS
 
 SKILL_DIR = ADMIN_SKILLS_DIR / "authoring-graph-functions"
 SKILL = (SKILL_DIR / "SKILL.md").read_text()
@@ -95,7 +96,7 @@ def test_the_reference_names_every_key_and_word() -> None:
     keys = _accepted_keys()
     assert {"schema", "name", "use_when", "replaced_by", "class", "enum", "many"} <= keys
     assert sorted(keys - mentioned) == []
-    for word in (*PARAM_TYPES, *STATUSES):
+    for word in (*PARAM_TYPES, *STATUSES, *COLUMN_KINDS):
         assert word in spans or f"`{word}`" in FORMAT, word
 
 

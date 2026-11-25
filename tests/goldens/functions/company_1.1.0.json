@@ -348,7 +348,7 @@
           "variable": "p"
         }
       ],
-      "hash": "sha256:bcd68c20bc0054d2ee8e583ff963223579321adef1d0e2e5e9e83c237e12d2e2",
+      "hash": "sha256:0f11483c7e0f88ae54d4aba45ed7c5624ca07ddb76023a090c74195921fa21c1",
       "module": "people",
       "name": "people_by_email_text",
       "params": [
@@ -370,8 +370,12 @@
           "summary": "Name of the person."
         },
         {
+          "class": null,
           "column": "email",
-          "summary": "Work email address."
+          "enum": null,
+          "many": false,
+          "summary": "Work email address.",
+          "type": "string"
         }
       ],
       "source_query": "MATCH (p:Person)\nWHERE p.work_email CONTAINS $text\nRETURN p.name AS person, p.work_email AS email\nORDER BY person",

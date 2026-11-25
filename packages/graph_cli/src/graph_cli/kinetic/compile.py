@@ -9,7 +9,8 @@ data and no parameter values are needed. Besides what the query resolver
 refuses (unknown names, unbound variables, ...) the checks are: parameters
 declared and used (and none in ``SKIP``/``LIMIT``), their types against the
 fields they are compared with, relationship patterns the relation's domain and
-range allow, and the declared columns.
+range allow, the declared columns, and declared column types against what the query makes
+certain (``return_types``).
 
 The compiled entry stores the normalized query text (``render`` of the
 resolved tree: CURIEs, backticked), which parses and resolves again against
@@ -38,6 +39,7 @@ from graph_cli.kinetic.format import (
     Problem,
     load_function,
 )
+from graph_cli.kinetic.return_types import ColumnType, contradicts, infer_columns, merge
 from graph_cli.ontology_layer.connecting import connecting
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.vocabulary import BUILTIN_MODULES, SYSTEM_FIELDS
@@ -171,6 +173,22 @@ def resolve_stored(text: str, defn: FunctionDef, model: CompiledModel) -> Resolv
     return _resolve_with_placeholders(parsed, defn, model, paging)
 
 
+def column_types(
+    defn: FunctionDef, text: str, model: CompiledModel
+) -> tuple[ColumnType | None, ...]:
+    """The type of each result column of a function with the stored query ``text``, against
+    ``model``: what the query makes certain, with what the author declared (``None``: untyped).
+    A query that no longer resolves has only its declared types."""
+    declared = tuple(r.declared for r in defn.returns)
+    try:
+        inferred = infer_columns(resolve_stored(text, defn, model), model)
+    except GraphCliError:
+        return declared
+    if len(inferred) != len(declared):
+        return declared
+    return tuple(merge(d, i) for d, i in zip(declared, inferred, strict=True))
+
+
 def single_refs(
     document: JsonObject, model: CompiledModel, exempt: frozenset[str] = frozenset()
 ) -> list[tuple[str, str, str]]:
@@ -259,6 +277,7 @@ class _Compile:
     def run(self) -> dict[str, JsonValue] | None:
         module = self.module()
         self.parameters()
+        self.declared_returns()
         self.examples()
         self.replacement()
         text = self.defn.query
@@ -282,6 +301,7 @@ class _Compile:
             self.error(exc, "query")
             return None
         self.columns(resolved)
+        self.return_types(resolved)
         self.type_fit(resolved)
         self.patterns(resolved)
         self.round_trip(_normalized(resolved), paging)
@@ -428,6 +448,45 @@ class _Compile:
                 "returns must list exactly the result columns of the query, in order",
                 expected=list(resolved.columns),
                 actual=declared,
+            )
+
+    # Return types
+
+    def declared_returns(self) -> None:
+        """The enum and class of a declared column type must be terms of the model."""
+        for index, ret in enumerate(self.defn.returns):
+            if ret.enum is not None and ret.enum not in self.model.enums:
+                self.add(
+                    "function.unknown_enum",
+                    f"returns[{index}].enum",
+                    f"the model has no enum {ret.enum!r}",
+                    curie=ret.enum,
+                )
+            if ret.of_class is not None and ret.of_class not in self.model.classes:
+                self.add(
+                    "function.unknown_class",
+                    f"returns[{index}].class",
+                    f"the model has no class {ret.of_class!r}",
+                    curie=ret.of_class,
+                )
+
+    def return_types(self, resolved: ResolvedQuery) -> None:
+        """A declared type must not contradict what the query makes certain."""
+        if [r.column for r in self.defn.returns] != list(resolved.columns):
+            return  # reported by ``columns``
+        inferred = infer_columns(resolved, self.model)
+        for index, (ret, found) in enumerate(zip(self.defn.returns, inferred, strict=False)):
+            declared = ret.declared
+            if declared is None or found is None or not contradicts(declared, found):
+                continue
+            self.add(
+                "function.returns_type_mismatch",
+                f"returns[{index}].type",
+                f"column {ret.column!r} is declared {declared.text}, but its query makes it "
+                f"{found.text}: declare that, or drop the type",
+                column=ret.column,
+                declared=declared.text,
+                inferred=found.text,
             )
 
     # Parameter types

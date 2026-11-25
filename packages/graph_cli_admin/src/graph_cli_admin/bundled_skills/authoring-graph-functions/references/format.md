@@ -48,7 +48,7 @@ featured: true
 | `use_when` | yes | at most 600 characters: the situations and questions the function answers, in users' words; what search and agents match a request against |
 | `params` | no | mapping of parameter name to declaration (below); omit for none |
 | `query` | yes | the read-only Cypher query, at most 2,000 characters |
-| `returns` | yes | list of `{column, summary}`, exactly the query's result columns in order |
+| `returns` | yes | list of `{column, summary}` with an optional type ([result columns](#result-columns)), exactly the query's result columns in order |
 | `examples` | yes | at least one `{question, params}`; `params` optional |
 | `featured` | no | `true` lists the function in the graph skill (at most 12 are listed); default `false`. The only key that changes the skill: publishing a function that is not featured leaves installed skills current |
 | `status` | no | `active` (default) or `deprecated` |
@@ -103,6 +103,59 @@ a list field goes the other way (`$p IN field`); a single parameter is not
 compared with a list field by `=`. The text operators take a single
 `string` parameter and a text field.
 
+## Result columns
+
+Each entry of `returns` is `{column, summary}` plus, optionally, a type. The column name is the
+name of the result column (`AS name`, or the expression as written). Keys of a column:
+
+| Key | Meaning |
+| --- | --- |
+| `column` | the name of the result column (required) |
+| `summary` | what the column holds (required) |
+| `type` | one of `string`, `integer`, `decimal`, `boolean`, `date`, `datetime`, `enum`, `ref`, `entity`, `lang`, `any` |
+| `class` | CURIE of a class; only with `ref` or `entity`, optional there (the class of the entity the column holds, left out when it can be of any class) |
+| `enum` | CURIE of an enum of the model; required with `enum`, not allowed otherwise |
+| `many` | `true` makes the column a list of the type |
+
+The type tells an agent harness what a cell looks like, so it can check and use the answer
+without guessing: a `decimal` and a `date` or `datetime` come as text, an `enum` as one of the
+values of its enum, a `ref` as an entity id or alias that can go into a `ref` parameter, an
+`entity` as the entity object `graph get` shows, a `lang` as `{"lang", "value"}` and `any` as any
+JSON value. A value may always be `null` unless the type is inferred as never null (below).
+
+Most columns need no `type`: the type is inferred where the query makes it certain, and only
+there:
+
+| Column expression | Type |
+| --- | --- |
+| `RETURN v` of a node variable bound by a `MATCH` pattern | `entity` of the class its label names (no class for a node without exactly one label); never null for a `MATCH`, nullable for an `OPTIONAL MATCH` |
+| `RETURN v.attribute` | the attribute's type, a list when the attribute is `many`, `lang` for language-tagged text, `enum` of its enum; nullable (a marking can hide an attribute from a reader). Left open when the classes the variable can have declare the attribute differently |
+| `RETURN r.qualifier` of a one-hop relationship variable of a `MATCH` | the qualifier's type, nullable |
+| `RETURN v.id`, `v.alias` | `ref` of the label's class (`alias` can be null) |
+| `RETURN v.rev`, `v.tx_seq` | `integer`; `v.created_at`, `v.recorded_at` are `datetime`; `v.type`, `v.record_status` are `string` |
+| `count(...)` | `integer`, never null |
+| `collect(x)` | a list of what `x` is (a list of `any` when `x` is open or a list itself), never null |
+| a literal | its type, never null |
+
+Everything else is not typed by the query, so declare it when you want it typed: `sum` and
+`avg`, `min` and `max`, `coalesce`, `CASE`, arithmetic, `size()` and the other functions,
+relationships, the validity fields `valid_from` and `valid_to`, and every value that went
+through `WITH ... AS` (a node passed on as `WITH v` keeps its type). A declaration may not
+contradict an inferred type (`function.returns_type_mismatch` names both; state the same type or
+drop the `type`); where the query names no class, a declared `class` is kept.
+
+```yaml
+returns:
+  - column: level
+    summary: Number of steps above the given position.
+    type: integer
+  - column: owners
+    summary: The owners, as references.
+    type: ref
+    class: org:Person
+    many: true
+```
+
 ## What publishing checks
 
 `graph-admin graph functions publish` (also as part of `graph-admin graph push`) checks
@@ -114,9 +167,9 @@ push) and reports all problems together as `admin.functions_invalid`. The
 | --- | --- |
 | the file | `function.invalid_yaml`, `function.unsupported_schema`, `function.unknown_key`, `function.missing_key`, `function.invalid_value`, `function.name_mismatch`, `function.invalid_file` (the folder holds anything but `<name>.yaml` files) |
 | the module | `function.unknown_module`, `function.builtin_module`, `function.module_required` |
-| parameters | `function.unknown_class`, `function.unknown_enum`, `function.invalid_default`, `function.invalid_example`, `function.parameter_undeclared`, `function.parameter_unused`, `function.parameter_paging`, `function.type_mismatch` |
+| parameters | `function.unknown_class`, `function.unknown_enum` (also for the `class` and `enum` of a declared column type), `function.invalid_default`, `function.invalid_example`, `function.parameter_undeclared`, `function.parameter_unused`, `function.parameter_paging`, `function.type_mismatch` |
 | the query | its own errors (`query.syntax`, `query.unbound_variable`, `term.unknown`, `query.ambiguous_term`, ...) and `function.pattern_impossible`: a relationship pattern whose ends no domain and range of the relation allow (it would match nothing); `details.connecting` shows what connects the types |
-| the result | `function.returns_star`, `function.returns_mismatch` |
+| the result | `function.returns_star`, `function.returns_mismatch`, `function.returns_type_mismatch` (a declared column type contradicts what the query makes certain) |
 | replacement | `function.replaced_by_invalid` (target missing, deprecated or itself) |
 | the namespace | `function.name_taken` (the name is a published action of the graph; functions and actions share one namespace) |
 | size | `function.query_too_long` (2,000 characters), `function.too_many_functions` (1,000 per graph) |
@@ -155,5 +208,8 @@ Publishing stores the files and a compiled catalog
 (`graph_cli.functions/1`) that the app reads: per function the
 declaration, the normalized query text, the columns, `touches` (the types
 and relations the query names, with their modules), the field uses and a
-hash of the entry. Agents see the entry with `graph describe function
-<function>`.
+hash of the entry. A column keeps the type its author declared and nothing else: inferred
+types are not stored, so a catalog of functions without declared types
+keeps its bytes (and entry hashes), and the types are inferred again
+from the stored query whenever they are shown. Agents see the entry with
+`graph describe function <function>`.
