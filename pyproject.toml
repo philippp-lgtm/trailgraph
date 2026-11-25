@@ -12,6 +12,7 @@ dependencies = ["graph_cli", "graph_cli_admin", "graph_cli_server"]
 dev = [
     "import-linter>=2.1",
     "jsonschema>=4.23",
+    "rfc3339-validator>=0.1.4",
     "mypy>=1.11",
     "openapi-spec-validator>=0.9",
     "pytest>=8.3",
