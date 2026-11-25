@@ -257,14 +257,9 @@ def call(
         none: tuple[Any, ...] = ()
         obligations = reader.reason_obligations(actor, entry) if kind == ACTION else frozenset()
         parts = {FUNCTION: none, ACTION: none, VIEW: none, kind: usable}
-        manifest = heads(
-            reader.visible_model(actor, entry),
-            parts[FUNCTION],
-            parts[ACTION],
-            parts[VIEW],
-            obligations,
-        )
-        current = tool_hash(next(h for h in manifest if h.name == tool))
+        model = reader.visible_model(actor, entry)
+        manifest = heads(model, parts[FUNCTION], parts[ACTION], parts[VIEW], obligations)
+        current = tool_hash(next(h for h in manifest if h.name == tool), model)
         if current != expect_hash:
             raise GraphCliError(
                 "tool.hash_mismatch",

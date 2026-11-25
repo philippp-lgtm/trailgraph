@@ -18,15 +18,16 @@ Every schema is self-contained (no ``$ref``, no ``$defs``) and has an object at 
 from __future__ import annotations
 
 import difflib
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final
 
+from graph_cli.app_cli.column_schemas import column_schema
 from graph_cli.app_cli.commands.do import DO_ERRORS, DO_OUTPUT
 from graph_cli.app_cli.commands.read.entity import VIEW_ERRORS, VIEW_OUTPUT
 from graph_cli.app_cli.commands.read.query import RUN_ERRORS, RUN_OUTPUT
-from graph_cli.app_cli.output_schemas import DEFS
-from graph_cli.cli_kit.output_schemas import Schema, ref
+from graph_cli.app_cli.output_schemas import standalone
+from graph_cli.cli_kit.output_schemas import ref
 from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_value
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.catalog import GraphEntry
@@ -36,7 +37,7 @@ from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services import describe_tools
 from graph_cli.services.describe import ModuleIndex, model_envelope
-from graph_cli.services.describe_tools import ACTION, FUNCTION, VIEW, ToolHead
+from graph_cli.services.describe_tools import ACTION, FUNCTION, VIEW, ToolColumn, ToolHead
 from graph_cli.services.tool_errors import error_info
 
 TOOLS_FORMAT: Final = 1
@@ -65,41 +66,19 @@ NOT_FOR_TOOLS: Final = frozenset(
         "view.not_found",
     }
 )
-UNTYPED: Final[JsonObject] = {"x-graph-cli": {"typed": False}}
 
 
-def standalone(schema: Schema, defs: Mapping[str, Schema] = DEFS) -> JsonObject:
-    """``schema`` with every ``$ref`` into ``defs`` replaced by the definition it names, so that it
-    stands alone. A definition that refers to itself is a bug (``ValueError``)."""
-
-    def inline(node: JsonValue, active: tuple[str, ...]) -> JsonValue:
-        if isinstance(node, list):
-            return [inline(item, active) for item in node]
-        if not isinstance(node, Mapping):
-            return node
-        target = node.get("$ref")
-        if isinstance(target, str):
-            name = target.removeprefix("#/$defs/")
-            if name in active:
-                raise ValueError(f"output schema definition {name!r} refers to itself")
-            return inline(defs[name], (*active, name))
-        return {key: inline(value, active) for key, value in node.items()}
-
-    found = inline(schema, ())
-    assert isinstance(found, dict)
-    return found
-
-
-def function_output(columns: Sequence[str]) -> JsonObject:
+def function_output(columns: Sequence[ToolColumn], model: CompiledModel) -> JsonObject:
     """What a call of a function answers (``data``): ``RUN_OUTPUT`` plus the ``page`` the run
-    command puts in the envelope, with a row of the function's columns, each untyped for now
-    (any JSON value, ``x-graph-cli: {typed: false}``)."""
+    command puts in the envelope, with a row of the function's columns, each typed against the
+    caller's ``model`` where the function's types allow (``app_cli.column_schemas``), else any
+    JSON value marked ``x-graph-cli: {typed: false}``."""
     base = standalone(RUN_OUTPUT)
     properties = dict(_properties(base))
     row: dict[str, JsonValue] = {
         "type": "object",
-        "properties": {column: UNTYPED for column in columns},
-        "required": list(columns),
+        "properties": {c.name: column_schema(c.type, c.summary, model) for c in columns},
+        "required": [c.name for c in columns],
     }
     properties["items"] = {"type": "array", "items": row}
     properties["page"] = standalone(ref("page"))
@@ -137,17 +116,18 @@ def tool_errors(kind: str) -> tuple[str, ...]:
     return tuple(sorted(codes))
 
 
-def tool_hash(head: ToolHead) -> str:
-    """The ``hash`` of the tool of ``head`` in the manifest."""
-    return str(tool_json(head)["hash"])
+def tool_hash(head: ToolHead, model: CompiledModel) -> str:
+    """The ``hash`` of the tool of ``head`` in the manifest, rendered for ``model``."""
+    return str(tool_json(head, model)["hash"])
 
 
-def tool_json(head: ToolHead) -> JsonObject:
-    """One tool of the manifest. ``hash`` covers what a harness builds its tool from (name,
-    description, both schemas, annotations): it changes when an ontology release changes an enum
-    even though the entry's hash does not."""
+def tool_json(head: ToolHead, model: CompiledModel) -> JsonObject:
+    """One tool of the manifest, rendered for the caller's ``model``. ``hash`` covers what a
+    harness builds its tool from (name, description, both schemas, annotations): it changes when
+    an ontology release changes an enum or the type of a column even though the entry's hash does
+    not."""
     output = {
-        FUNCTION: lambda: function_output(head.columns),
+        FUNCTION: lambda: function_output(head.columns, model),
         ACTION: action_output,
         VIEW: view_output,
     }[head.kind]()
@@ -258,7 +238,7 @@ def build_manifest(
     problem = missing_tools(selection.tools, [h.name for h in available])
     if problem is not None:
         raise problem
-    tools = [tool_json(h) for h in available if _kept(h, selection, module)]
+    tools = [tool_json(h, model) for h in available if _kept(h, selection, module)]
     codes = sorted({code for tool in tools for code in _codes(tool)})
     errors: dict[str, JsonValue] = {code: error_info(code) for code in codes}
     version = hash_value({"tools": tools, "errors": errors})

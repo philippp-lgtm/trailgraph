@@ -15,6 +15,7 @@ from support.tools import ITEMS, NOTHING, PERSONAL, Scene
 from graph_cli.kernel.canonical import MAX_SAFE_INT
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kinetic.params import PARAM_TYPES, ParamDef, bind_json
+from graph_cli.kinetic.return_types import ColumnType
 from graph_cli.kinetic.tool_types import param_type
 from graph_cli.services import describe_tools as dt
 
@@ -396,7 +397,10 @@ def test_the_heads_carry_what_the_manifest_lists_of_an_entry() -> None:
         entry.module,
         entry.hash,
     )
-    assert head.columns == tuple(r.column for r in entry.defn.returns)
+    assert [(c.name, c.summary) for c in head.columns] == [
+        (r.column, r.summary) for r in entry.defn.returns
+    ]
+    assert all(c.type == ColumnType("string") for c in head.columns)
     assert head.featured is entry.defn.featured
     assert heads(COMPANY.scene())["view_unit_overview"].featured is False
 

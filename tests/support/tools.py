@@ -119,17 +119,27 @@ def company() -> Catalog:
     )
 
 
-def inventory() -> Catalog:
-    """The ``inventory`` toy graph with the valid fixtures of its three kinds."""
+def inventory(more_functions: dict[str, str] | None = None) -> Catalog:
+    """The ``inventory`` toy graph with the valid fixtures of its three kinds, and the function
+    files ``more_functions`` (file name -> content) a test adds."""
     return _compiled(
         compiled_model("inventory"),
-        function_files.read_dir(FIXTURES / "functions" / "inventory" / "valid"),
+        {
+            **function_files.read_dir(FIXTURES / "functions" / "inventory" / "valid"),
+            **(more_functions or {}),
+        },
         read_actions(FIXTURES / "actions" / "inventory" / "valid"),
         read_views(FIXTURES / "views" / "inventory" / "valid"),
     )
 
 
-def staff() -> Catalog:
+def staff(more_functions: dict[str, str] | None = None) -> Catalog:
     """The ``staff`` toy graph: its personal attributes carry markings; its functions and actions
-    are the ones of ``support.markings`` (no views)."""
-    return _compiled(compiled_model("staff"), FUNCTION_SOURCES, ACTION_SOURCES, {})
+    are the ones of ``support.markings`` (no views), and the function files ``more_functions`` a
+    test adds."""
+    return _compiled(
+        compiled_model("staff"),
+        {**FUNCTION_SOURCES, **(more_functions or {})},
+        ACTION_SOURCES,
+        {},
+    )

@@ -1249,9 +1249,34 @@ same. What differs:
 `describe commands`: a consumer ignores keys it does not know, so an answer can grow without
 breaking one that validates. A function answers what `run` answers and `page`, the paging of the
 rows: `function`, `columns`, `items` and `page`, with one property per column of the function in a
-row, each untyped for now (any JSON value, marked `x-graph-cli: {typed: false}`). An action answers
-the write result of `do`, as a dry run does. A view answers the view model, its sections as loose
-objects with a `kind`. Every schema is self-contained: no `$ref`, an object at its root.
+row, each typed where its type is known (below) and else any JSON value marked
+`x-graph-cli: {typed: false}`. An action answers the write result of `do`, as a dry run does. A
+view answers the view model, its sections as loose objects with a `kind`. Every schema is
+self-contained: no `$ref`, an object at its root.
+
+**Typed columns.** A column of a function has a type when the query makes it certain (a node, an
+attribute, a count, a list of values, a literal) or the maintainer declared one
+([result columns](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md#result-columns)).
+The property of the column in a row carries its `description` (the column's summary) and the schema
+of the cells; a column whose values can be null accepts `null` as well, and a list is an array.
+`describe function` lists the same type per column (`type` is null for an untyped column). The cells
+are what `run` shows:
+
+| Column type | Schema of one cell |
+| --- | --- |
+| `string` | a string |
+| `integer`, `boolean` | an integer, a boolean |
+| `decimal` | a string with the grammar of a decimal |
+| `date`, `datetime` | a string with `format` `date` or `date-time` |
+| `enum` | a string, `enum` the values of the enum as you see them |
+| `ref` | a string with the grammar of a reference, the class in `x-graph-cli: {class}` when the column has one; it can go into a `ref` parameter |
+| `entity` | the entity object `get` shows, `attrs` typed by the attributes of the class that you see (an entity of a subclass may carry more) |
+| `lang` | `{"lang", "value"}`, a language-tagged text |
+| `any` | any JSON value |
+
+Like the enum values, the attributes of an entity column are those of your model: what a type limit
+or a marking hides is not in the schema, and a function whose result names a hidden class or enum
+does not exist for you, like one that takes it as a parameter.
 
 **Compatibility policy.** The manifest shape (`tools_format`), the tool names, the controls and the
 open output schemas are a contract that a harness's allow list and stubs depend on. Within a

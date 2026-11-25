@@ -208,9 +208,11 @@ Publishing stores the files and a compiled catalog
 (`graph_cli.functions/1`) that the app reads: per function the
 declaration, the normalized query text, the columns, `touches` (the types
 and relations the query names, with their modules), the field uses and a
-hash of the entry. A column keeps the type its author declared and nothing else: inferred
-types are not stored, so a catalog of functions without declared types
-keeps its bytes (and entry hashes), and the types are inferred again
-from the stored query whenever they are shown. Agents see the entry with
-`graph describe function <function>`, which lists the type of every
-column (`type` is `null` for an untyped one).
+hash of the entry. A column keeps the type its author declared and nothing
+else: inferred types are not stored, so a catalog of functions without
+declared types keeps its bytes (and entry hashes), and the types are
+inferred again from the stored query whenever they are shown. Agents see
+the entry with `graph describe function <function>`, which lists the type of
+every column (`type` is `null` for an untyped one), and its output schema in
+the tool manifest (`graph describe tools`), rendered for the model the caller
+sees.

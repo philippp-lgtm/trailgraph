@@ -9,7 +9,7 @@
     "version": "1.0.0"
   },
   "tools_format": 1,
-  "version": "sha256:611fec9b3d7e1cb05fc36471fec400bba3c7279aa767c5a667aa4c7be04bf035",
+  "version": "sha256:e69b77dbdd36d6104d3e6d2819968085df2c05cbffbdd2f10fa1e388850c772f",
   "tools": [
     {
       "name": "run_items_by_condition",
@@ -78,14 +78,32 @@
               "type": "object",
               "properties": {
                 "item": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Name of the item."
                 },
                 "condition": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "new",
+                        "good",
+                        "worn",
+                        "damaged"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The condition, as asked for."
                 }
               },
               "required": [
@@ -150,7 +168,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "inventory",
-      "hash": "sha256:abf7536231f46ae24f81fbaca8b958e03962e9f9ecfd21d242be5ef571e8de84",
+      "hash": "sha256:f9f1d416e805d3fec6bc549a26db331aed3e565771f7279cfbf0f243554fcea7",
       "entry_hash": "sha256:00a7623e4213609e4cc7f002f8eff51f8ae659792628d94822fc201f0786e8fa",
       "errors": [
         "access.denied",
@@ -241,14 +259,26 @@
               "type": "object",
               "properties": {
                 "item": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Name of the item."
                 },
                 "quantity": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Number of units."
                 }
               },
               "required": [
@@ -313,7 +343,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "inventory",
-      "hash": "sha256:af40ceda843ee051d0b367589c9e3eaa14e9a7d383735b41790cd1901ea6b7a0",
+      "hash": "sha256:5970351b1e02798df7e23fc7592e322c38c62cdf22d1ee34a096a553ab93204e",
       "entry_hash": "sha256:0c35a13460f198e777f45df65e06a74c67c06d911c8d0991b1323739fd04af62",
       "errors": [
         "access.denied",

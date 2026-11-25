@@ -9,7 +9,7 @@
     "version": "1.1.0"
   },
   "tools_format": 1,
-  "version": "sha256:fa95a5ab7198ce9e349a8b734458f991a3694059f444ef7dab24297a25913b8a",
+  "version": "sha256:52f24a9a9aac986bf4cdf3ce1260401f6108a955f99e87bdbd58b85a20cc2647",
   "tools": [
     {
       "name": "run_employer_of",
@@ -76,24 +76,48 @@
               "type": "object",
               "properties": {
                 "entity": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Registered name of the employing legal entity."
                 },
                 "legal_form": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Form of incorporation, if recorded."
                 },
                 "country": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Country of registration."
                 },
                 "status": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Lifecycle state of the legal entity."
                 }
               },
               "required": [
@@ -160,7 +184,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "legal",
-      "hash": "sha256:6fd5f6b0b1fcfbc82fa68d67a84c42bc3258e6348496c62109e14e9687e582a6",
+      "hash": "sha256:b3ba3c526e69828a68f256313f55b471584b5d5ea75fbe39efb1a47e8fbbfb3e",
       "entry_hash": "sha256:8f2a737e47b0c2076c1cdfa05b871e6e0cbc7975b547323c6c1a96056713ff4a",
       "errors": [
         "access.denied",
@@ -251,19 +275,37 @@
               "type": "object",
               "properties": {
                 "person": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Name of the holder."
                 },
                 "position": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Title of the position held."
                 },
                 "unit": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The unit the position belongs to, the given one or a unit below it."
                 }
               },
               "required": [
@@ -329,7 +371,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "organization",
-      "hash": "sha256:fb8e72c66ddea293832d460be9c16cac8cae6e4f6234740ce4c07f81f4b744bf",
+      "hash": "sha256:bc3eaa64d48fff27999af213a21a96b201f73a3f348e7294e4bfd6da252fe2b4",
       "entry_hash": "sha256:881b801a4480a9db641bfae24f8cda89045a7275d58a1847038c3031e4c646c2",
       "errors": [
         "access.denied",
@@ -420,19 +462,37 @@
               "type": "object",
               "properties": {
                 "person": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Name of the holder who has not completed the training."
                 },
                 "position": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Title of the position through whose role the training is required."
                 },
                 "training": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Title of the training that is still missing."
                 }
               },
               "required": [
@@ -498,7 +558,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "operations",
-      "hash": "sha256:05830e3051a27e0bd37d3cce306aa396a3d18a51f379111d6459eec88c72126a",
+      "hash": "sha256:90bd85b104badec7bc5bc2e1351278bed364d4adbc31eb27dc90b8c8ed3b9d02",
       "entry_hash": "sha256:82dc798df7fbe2a05733359772c41081c8e980f172d1f63b599b6467381aaf38",
       "errors": [
         "access.denied",
@@ -589,24 +649,50 @@
               "type": "object",
               "properties": {
                 "policy": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Title of the policy."
                 },
                 "status": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Lifecycle state of the policy."
                 },
                 "effective_from": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Date from which the policy is binding, empty for a draft."
                 },
                 "review_due": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Date by which the policy is to be reviewed, if set."
                 }
               },
               "required": [
@@ -673,7 +759,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "operations",
-      "hash": "sha256:03703ce9a99d2b07948806f06bcc436c4467bcbdd0232d5e94135b8ad00492ac",
+      "hash": "sha256:2af11f1804eff8f9dbcc090f7c93b4197732ca35c47ab02772363a05c2b84865",
       "entry_hash": "sha256:12e2bc39d34abbc6291d34ae898e92982dc42e96eaebab952f92559f6b7754e7",
       "errors": [
         "access.denied",
@@ -764,19 +850,37 @@
               "type": "object",
               "properties": {
                 "level": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Number of steps above the given position, 1 for its direct superior."
                 },
                 "position": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Title of the position at that level."
                 },
                 "holder": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Name of the current holder, empty when the position is vacant."
                 }
               },
               "required": [
@@ -842,8 +946,8 @@
       "replaced_by": null,
       "featured": true,
       "module": "organization",
-      "hash": "sha256:9433e821aed90b1d3065b048c5dd031dd1ef9aafb5bbfe2703a726747d39cc18",
-      "entry_hash": "sha256:2bb29e80be5ffa4047c170519156b28025779013a7caefd68c2490942b0e9570",
+      "hash": "sha256:bc30149245336e6cdeb008524b2c7a2298f1e0310e609991ba81620dd1425c9b",
+      "entry_hash": "sha256:218f8ec49c7ddc5a24076b043f224ccb178bf78e7568c9483d1e40ef6a3e4d38",
       "errors": [
         "access.denied",
         "config.forbidden_key",
@@ -937,29 +1041,60 @@
               "type": "object",
               "properties": {
                 "person": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Name of the person."
                 },
                 "training": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Title of the required training."
                 },
                 "position": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Title of the position whose role requires it."
                 },
                 "role": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Name of that role."
                 },
                 "completed_on": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Date the person completed the training; empty when not completed (or no date was recorded)."
                 }
               },
               "required": [
@@ -1027,7 +1162,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "operations",
-      "hash": "sha256:4b91e658de133693a0807e36413fad1432f9dcadad1c272cb277c6f510ce3eb9",
+      "hash": "sha256:02ebc60c0215cb93cf22fb4e2224862b17edc1291375f71b649405da3790344a",
       "entry_hash": "sha256:a6ec8e54131cb2d45d9119a6648ca2525e3d716dc7b0f7e698dc609a5d07c501",
       "errors": [
         "access.denied",
@@ -1122,29 +1257,62 @@
               "type": "object",
               "properties": {
                 "entity": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Name of the legal entity."
                 },
                 "shareholder": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Name of the legal entity or person that holds the stake."
                 },
                 "shareholder_alias": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Alias of that holder."
                 },
                 "percent": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Share of the capital, in percent (decimal text); more than 50 makes the holder the parent company."
                 },
                 "since": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Date the stake was acquired, if recorded."
                 }
               },
               "required": [
@@ -1212,7 +1380,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "legal",
-      "hash": "sha256:fef555bc0e98da3e08cd1db6a0c32715afc8c3f542ca08eb859b9797317a1fbc",
+      "hash": "sha256:78bbfd5ae4facc023a4feca8e15a66f007c6450af09bb4063a9e1e178d421df7",
       "entry_hash": "sha256:48e9019a37c1adb95427b61ff8f9bf176b49aac147db0dedefd41f176988df03",
       "errors": [
         "access.denied",
@@ -1310,19 +1478,38 @@
               "type": "object",
               "properties": {
                 "person": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Name of the person."
                 },
                 "training": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Title of the training."
                 },
                 "completed_on": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Date of completion."
                 }
               },
               "required": [
@@ -1388,7 +1575,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "operations",
-      "hash": "sha256:1d7034cbc69ed42f60c7be3f44759dc167f357f3c77aea747645fbae99396bbe",
+      "hash": "sha256:c12506f75586649a6244df402424ed699d59a899ee4811547a149e92a85033bc",
       "entry_hash": "sha256:f4e7ae9f40d04bde3d9ad2e0f1765d1b11c122dd354945d10a689449e5dfbb1e",
       "errors": [
         "access.denied",
@@ -1479,19 +1666,37 @@
               "type": "object",
               "properties": {
                 "position": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Title of the vacant position."
                 },
                 "status": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Lifecycle state of the position, active (open now) or planned."
                 },
                 "unit": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The unit the position belongs to, the given one or a unit below it."
                 }
               },
               "required": [
@@ -1557,7 +1762,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "organization",
-      "hash": "sha256:b3fcf59ea8ca6f4f40d6033f9ae7cab89ab32c53b857faa16530c9bbf78fd0f3",
+      "hash": "sha256:b80e4961d2f1fec6df9350dbe1248cfc70561ea2dfeb5c0c2812ca5ec4f4cb91",
       "entry_hash": "sha256:0ee626e74ed8ab77c6d79f699b1ae231c0da766ec8333ba6790ffeb397007180",
       "errors": [
         "access.denied",

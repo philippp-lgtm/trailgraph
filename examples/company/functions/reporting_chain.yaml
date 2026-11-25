@@ -20,6 +20,7 @@ query: |
 returns:
   - column: level
     summary: Number of steps above the given position, 1 for its direct superior.
+    type: integer
   - column: position
     summary: Title of the position at that level.
   - column: holder
