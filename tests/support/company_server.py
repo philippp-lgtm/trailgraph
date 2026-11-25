@@ -107,6 +107,8 @@ def build(run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path) -> I
     """The example graph the way ``examples/company/load.sh`` builds it, served with a token per
     caller."""
     init(run_cli, isolated_env)
+    config = Path(isolated_env["XDG_CONFIG_HOME"]) / "graph_cli" / "config.toml"
+    config.write_text(config.read_text() + "\n[audit]\naccess_log = true\n")
     created = admin(
         run_cli,
         *("graph", "create", GRAPH),

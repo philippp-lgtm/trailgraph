@@ -10,6 +10,7 @@ with its seeds (``support.company_server``), served to three callers: ``maintain
 """
 
 import copy
+import json
 import shutil
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from harness import CliRunner
 from jsonschema import Draft202012Validator
 from support.admin import admin
 from support.company_server import COMPANY, GRAPH, Installation, build
+from support.isolation import isolated, runner
 from support.tools_client import Ref, ToolsClient, sections
 
 pytestmark = pytest.mark.slow
@@ -66,14 +68,30 @@ SET_VIEWS: dict[str, dict[str, Any]] = {
 PAGE_BYTES = 4096  # a set view pages by size, at least 1024 bytes
 
 
+@pytest.fixture(scope="module")
+def shared(tmp_path_factory: pytest.TempPathFactory) -> Installation:
+    """One installation for the tests that only read (a dry run reads): building it costs seconds
+    of CPU, and nothing these tests do changes it."""
+    base = tmp_path_factory.mktemp("company")
+    env = isolated(base)
+    return build(runner(env, base), env, base)
+
+
+@pytest.fixture
+def harness(shared: Installation) -> ToolsClient:
+    """The client of the caller who writes, over the shared installation, with the manifest
+    fetched once. It must not write: the tests that do take ``writer``."""
+    return ToolsClient.fetch(shared.server, shared.tokens["maintainer"], GRAPH)
+
+
 @pytest.fixture
 def installation(run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path) -> Installation:
+    """An installation of the test's own, for a test that writes or publishes."""
     return build(run_cli, isolated_env, tmp_path)
 
 
 @pytest.fixture
-def harness(installation: Installation) -> ToolsClient:
-    """The client of the caller who writes, with the manifest fetched once."""
+def writer(installation: Installation) -> ToolsClient:
     return ToolsClient.fetch(installation.server, installation.tokens["maintainer"], GRAPH)
 
 
@@ -173,35 +191,35 @@ def test_a_set_view_pages_by_cursor(harness: ToolsClient) -> None:
     assert len(report) == 2 and report[0]["more"] is True
 
 
-def test_a_write_between_two_pages_makes_the_cursor_stale(harness: ToolsClient) -> None:
-    first = harness.call("view_org_catalog", {"_page_bytes": PAGE_BYTES}).data
+def test_a_write_between_two_pages_makes_the_cursor_stale(writer: ToolsClient) -> None:
+    first = writer.call("view_org_catalog", {"_page_bytes": PAGE_BYTES}).data
     cursor = first["next"]
-    harness.call("do_assign_position", assign(harness, "Dana Whitfield"))
-    stale = harness.call("view_org_catalog", {"_page_bytes": PAGE_BYTES, "_cursor": cursor})
+    writer.call("do_assign_position", assign(writer, "Dana Whitfield"))
+    stale = writer.call("view_org_catalog", {"_page_bytes": PAGE_BYTES, "_cursor": cursor})
     assert (stale.reply.status, stale.code) == (422, "view.cursor_stale")
     assert stale.on_error == "restart"
-    again = harness.pages("view_org_catalog", {}, page_bytes=PAGE_BYTES)  # from the first page
+    again = writer.pages("view_org_catalog", {}, page_bytes=PAGE_BYTES)  # from the first page
     assert again[0]["next"] != cursor and "more" not in again[-1]
 
 
-def test_an_action_runs_as_a_dry_run_and_for_real(harness: ToolsClient) -> None:
-    before = harness.manifest["version"]
+def test_an_action_runs_as_a_dry_run_and_for_real(writer: ToolsClient) -> None:
+    before = writer.manifest["version"]
     vacant = FUNCTIONS["run_vacant_positions"]
-    positions = harness.call("run_vacant_positions", vacant).data["items"]
-    dry = harness.call("do_assign_position", assign(harness, "Dana Whitfield", _dry_run=True))
+    positions = writer.call("run_vacant_positions", vacant).data["items"]
+    dry = writer.call("do_assign_position", assign(writer, "Dana Whitfield", _dry_run=True))
     assert dry.data["dry_run"] is True and dry.data["seq"] is None
-    assert harness.call("run_vacant_positions", vacant).data["items"] == positions
-    real = harness.call(
-        "do_assign_position", assign(harness, "Dana Whitfield", _reason="joins the company")
+    assert writer.call("run_vacant_positions", vacant).data["items"] == positions
+    real = writer.call(
+        "do_assign_position", assign(writer, "Dana Whitfield", _reason="joins the company")
     )
     assert real.data["dry_run"] is False and real.data["seq"] is not None
     assert real.data["entities"][0]["ops"] == ["link"]
-    held = harness.call(
+    held = writer.call(
         "run_members_of_unit", {"unit": ref("Management", "run_members_of_unit.unit")}
     )
     assert "Dana Whitfield" in [r["person"] for r in held.data["items"]]
     # the other two actions: a hand over to a new holder, and an exit, which needs a reason
-    handed = harness.call(
+    handed = writer.call(
         "do_hand_over_position",
         {
             "position": ref("Recruiter", "do_hand_over_position.position"),
@@ -211,25 +229,25 @@ def test_an_action_runs_as_a_dry_run_and_for_real(harness: ToolsClient) -> None:
     )
     assert handed.data["seq"] > real.data["seq"]
     exit_input = {"employee": ref("Noah Becker", "do_offboard_employee.employee")}
-    harness.call("do_offboard_employee", exit_input | {"_dry_run": True, "_reason": "leaves"})
-    left = harness.call("do_offboard_employee", exit_input | {"_reason": "leaves the company"})
+    writer.call("do_offboard_employee", exit_input | {"_dry_run": True, "_reason": "leaves"})
+    left = writer.call("do_offboard_employee", exit_input | {"_reason": "leaves the company"})
     assert left.data["seq"] > handed.data["seq"]
     # data writes do not change the manifest
-    assert ToolsClient.fetch(harness.server, harness.token, GRAPH).manifest["version"] == before
+    assert ToolsClient.fetch(writer.server, writer.token, GRAPH).manifest["version"] == before
 
 
 def test_a_precondition_failure_tells_the_client_to_check_the_state(
-    harness: ToolsClient,
+    writer: ToolsClient,
 ) -> None:
-    harness.call("do_assign_position", assign(harness, "Dana Whitfield"))
+    writer.call("do_assign_position", assign(writer, "Dana Whitfield"))
     for more in ({}, {"_dry_run": True}):  # a dry run raises the same error as the real run
-        taken = harness.call("do_assign_position", assign(harness, "Rhea Castellanos", **more))
+        taken = writer.call("do_assign_position", assign(writer, "Rhea Castellanos", **more))
         assert (taken.reply.status, taken.code) == (422, "action.precondition_failed"), more
         assert taken.on_error == "check_state"
         (failed,) = taken.details["failed"]
         assert failed["precondition"] == "position_vacant" and failed["entity"]
     # the same input again is refused the same way: the state decides, not the input
-    again = harness.call("do_assign_position", assign(harness, "Dana Whitfield", _dry_run=True))
+    again = writer.call("do_assign_position", assign(writer, "Dana Whitfield", _dry_run=True))
     assert again.code == "action.precondition_failed"
 
 
@@ -269,13 +287,13 @@ def test_a_reference_of_the_wrong_class_is_refused(harness: ToolsClient) -> None
 
 
 def test_a_tool_that_is_hidden_from_the_caller_is_not_found(
-    harness: ToolsClient, installation: Installation
+    harness: ToolsClient, shared: Installation
 ) -> None:
-    narrow = ToolsClient.fetch(installation.server, installation.tokens["narrow"], GRAPH)
+    narrow = ToolsClient.fetch(shared.server, shared.tokens["narrow"], GRAPH)
     assert "run_shareholders_of" in harness.tools and "run_shareholders_of" not in narrow.tools
     assert {"lookup", "run_members_of_unit"} <= set(narrow.tools)
     # the harness holds the tools of the caller who sees more; the narrow caller sees none of them
-    holding = harness.as_caller(installation.tokens["narrow"])
+    holding = harness.as_caller(shared.tokens["narrow"])
     holder = harness.resolve(ref("Marrowdale Holding AG", "run_shareholders_of.entity"))
     hidden = holding.call("run_shareholders_of", {"entity": [holder]})
     assert (hidden.reply.status, hidden.code) == (404, "tool.not_found")
@@ -290,11 +308,11 @@ def test_a_tool_that_is_hidden_from_the_caller_is_not_found(
 
 
 def test_a_tool_the_caller_sees_but_may_not_use_is_denied(
-    harness: ToolsClient, installation: Installation
+    harness: ToolsClient, shared: Installation
 ) -> None:
-    reader = ToolsClient.fetch(installation.server, installation.tokens["reader"], GRAPH)
+    reader = ToolsClient.fetch(shared.server, shared.tokens["reader"], GRAPH)
     assert "do_assign_position" in harness.tools and "do_assign_position" not in reader.tools
-    reading = harness.as_caller(installation.tokens["reader"])
+    reading = harness.as_caller(shared.tokens["reader"])
     given = {
         "person": harness.resolve(ref("Dana Whitfield", "do_assign_position.person")),
         "position": harness.resolve(ref("Data Protection Officer", "do_assign_position.position")),
@@ -309,39 +327,48 @@ def test_a_tool_the_caller_sees_but_may_not_use_is_denied(
 
 
 def test_a_changed_tool_is_refused_with_the_hash_it_has_now(
-    harness: ToolsClient, run_cli: CliRunner, tmp_path: Path
+    writer: ToolsClient, run_cli: CliRunner, tmp_path: Path
 ) -> None:
     given = FUNCTIONS["run_members_of_unit"]
-    old = harness.tools["run_members_of_unit"]["hash"]
-    wrong = harness.call("run_members_of_unit", given, expect_hash="sha256:" + "0" * 64)
+    old = writer.tools["run_members_of_unit"]["hash"]
+    wrong = writer.call("run_members_of_unit", given, expect_hash="sha256:" + "0" * 64)
     assert (wrong.reply.status, wrong.code) == (409, "tool.hash_mismatch")
     assert wrong.on_error == "refresh" and wrong.details["actual"] == old
-    assert harness.call("run_members_of_unit", given, expect_hash=False).ok
-    # the maintainer rewords the function: the tool the harness built is not the current one
+    assert writer.call("run_members_of_unit", given, expect_hash=False).ok
+    # the maintainer rewords the function: the tool the writer built is not the current one
     folder = tmp_path / "reworded"
     shutil.copytree(COMPANY / "functions", folder)
     path = folder / "members_of_unit.yaml"
     path.write_text(path.read_text().replace("People holding", "Everyone holding", 1))
     published = admin(run_cli, "graph", "functions", "publish", GRAPH, str(folder))
     assert published.code == 0, published.envelope
-    stale = harness.call("run_members_of_unit", given)
+    stale = writer.call("run_members_of_unit", given)
     assert (stale.reply.status, stale.code) == (409, "tool.hash_mismatch")
     assert stale.on_error == "refresh"
     # refresh: fetch the manifest again and call with the tool as it is now
-    fresh = ToolsClient.fetch(harness.server, harness.token, GRAPH)
+    fresh = ToolsClient.fetch(writer.server, writer.token, GRAPH)
     assert fresh.tools["run_members_of_unit"]["hash"] == stale.details["actual"] != old
-    assert fresh.manifest["version"] != harness.manifest["version"]
+    assert fresh.manifest["version"] != writer.manifest["version"]
     assert fresh.call("run_members_of_unit", given).ok
 
 
-def test_the_client_needs_no_describe_beyond_the_manifest(harness: ToolsClient) -> None:
+def test_the_client_needs_no_describe_beyond_the_manifest(
+    writer: ToolsClient, isolated_env: dict[str, str]
+) -> None:
+    """What the server saw, from its access log: for the token of the client one ``describe
+    tools`` and then the commands the calls ran, no other ``describe``."""
     for tool, given in {**FUNCTIONS, **ENTITY_VIEWS}.items():
-        harness.call(tool, given)
-    assert set(harness.requests) == {"describe/tools", "call"}
-    assert harness.requests.count("describe/tools") == 1
+        writer.call(tool, given)
+    log = Path(isolated_env["XDG_STATE_HOME"]) / "graph_cli" / "logs" / "access.jsonl"
+    lines = [json.loads(line) for line in log.read_text().splitlines()]
+    ours = [line for line in lines if line["actor"]["principal"]["id"] == "token:app_maintainer"]
+    commands = [line["command"] for line in ours]
+    assert [c for c in commands if c.startswith("describe")] == ["describe tools"]
+    assert set(commands) <= {"describe tools", "lookup", "run", "view"}
+    assert len(commands) == len(writer.requests)  # one line per request the client made
     # every code a tool lists has what to do about it; the map lists no other code
-    listed = {code for tool in harness.tools.values() for code in tool["errors"]}
-    assert listed == set(harness.manifest["errors"])
+    listed = {code for tool in writer.tools.values() for code in tool["errors"]}
+    assert listed == set(writer.manifest["errors"])
 
 
 def test_the_client_refuses_an_answer_that_does_not_fit_its_schema(harness: ToolsClient) -> None:
