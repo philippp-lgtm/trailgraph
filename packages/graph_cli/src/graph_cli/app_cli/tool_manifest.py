@@ -45,7 +45,7 @@ TOOL_KINDS: Final = (FUNCTION, ACTION, VIEW, LOOKUP)
 
 # What a harness may get from the transport and the call itself, besides the codes of the command
 # a tool runs. A tool never gets a code that needs an argument it does not have (it selects no
-# graph, reads no earlier state and passes a typed entity).
+# graph, reads no earlier state, passes a typed entity and names a tool, not an entry).
 CALL_ERRORS: Final = ("tool.not_found", "tool.hash_mismatch")
 TRANSPORT_ERRORS: Final = (
     "remote.unauthorized",
@@ -59,6 +59,10 @@ NOT_FOR_TOOLS: Final = frozenset(
         "temporal.as_of_unsupported",
         "view.takes_entity",
         "view.takes_no_entity",
+        # a call of an entry the caller cannot see is tool.not_found
+        "function.not_found",
+        "action.not_found",
+        "view.not_found",
     }
 )
 UNTYPED: Final[JsonObject] = {"x-graph-cli": {"typed": False}}

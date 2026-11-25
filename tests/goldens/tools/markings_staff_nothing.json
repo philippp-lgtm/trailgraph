@@ -9,7 +9,7 @@
     "version": "1.0.0"
   },
   "tools_format": 1,
-  "version": "sha256:b816ae6651155741bb9964daeed190c1ee8ce0df8630c1d2a9d3be3b07660a21",
+  "version": "sha256:f24f857d8363d074c4f014ff6ba5c5d77d7be6a9b35d6a176e19282840991a0a",
   "tools": [
     {
       "name": "run_colleague_names",
@@ -140,7 +140,6 @@
         "config.invalid",
         "entity.ambiguous_ref",
         "entity.not_found",
-        "function.not_found",
         "function.parameter_invalid",
         "function.parameter_missing",
         "function.parameter_type",
@@ -185,7 +184,8 @@
               {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 2000
+                "maxLength": 2000,
+                "pattern": "\\S"
               },
               {
                 "type": "null"
@@ -419,12 +419,12 @@
       "replaced_by": null,
       "featured": true,
       "module": "staff",
-      "hash": "sha256:6bda3660d4b9a92cf79cac377a433db2e6ccde08d1d545b298e7196a0a42ae53",
+      "hash": "sha256:0a74851bdb3cf0e7d5408cecb64b5df1a5aeaf0e4ef79210691658c99fd615ab",
       "entry_hash": "sha256:04597df42994bbcd1d1358ce6a8099ca274d09a55b8510593aa54c80e305968e",
       "errors": [
+        "access.batch_too_large",
         "access.denied",
         "access.reason_required",
-        "action.not_found",
         "action.nothing_to_do",
         "action.parameter_invalid",
         "action.parameter_missing",
@@ -462,6 +462,12 @@
     }
   ],
   "errors": {
+    "access.batch_too_large": {
+      "category": "denied",
+      "retryable": false,
+      "summary": "The batch exceeds the permitted size.",
+      "on_error": "stop"
+    },
     "access.denied": {
       "category": "denied",
       "retryable": false,
@@ -473,12 +479,6 @@
       "retryable": false,
       "summary": "The action requires a reason.",
       "on_error": "fix_input"
-    },
-    "action.not_found": {
-      "category": "not_found",
-      "retryable": false,
-      "summary": "The graph has no such action.",
-      "on_error": "stop"
     },
     "action.nothing_to_do": {
       "category": "refused",
@@ -588,12 +588,6 @@
       "summary": "The entity does not exist.",
       "on_error": "fix_input"
     },
-    "function.not_found": {
-      "category": "not_found",
-      "retryable": false,
-      "summary": "The graph has no such function.",
-      "on_error": "stop"
-    },
     "function.parameter_invalid": {
       "category": "usage",
       "retryable": false,
@@ -700,7 +694,7 @@
       "category": "not_found",
       "retryable": false,
       "summary": "The graph has no such tool for this caller.",
-      "on_error": "stop"
+      "on_error": "refresh"
     },
     "usage.invalid_argument": {
       "category": "usage",

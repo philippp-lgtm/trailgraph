@@ -1085,6 +1085,7 @@ def _skill(doc: JsonObject, commands: Sequence[JsonObject], codes: Sequence[Json
                 [
                     [code(_command_line(c)), cell(req_str(c, "kind")), cell(req_str(c, "summary"))]
                     for c in commands
+                    if c.get("skill_table", True) is not False
                 ],
             )
         ),

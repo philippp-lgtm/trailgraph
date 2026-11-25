@@ -66,6 +66,8 @@ def _command(
         "exit_codes": sorted({EXIT_OK, *(_exit(c) for c in codes)}),
         "limits": dict(spec.limits),
     }
+    if not spec.skill_table:  # only when false: the other commands stay as they were
+        command["skill_table"] = False
     if remote:
         command["remote"] = spec.remote
     if output:

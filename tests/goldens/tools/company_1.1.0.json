@@ -9,13 +9,13 @@
     "version": "1.1.0"
   },
   "tools_format": 1,
-  "version": "sha256:78876647bc4a055a27d3833458b22daba5c78fe99722e5c981192d2c0bdeadbc",
+  "version": "sha256:fa95a5ab7198ce9e349a8b734458f991a3694059f444ef7dab24297a25913b8a",
   "tools": [
     {
       "name": "run_employer_of",
       "kind": "function",
       "entry": "employer_of",
-      "description": "The legal entity that employs an employee, with its legal form, country and status.\n\nUse when: Which company, legal entity or subsidiary employs a person, who the employer under the employment contract is, in which country. Employees only; an external person has no employer in the graph. Not for who owns the employer, and not for the unit a person works in.\n\nExamples:\n- Which legal entity employs this person?\n- In which country is the employer of this employee registered?",
+      "description": "The legal entity that employs an employee, with its legal form, country and status.\n\nUse when: Which company, legal entity or subsidiary employs a person, who the employer under the employment contract is, in which country. Employees only; an external person has no employer in the graph. Not for who owns the employer, and not for the unit a person works in.\n\nExamples:\n- Which legal entity employs this person? Supply the references it needs.\n- In which country is the employer of this employee registered? Supply the references it needs.",
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
@@ -160,7 +160,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "legal",
-      "hash": "sha256:3e984a557b1dc0071110e225105772453c8169f712ddcf765c9f621cb5dfc111",
+      "hash": "sha256:6fd5f6b0b1fcfbc82fa68d67a84c42bc3258e6348496c62109e14e9687e582a6",
       "entry_hash": "sha256:8f2a737e47b0c2076c1cdfa05b871e6e0cbc7975b547323c6c1a96056713ff4a",
       "errors": [
         "access.denied",
@@ -168,7 +168,6 @@
         "config.invalid",
         "entity.ambiguous_ref",
         "entity.not_found",
-        "function.not_found",
         "function.parameter_invalid",
         "function.parameter_missing",
         "function.parameter_type",
@@ -191,7 +190,7 @@
       "name": "run_members_of_unit",
       "kind": "function",
       "entry": "members_of_unit",
-      "description": "People holding a position in a unit or in any unit below it, with the position and its unit.\n\nUse when: Who works in a department or team, who belongs to a unit including its sub-units, headcount or staffing of a unit, who sits in which position of a unit. Lists holders of positions, so a position nobody holds does not appear; use vacant_positions for those. Not for the reporting line of one position.\n\nExamples:\n- Who works in the engineering department, including its teams?\n- Which people hold a position in this team?",
+      "description": "People holding a position in a unit or in any unit below it, with the position and its unit.\n\nUse when: Who works in a department or team, who belongs to a unit including its sub-units, headcount or staffing of a unit, who sits in which position of a unit. Lists holders of positions, so a position nobody holds does not appear; use vacant_positions for those. Not for the reporting line of one position.\n\nExamples:\n- Who works in the engineering department, including its teams? Supply the references it needs.\n- Which people hold a position in this team? Supply the references it needs.",
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
@@ -330,7 +329,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "organization",
-      "hash": "sha256:4ddce5b02b877893a82c0827166dbf8328c115e072ad39029d8f03e4d8a02c56",
+      "hash": "sha256:fb8e72c66ddea293832d460be9c16cac8cae6e4f6234740ce4c07f81f4b744bf",
       "entry_hash": "sha256:881b801a4480a9db641bfae24f8cda89045a7275d58a1847038c3031e4c646c2",
       "errors": [
         "access.denied",
@@ -338,7 +337,6 @@
         "config.invalid",
         "entity.ambiguous_ref",
         "entity.not_found",
-        "function.not_found",
         "function.parameter_invalid",
         "function.parameter_missing",
         "function.parameter_type",
@@ -361,7 +359,7 @@
       "name": "run_missing_required_trainings",
       "kind": "function",
       "entry": "missing_required_trainings",
-      "description": "Trainings that the holders of positions in a unit must still complete, per person.\n\nUse when: Which trainings are outstanding, overdue or not yet completed in a department or team, who still has to complete a required training, training gaps or compliance of a unit including its sub-units. A training is required through the role a position carries. Answers per unit, not for one person's full list of required trainings.\n\nExamples:\n- Which required trainings are still open for the people of the infrastructure department?\n- Who in this team has not completed all trainings their role requires?",
+      "description": "Trainings that the holders of positions in a unit must still complete, per person.\n\nUse when: Which trainings are outstanding, overdue or not yet completed in a department or team, who still has to complete a required training, training gaps or compliance of a unit including its sub-units. A training is required through the role a position carries. Answers per unit, not for one person's full list of required trainings.\n\nExamples:\n- Which required trainings are still open for the people of the infrastructure department? Supply the references it needs.\n- Who in this team has not completed all trainings their role requires? Supply the references it needs.",
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
@@ -500,7 +498,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "operations",
-      "hash": "sha256:a697ed0c50fbffd6ea447f325e4643e51127b294743bf0194a29497576fd2555",
+      "hash": "sha256:05830e3051a27e0bd37d3cce306aa396a3d18a51f379111d6459eec88c72126a",
       "entry_hash": "sha256:82dc798df7fbe2a05733359772c41081c8e980f172d1f63b599b6467381aaf38",
       "errors": [
         "access.denied",
@@ -508,7 +506,6 @@
         "config.invalid",
         "entity.ambiguous_ref",
         "entity.not_found",
-        "function.not_found",
         "function.parameter_invalid",
         "function.parameter_missing",
         "function.parameter_type",
@@ -531,7 +528,7 @@
       "name": "run_policies_for_unit",
       "kind": "function",
       "entry": "policies_for_unit",
-      "description": "Policies that bind a unit, directly or through a unit above it, with status and dates.\n\nUse when: Which policies apply to a department or team, which rules a unit is bound by, whether a policy is in force or due for review. A policy that applies to a unit binds the units below it too, so policies of parent units are included. Not for the processes a policy governs or for the text of a policy.\n\nExamples:\n- Which policies is the finance department bound by?\n- Which policies apply to this team, including those of its department?",
+      "description": "Policies that bind a unit, directly or through a unit above it, with status and dates.\n\nUse when: Which policies apply to a department or team, which rules a unit is bound by, whether a policy is in force or due for review. A policy that applies to a unit binds the units below it too, so policies of parent units are included. Not for the processes a policy governs or for the text of a policy.\n\nExamples:\n- Which policies is the finance department bound by? Supply the references it needs.\n- Which policies apply to this team, including those of its department? Supply the references it needs.",
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
@@ -676,7 +673,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "operations",
-      "hash": "sha256:4e75c8a4c55b20fac8790c201da6925d41c38af5c94015d8a3260ac9aa6bdb5d",
+      "hash": "sha256:03703ce9a99d2b07948806f06bcc436c4467bcbdd0232d5e94135b8ad00492ac",
       "entry_hash": "sha256:12e2bc39d34abbc6291d34ae898e92982dc42e96eaebab952f92559f6b7754e7",
       "errors": [
         "access.denied",
@@ -684,7 +681,6 @@
         "config.invalid",
         "entity.ambiguous_ref",
         "entity.not_found",
-        "function.not_found",
         "function.parameter_invalid",
         "function.parameter_missing",
         "function.parameter_type",
@@ -707,7 +703,7 @@
       "name": "run_reporting_chain",
       "kind": "function",
       "entry": "reporting_chain",
-      "description": "The positions a position reports to, up to the top, nearest first, with their current holders.\n\nUse when: Who is the manager or boss of a position, whom a position reports to, the escalation path or chain of command up to the top of the org chart. Walks the reporting line of one position, not the people who report to it. A position nobody holds shows an empty holder.\n\nExamples:\n- Whom does this position report to, all the way up?\n- Who is the manager of this position?",
+      "description": "The positions a position reports to, up to the top, nearest first, with their current holders.\n\nUse when: Who is the manager or boss of a position, whom a position reports to, the escalation path or chain of command up to the top of the org chart. Walks the reporting line of one position, not the people who report to it. A position nobody holds shows an empty holder.\n\nExamples:\n- Whom does this position report to, all the way up? Supply the references it needs.\n- Who is the manager of this position? Supply the references it needs.",
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
@@ -846,7 +842,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "organization",
-      "hash": "sha256:8de8a1d535a096e71ccf41f71c87167d62a6fa302eec9ce7aa3ab711f8c62786",
+      "hash": "sha256:9433e821aed90b1d3065b048c5dd031dd1ef9aafb5bbfe2703a726747d39cc18",
       "entry_hash": "sha256:2bb29e80be5ffa4047c170519156b28025779013a7caefd68c2490942b0e9570",
       "errors": [
         "access.denied",
@@ -854,7 +850,6 @@
         "config.invalid",
         "entity.ambiguous_ref",
         "entity.not_found",
-        "function.not_found",
         "function.parameter_invalid",
         "function.parameter_missing",
         "function.parameter_type",
@@ -877,7 +872,7 @@
       "name": "run_required_trainings",
       "kind": "function",
       "entry": "required_trainings",
-      "description": "Every training the given people need through the roles of their positions, and whether they did it.\n\nUse when: Which trainings a person (or several people) needs, has completed or still lacks, through which position and role a training is required, and when it was completed. One person's full training list; for the gaps of a whole department or team use missing_required_trainings.\n\nExamples:\n- Which trainings does this employee need, and which are done?",
+      "description": "Every training the given people need through the roles of their positions, and whether they did it.\n\nUse when: Which trainings a person (or several people) needs, has completed or still lacks, through which position and role a training is required, and when it was completed. One person's full training list; for the gaps of a whole department or team use missing_required_trainings.\n\nExamples:\n- Which trainings does this employee need, and which are done? Supply the references it needs.",
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
@@ -1032,7 +1027,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "operations",
-      "hash": "sha256:cc997f506c776ff65c27d9bc76c2217f3b047f39ee41dcc1064e0f6bc704ceaf",
+      "hash": "sha256:4b91e658de133693a0807e36413fad1432f9dcadad1c272cb277c6f510ce3eb9",
       "entry_hash": "sha256:a6ec8e54131cb2d45d9119a6648ca2525e3d716dc7b0f7e698dc609a5d07c501",
       "errors": [
         "access.denied",
@@ -1040,7 +1035,6 @@
         "config.invalid",
         "entity.ambiguous_ref",
         "entity.not_found",
-        "function.not_found",
         "function.parameter_invalid",
         "function.parameter_missing",
         "function.parameter_type",
@@ -1063,7 +1057,7 @@
       "name": "run_shareholders_of",
       "kind": "function",
       "entry": "shareholders_of",
-      "description": "Who holds stakes in the given legal entities, with the percent of each stake and its date.\n\nUse when: Who owns a legal entity or subsidiary, the shareholders and their percentages, whether a holder owns more than half (the parent company), and which stakes are recorded at all. Not for what an entity itself owns.\n\nExamples:\n- Who owns this company, and is there a parent company?",
+      "description": "Who holds stakes in the given legal entities, with the percent of each stake and its date.\n\nUse when: Who owns a legal entity or subsidiary, the shareholders and their percentages, whether a holder owns more than half (the parent company), and which stakes are recorded at all. Not for what an entity itself owns.\n\nExamples:\n- Who owns this company, and is there a parent company? Supply the references it needs.",
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
@@ -1218,7 +1212,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "legal",
-      "hash": "sha256:46ad2281c0d91b41251f9799a26665984bdeaa6439b3c97c27a64ea39dd04980",
+      "hash": "sha256:fef555bc0e98da3e08cd1db6a0c32715afc8c3f542ca08eb859b9797317a1fbc",
       "entry_hash": "sha256:48e9019a37c1adb95427b61ff8f9bf176b49aac147db0dedefd41f176988df03",
       "errors": [
         "access.denied",
@@ -1226,7 +1220,6 @@
         "config.invalid",
         "entity.ambiguous_ref",
         "entity.not_found",
-        "function.not_found",
         "function.parameter_invalid",
         "function.parameter_missing",
         "function.parameter_type",
@@ -1249,7 +1242,7 @@
       "name": "run_training_completions",
       "kind": "function",
       "entry": "training_completions",
-      "description": "Who completed which of the given trainings since a date.\n\nUse when: Completion records of named trainings, certificates earned in a period.\n\nExamples:\n- Who completed the safety or the security training this year? Input: {\"since\": \"2026-01-01\", \"titles\": [\"Safety\", \"Security\"]}",
+      "description": "Who completed which of the given trainings since a date.\n\nUse when: Completion records of named trainings, certificates earned in a period.\n\nExamples:\n- Who completed the safety or the security training this year? Arguments: {\"since\": \"2026-01-01\", \"titles\": [\"Safety\", \"Security\"]}",
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
@@ -1395,7 +1388,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "operations",
-      "hash": "sha256:7ed27425eb48ff0360b0ff413cac9badec9a1ea4d24202d22a398ecd5a5cf6a0",
+      "hash": "sha256:1d7034cbc69ed42f60c7be3f44759dc167f357f3c77aea747645fbae99396bbe",
       "entry_hash": "sha256:f4e7ae9f40d04bde3d9ad2e0f1765d1b11c122dd354945d10a689449e5dfbb1e",
       "errors": [
         "access.denied",
@@ -1403,7 +1396,6 @@
         "config.invalid",
         "entity.ambiguous_ref",
         "entity.not_found",
-        "function.not_found",
         "function.parameter_invalid",
         "function.parameter_missing",
         "function.parameter_type",
@@ -1426,7 +1418,7 @@
       "name": "run_vacant_positions",
       "kind": "function",
       "entry": "vacant_positions",
-      "description": "Positions of a unit or of any unit below it that nobody holds, active or still planned.\n\nUse when: Which positions are open, vacant or unfilled in a department or team, where hiring is needed, staffing gaps of a unit including its sub-units. Abolished positions are left out; the status column tells an open position from a planned one. Not for who holds the filled positions; use members_of_unit for that.\n\nExamples:\n- Which positions in the engineering department are currently vacant?\n- Where do we still have open positions in this team?",
+      "description": "Positions of a unit or of any unit below it that nobody holds, active or still planned.\n\nUse when: Which positions are open, vacant or unfilled in a department or team, where hiring is needed, staffing gaps of a unit including its sub-units. Abolished positions are left out; the status column tells an open position from a planned one. Not for who holds the filled positions; use members_of_unit for that.\n\nExamples:\n- Which positions in the engineering department are currently vacant? Supply the references it needs.\n- Where do we still have open positions in this team? Supply the references it needs.",
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
@@ -1565,7 +1557,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "organization",
-      "hash": "sha256:dfc56c6662ff4fa1f45f0d605ea404c1a695cccb8ba65b2791aa849fd975f212",
+      "hash": "sha256:b3fcf59ea8ca6f4f40d6033f9ae7cab89ab32c53b857faa16530c9bbf78fd0f3",
       "entry_hash": "sha256:0ee626e74ed8ab77c6d79f699b1ae231c0da766ec8333ba6790ffeb397007180",
       "errors": [
         "access.denied",
@@ -1573,7 +1565,6 @@
         "config.invalid",
         "entity.ambiguous_ref",
         "entity.not_found",
-        "function.not_found",
         "function.parameter_invalid",
         "function.parameter_missing",
         "function.parameter_type",
@@ -1628,7 +1619,8 @@
               {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 2000
+                "maxLength": 2000,
+                "pattern": "\\S"
               },
               {
                 "type": "null"
@@ -1863,12 +1855,12 @@
       "replaced_by": null,
       "featured": true,
       "module": "organization",
-      "hash": "sha256:4e729894138762abbc4db89646b050a5847e8aa38a044437ad9f5d6472539578",
+      "hash": "sha256:b07e7353af66da90cf3d7ad1c2255b2929a65d03fcf516580abc115e46178474",
       "entry_hash": "sha256:18cc1879fd22e4b8feb6549a20f9eed358462ee733890dc0bdfa6dd27a410a34",
       "errors": [
+        "access.batch_too_large",
         "access.denied",
         "access.reason_required",
-        "action.not_found",
         "action.nothing_to_do",
         "action.parameter_invalid",
         "action.parameter_missing",
@@ -1947,7 +1939,8 @@
               {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 2000
+                "maxLength": 2000,
+                "pattern": "\\S"
               },
               {
                 "type": "null"
@@ -2181,12 +2174,12 @@
       "replaced_by": null,
       "featured": true,
       "module": "organization",
-      "hash": "sha256:b607ee9e196b8d8e92eae966754d9837d319f8775d510f01a9173a3458190edb",
+      "hash": "sha256:05a818aed61dad9191437a014e91a352b7354bb429f28ff13aff2858ef1a1f83",
       "entry_hash": "sha256:f3d5a5b3c287274b2bc60192bdf7d18c7b335b235ae4b2b459234dd99a1ebbd4",
       "errors": [
+        "access.batch_too_large",
         "access.denied",
         "access.reason_required",
-        "action.not_found",
         "action.nothing_to_do",
         "action.parameter_invalid",
         "action.parameter_missing",
@@ -2243,6 +2236,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 2000,
+            "pattern": "\\S",
             "description": "Why this change is made; recorded in the audit trail. Required for this action."
           },
           "_dry_run": {
@@ -2471,12 +2465,12 @@
       "replaced_by": null,
       "featured": true,
       "module": "people",
-      "hash": "sha256:8363b6a46d67e88fec13e681aca558308a71a72e7de396fc489f6df0bb40de00",
+      "hash": "sha256:d15c397604dec0a15db4aa23309f2a43f595d9488d45d6d14d42f79e1005c60a",
       "entry_hash": "sha256:ebf52a17ea0e793091c1fdfdffb49096d3499a91565e24582e118ff608a7e7f2",
       "errors": [
+        "access.batch_too_large",
         "access.denied",
         "access.reason_required",
-        "action.not_found",
         "action.nothing_to_do",
         "action.parameter_invalid",
         "action.parameter_missing",
@@ -2667,7 +2661,6 @@
         "view.class_mismatch",
         "view.cursor_invalid",
         "view.cursor_stale",
-        "view.not_found",
         "view.parameter_invalid",
         "view.parameter_missing",
         "view.parameter_type",
@@ -2715,7 +2708,7 @@
                 "type": "null"
               }
             ],
-            "description": "Page size in bytes; the view's own size, else 12288."
+            "description": "Page size in bytes, at least 1024; the view's own size, else 12288."
           }
         },
         "required": [
@@ -2834,7 +2827,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "organization",
-      "hash": "sha256:8884db8dbf138d78d4ba8c1325ca16da91a344cbe110bd2a9875816af8c00c30",
+      "hash": "sha256:73bf6c02d57b34f1432bcd86508f69cb1e5381e4acd0e0b29c756c4e0fcd78c5",
       "entry_hash": "sha256:5ece4734ba575d69e485ba18d056493ff32c518ceeeff081fdc7c4347a67a66d",
       "errors": [
         "access.denied",
@@ -2855,7 +2848,6 @@
         "view.class_mismatch",
         "view.cursor_invalid",
         "view.cursor_stale",
-        "view.not_found",
         "view.parameter_invalid",
         "view.parameter_missing",
         "view.parameter_type",
@@ -2902,7 +2894,7 @@
                 "type": "null"
               }
             ],
-            "description": "Page size in bytes; the view's own size, else 12288."
+            "description": "Page size in bytes, at least 1024; the view's own size, else 12288."
           }
         },
         "required": []
@@ -3019,7 +3011,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "organization",
-      "hash": "sha256:88cda18849cc4e45972911ff462640ce95dc33f6632f74fd990c28c1b3372040",
+      "hash": "sha256:ff3aab9504141b261e8061cd7c7cfe9d32774dc658035ba8d6e9a2b16bccee82",
       "entry_hash": "sha256:2611392b9d82e233b18dff49c24e5e22753ca2269c81ecc471db29496f4d2443",
       "errors": [
         "access.denied",
@@ -3040,7 +3032,6 @@
         "view.class_mismatch",
         "view.cursor_invalid",
         "view.cursor_stale",
-        "view.not_found",
         "view.parameter_invalid",
         "view.parameter_missing",
         "view.parameter_type",
@@ -3203,7 +3194,6 @@
         "view.class_mismatch",
         "view.cursor_invalid",
         "view.cursor_stale",
-        "view.not_found",
         "view.parameter_invalid",
         "view.parameter_missing",
         "view.parameter_type",
@@ -3215,7 +3205,7 @@
       "name": "view_tasks_by_state",
       "kind": "view",
       "entry": "tasks_by_state",
-      "description": "The tasks in one state that are due before a day, oldest first.\n\nUse when: Which tasks are open, in progress or done, and which are overdue.\n\nExamples:\n- Which tasks are still open this quarter? Input: {\"before\": \"2026-04-01\", \"status\": \"open\"}",
+      "description": "The tasks in one state that are due before a day, oldest first.\n\nUse when: Which tasks are open, in progress or done, and which are overdue.\n\nExamples:\n- Which tasks are still open this quarter? Arguments: {\"before\": \"2026-04-01\", \"status\": \"open\"}",
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
@@ -3255,7 +3245,7 @@
                 "type": "null"
               }
             ],
-            "description": "Page size in bytes; the view's own size, else 12288."
+            "description": "Page size in bytes, at least 1024; the view's own size, else 12288."
           }
         },
         "required": []
@@ -3372,7 +3362,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "operations",
-      "hash": "sha256:8178817b7431b46c5068771f0dd731dc3b4c16e05d178d9b72eac09ff851a133",
+      "hash": "sha256:dbebb588d6a09c0e2875e367dd55009923292c5e6e4019997655010be2293205",
       "entry_hash": "sha256:0963d3b61852e230b6b1d1cd689a781ccd4db2585e283ba62c26a9b462d53cea",
       "errors": [
         "access.denied",
@@ -3393,7 +3383,6 @@
         "view.class_mismatch",
         "view.cursor_invalid",
         "view.cursor_stale",
-        "view.not_found",
         "view.parameter_invalid",
         "view.parameter_missing",
         "view.parameter_type",
@@ -3405,7 +3394,7 @@
       "name": "view_unit_overview",
       "kind": "view",
       "entry": "unit_overview",
-      "description": "A unit with its cost center, its positions in a state and who holds them.\n\nUse when: What a department or team is about: where it sits, what it costs, which positions it has in a given state and who holds them, which policies bind it.\n\nExamples:\n- Which active positions does the engineering department have? Input: {\"status\": \"active\"}",
+      "description": "A unit with its cost center, its positions in a state and who holds them.\n\nUse when: What a department or team is about: where it sits, what it costs, which positions it has in a given state and who holds them, which policies bind it.\n\nExamples:\n- Which active positions does the engineering department have? Arguments: {\"status\": \"active\"} Supply the references it needs.",
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
@@ -3540,7 +3529,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "organization",
-      "hash": "sha256:9b3b16aaf34396ca0b5e40eb9987e091ecadee7904966a464097dcc89ad3fdf4",
+      "hash": "sha256:28b2bd99f9cf87ef3c08c4ae50e4cce40920df3d1da7cb2727de94cab679ee5d",
       "entry_hash": "sha256:93899e2a71372c70e4e98fe5dc9312adb4fe8f1773580739c404c77823b162d7",
       "errors": [
         "access.denied",
@@ -3561,7 +3550,6 @@
         "view.class_mismatch",
         "view.cursor_invalid",
         "view.cursor_stale",
-        "view.not_found",
         "view.parameter_invalid",
         "view.parameter_missing",
         "view.parameter_type",
@@ -3571,6 +3559,12 @@
     }
   ],
   "errors": {
+    "access.batch_too_large": {
+      "category": "denied",
+      "retryable": false,
+      "summary": "The batch exceeds the permitted size.",
+      "on_error": "stop"
+    },
     "access.denied": {
       "category": "denied",
       "retryable": false,
@@ -3582,12 +3576,6 @@
       "retryable": false,
       "summary": "The action requires a reason.",
       "on_error": "fix_input"
-    },
-    "action.not_found": {
-      "category": "not_found",
-      "retryable": false,
-      "summary": "The graph has no such action.",
-      "on_error": "stop"
     },
     "action.nothing_to_do": {
       "category": "refused",
@@ -3697,12 +3685,6 @@
       "summary": "The entity does not exist.",
       "on_error": "fix_input"
     },
-    "function.not_found": {
-      "category": "not_found",
-      "retryable": false,
-      "summary": "The graph has no such function.",
-      "on_error": "stop"
-    },
     "function.parameter_invalid": {
       "category": "usage",
       "retryable": false,
@@ -3809,7 +3791,7 @@
       "category": "not_found",
       "retryable": false,
       "summary": "The graph has no such tool for this caller.",
-      "on_error": "stop"
+      "on_error": "refresh"
     },
     "usage.invalid_argument": {
       "category": "usage",
@@ -3846,12 +3828,6 @@
       "retryable": false,
       "summary": "The graph changed since the page cursor was issued.",
       "on_error": "restart"
-    },
-    "view.not_found": {
-      "category": "not_found",
-      "retryable": false,
-      "summary": "The graph has no such view.",
-      "on_error": "stop"
     },
     "view.parameter_invalid": {
       "category": "usage",

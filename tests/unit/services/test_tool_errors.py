@@ -69,7 +69,7 @@ def test_every_category_has_a_default() -> None:
         ("view.stale", te.STOP),
         ("access.denied", te.STOP),
         ("function.not_found", te.STOP),
-        ("tool.not_found", te.STOP),
+        ("tool.not_found", te.REFRESH),  # the entry may have gone since the manifest was fetched
         ("graph.archived", te.STOP),
         ("conflict.idempotency_key_reuse", te.STOP),
         ("internal.error", te.STOP),

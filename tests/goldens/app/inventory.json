@@ -1423,6 +1423,7 @@
         6
       ],
       "limits": {},
+      "skill_table": false,
       "remote": "server"
     },
     {
@@ -1777,6 +1778,7 @@
         }
       ],
       "errors": [
+        "access.batch_too_large",
         "access.denied",
         "access.project_mismatch",
         "access.reason_required",

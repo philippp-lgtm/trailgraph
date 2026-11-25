@@ -260,6 +260,17 @@ def test_an_action_takes_its_parameters_then_reason_and_dry_run() -> None:
     assert reason["anyOf"][0]["minLength"] == 1 and reason["anyOf"][0]["maxLength"] == 2000
 
 
+def test_a_reason_of_blanks_is_not_valid_input() -> None:
+    """The binder refuses a blank reason, so the schema must not accept one."""
+    head = heads(COMPANY.scene())["do_offboard_employee"]
+    validator = input_validator(head)
+    base = {"employee": "ORG-0001"}
+    assert list(validator.iter_errors({**base, "_reason": "left"})) == []
+    for blank in ("", " ", "   ", "\t\n"):
+        assert list(validator.iter_errors({**base, "_reason": blank})), repr(blank)
+    assert list(validator.iter_errors({**base, "_reason": " left "})) == []
+
+
 def test_an_entity_view_needs_its_entity_and_a_set_view_pages_by_cursor() -> None:
     names = heads(COMPANY.scene())
     entity = names["view_unit_overview"]
@@ -271,6 +282,7 @@ def test_an_entity_view_needs_its_entity_and_a_set_view_pages_by_cursor() -> Non
     assert "_cursor" not in required(paged) and "_page_bytes" not in required(paged)
     assert props(paged)["_page_bytes"]["anyOf"][0]["minimum"] == 1024
     assert props(paged)["_page_bytes"]["anyOf"][0]["maximum"] == 262_144
+    assert "at least 1024" in props(paged)["_page_bytes"]["description"]
 
 
 def test_controls_start_with_an_underscore_and_no_parameter_can() -> None:
@@ -357,13 +369,13 @@ def test_a_description_has_the_summary_use_when_and_the_examples() -> None:
     assert text[0] == "Who completed which of the given trainings since a date."
     assert text[1].startswith("Use when: ")
     assert text[2].startswith("Examples:\n- Who completed the safety or the security training")
-    assert '"since": "2026-01-01"' in text[2] and '"titles": ["Safety", "Security"]' in text[2]
+    assert 'Arguments: {"since": "2026-01-01", "titles": ["Safety", "Security"]}' in text[2]
 
 
 def test_an_action_example_is_its_request_text() -> None:
     head = heads(COMPANY.scene())["do_offboard_employee"]
     assert "Examples:\n- A colleague from the sales team left" in head.description
-    assert "Input:" not in head.description
+    assert "Arguments:" not in head.description
 
 
 def test_an_example_without_parameters_is_its_question_only() -> None:
@@ -396,7 +408,25 @@ def input_validator(head: dt.ToolHead) -> Draft202012Validator:
     return Draft202012Validator(head.input_schema, format_checker=FORMAT_CHECKER)
 
 
-def test_every_example_of_a_function_and_a_view_is_valid_input() -> None:
+def _is_reference(schema: dict[str, Any]) -> bool:
+    inner = schema.get("items", schema)
+    return bool(inner.get(dt.EXTENSION, {}).get("class"))
+
+
+def _with_references(head: dt.ToolHead, given: dict[str, Any]) -> dict[str, Any]:
+    """``given`` and a reference for every required reference property it leaves out: an example
+    never gives one."""
+    wanted = {
+        n: _sample(props(head)[n])
+        for n in required(head)
+        if n not in given and _is_reference(props(head)[n])
+    }
+    return {**given, **wanted}
+
+
+def test_every_example_of_a_function_and_a_view_is_valid_input_once_its_references_are_added() -> (
+    None
+):
     checked = 0
     for catalog in (COMPANY, INVENTORY):
         scene = catalog.scene()
@@ -405,15 +435,41 @@ def test_every_example_of_a_function_and_a_view_is_valid_input() -> None:
             kind = "function" if entry in scene.functions else "view"
             head = names[dt.tool_name(kind, entry.name)]
             for example in entry.defn.examples:
-                given = dict(example.params)
-                if not given:  # an example may be a question only
-                    continue
-                if kind == "view" and entry.takes is not None:
-                    given["_entity"] = "ORG-0001"
+                given = _with_references(head, dict(example.params))
                 errors = list(input_validator(head).iter_errors(given))
                 assert errors == [], (head.name, given, [e.message for e in errors])
                 checked += 1
-    assert checked >= 3
+    assert checked >= 8
+
+
+def test_an_example_line_gives_its_arguments_in_the_form_of_the_input() -> None:
+    params = (
+        ParamDef("amount", "decimal", "An amount."),
+        ParamDef("when", "date", "A day.", default="2026-01-01"),
+    )
+    line = dt._example_line("How much?", {"amount": 5, "when": "2026-02-03"}, params)
+    assert line == '- How much? Arguments: {"amount": "5", "when": "2026-02-03"}'
+    many = (ParamDef("amounts", "decimal", "Amounts.", many=True),)
+    assert dt._example_line("Q?", {"amounts": [1, "2.5"]}, many).endswith(
+        '{"amounts": ["1", "2.5"]}'
+    )
+
+
+def test_an_example_that_leaves_out_a_reference_says_to_supply_it() -> None:
+    ref = ParamDef("unit", "ref", "A unit.", of_class="org:OrgUnit")
+    optional_ref = ParamDef("other", "ref", "Another.", of_class="org:OrgUnit", optional=True)
+    assert dt._example_line("Q?", {}, (ref,)) == "- Q? " + dt.REFERENCES_NOTE
+    assert dt._example_line("Q?", {"unit": "x"}, (ref,)) == '- Q? Arguments: {"unit": "x"}'
+    assert dt.REFERENCES_NOTE not in dt._example_line("Q?", {}, (optional_ref,))
+    assert dt.REFERENCES_NOTE in dt._example_line("Q?", {}, (), entity=True)
+
+
+def test_the_example_of_an_entity_view_and_of_a_function_over_a_reference_say_so() -> None:
+    names = heads(COMPANY.scene())
+    assert dt.REFERENCES_NOTE in names["view_unit_overview"].description
+    assert '"status": "active"' in names["view_unit_overview"].description
+    assert dt.REFERENCES_NOTE in names["run_members_of_unit"].description
+    assert dt.REFERENCES_NOTE not in names["run_training_completions"].description
 
 
 def test_a_defaulted_parameter_validates_against_its_own_schema() -> None:

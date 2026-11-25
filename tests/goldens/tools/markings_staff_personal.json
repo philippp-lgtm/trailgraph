@@ -9,7 +9,7 @@
     "version": "1.0.0"
   },
   "tools_format": 1,
-  "version": "sha256:b29e57f34416e5f501a3765d007ef87bf1646ca2a26cf95dc41bd8273b62ca1c",
+  "version": "sha256:cad7c9be2d032939478114cc06f565512b307d62663bda73f6e560468985bb26",
   "tools": [
     {
       "name": "run_by_grade",
@@ -156,7 +156,6 @@
         "config.invalid",
         "entity.ambiguous_ref",
         "entity.not_found",
-        "function.not_found",
         "function.parameter_invalid",
         "function.parameter_missing",
         "function.parameter_type",
@@ -304,7 +303,6 @@
         "config.invalid",
         "entity.ambiguous_ref",
         "entity.not_found",
-        "function.not_found",
         "function.parameter_invalid",
         "function.parameter_missing",
         "function.parameter_type",
@@ -452,7 +450,6 @@
         "config.invalid",
         "entity.ambiguous_ref",
         "entity.not_found",
-        "function.not_found",
         "function.parameter_invalid",
         "function.parameter_missing",
         "function.parameter_type",
@@ -497,7 +494,8 @@
               {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 2000
+                "maxLength": 2000,
+                "pattern": "\\S"
               },
               {
                 "type": "null"
@@ -731,12 +729,12 @@
       "replaced_by": null,
       "featured": true,
       "module": "staff",
-      "hash": "sha256:246e3573e9dbf9cd8b135f186009010bd186cb5970f0b1fc20f9f09fa9855b69",
+      "hash": "sha256:7d2dbd3023b05a98a81e3eb2a4abd0c6efca6ad9bbf1fc1904e71d8279fe2407",
       "entry_hash": "sha256:b942a9091623645dc55174f9500827983a1224a6099e026bd98fb6e9ec3ef73c",
       "errors": [
+        "access.batch_too_large",
         "access.denied",
         "access.reason_required",
-        "action.not_found",
         "action.nothing_to_do",
         "action.parameter_invalid",
         "action.parameter_missing",
@@ -802,7 +800,8 @@
               {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 2000
+                "maxLength": 2000,
+                "pattern": "\\S"
               },
               {
                 "type": "null"
@@ -1036,12 +1035,12 @@
       "replaced_by": null,
       "featured": true,
       "module": "staff",
-      "hash": "sha256:018b275293345266324e41ce990a02baf3f985713aab083bcb30f2ed86171e57",
+      "hash": "sha256:8b899173b8d258a45e8d1d54cf881c79db0828c89c7829128a9c8fa999e21655",
       "entry_hash": "sha256:bde5c4bf684e3a50f535e933cefa131f1b5731914b53ab40ca47749e12c8a01a",
       "errors": [
+        "access.batch_too_large",
         "access.denied",
         "access.reason_required",
-        "action.not_found",
         "action.nothing_to_do",
         "action.parameter_invalid",
         "action.parameter_missing",
@@ -1103,7 +1102,8 @@
               {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 2000
+                "maxLength": 2000,
+                "pattern": "\\S"
               },
               {
                 "type": "null"
@@ -1337,12 +1337,12 @@
       "replaced_by": null,
       "featured": true,
       "module": "staff",
-      "hash": "sha256:6bda3660d4b9a92cf79cac377a433db2e6ccde08d1d545b298e7196a0a42ae53",
+      "hash": "sha256:0a74851bdb3cf0e7d5408cecb64b5df1a5aeaf0e4ef79210691658c99fd615ab",
       "entry_hash": "sha256:04597df42994bbcd1d1358ce6a8099ca274d09a55b8510593aa54c80e305968e",
       "errors": [
+        "access.batch_too_large",
         "access.denied",
         "access.reason_required",
-        "action.not_found",
         "action.nothing_to_do",
         "action.parameter_invalid",
         "action.parameter_missing",
@@ -1404,7 +1404,8 @@
               {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 2000
+                "maxLength": 2000,
+                "pattern": "\\S"
               },
               {
                 "type": "null"
@@ -1638,12 +1639,12 @@
       "replaced_by": null,
       "featured": true,
       "module": "staff",
-      "hash": "sha256:41c404081031e0f18593e0fb78077842c867eeb161f60a9f5018951bb85fd34e",
+      "hash": "sha256:57c45bfda976cdd471dffddf0b09a0d8cfad0ef7c2eb293012297d2d83860598",
       "entry_hash": "sha256:897afb80165b67d3279ab110f16b26838a7b43b301c8e6fb7b6f49b3f04e2981",
       "errors": [
+        "access.batch_too_large",
         "access.denied",
         "access.reason_required",
-        "action.not_found",
         "action.nothing_to_do",
         "action.parameter_invalid",
         "action.parameter_missing",
@@ -1681,6 +1682,12 @@
     }
   ],
   "errors": {
+    "access.batch_too_large": {
+      "category": "denied",
+      "retryable": false,
+      "summary": "The batch exceeds the permitted size.",
+      "on_error": "stop"
+    },
     "access.denied": {
       "category": "denied",
       "retryable": false,
@@ -1692,12 +1699,6 @@
       "retryable": false,
       "summary": "The action requires a reason.",
       "on_error": "fix_input"
-    },
-    "action.not_found": {
-      "category": "not_found",
-      "retryable": false,
-      "summary": "The graph has no such action.",
-      "on_error": "stop"
     },
     "action.nothing_to_do": {
       "category": "refused",
@@ -1807,12 +1808,6 @@
       "summary": "The entity does not exist.",
       "on_error": "fix_input"
     },
-    "function.not_found": {
-      "category": "not_found",
-      "retryable": false,
-      "summary": "The graph has no such function.",
-      "on_error": "stop"
-    },
     "function.parameter_invalid": {
       "category": "usage",
       "retryable": false,
@@ -1919,7 +1914,7 @@
       "category": "not_found",
       "retryable": false,
       "summary": "The graph has no such tool for this caller.",
-      "on_error": "stop"
+      "on_error": "refresh"
     },
     "usage.invalid_argument": {
       "category": "usage",

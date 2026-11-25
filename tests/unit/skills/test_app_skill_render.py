@@ -144,3 +144,18 @@ def test_table_cells_escape_pipes_and_refuse_line_breaks() -> None:
     doc = inventory()
     doc["commands"][0]["summary"] = "first | second"
     assert "first \\| second" in render_app_skill(doc)[COMMANDS_FILE]
+
+
+def test_a_command_for_programs_is_left_out_of_the_command_table_only() -> None:
+    doc = inventory()
+    flagged = next(c for c in doc["commands"] if c["path"] == ["describe", "view"])
+    plain = render_app_skill(doc)
+    flagged["skill_table"] = False
+    hidden = render_app_skill(doc)
+    assert "| `graph describe view` |" in plain[SKILL_FILE]
+    assert "| `graph describe view` |" not in hidden[SKILL_FILE]
+    assert "## graph describe view\n" in hidden[COMMANDS_FILE]
+    assert (
+        hidden[COMMANDS_FILE] == plain[COMMANDS_FILE] and hidden[ERRORS_FILE] == plain[ERRORS_FILE]
+    )
+    assert len(hidden[SKILL_FILE].splitlines()) == len(plain[SKILL_FILE].splitlines()) - 1

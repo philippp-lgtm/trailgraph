@@ -1145,7 +1145,7 @@ Each tool has these keys, in this order:
 | `name` | the tool name, see below |
 | `kind` | `function`, `action` or `view` (`lookup` is reserved for a later tool) |
 | `entry` | the name of the function, action or view |
-| `description` | the summary, a deprecation line, `use_when` and the examples of the entry (a function's and a view's with their parameters as input of the tool, an action's request) |
+| `description` | the summary, a deprecation line, `use_when` and the examples of the entry: a function's and a view's with the arguments they give in the form of the input (an example never gives a reference, the line says to supply it), an action's request |
 | `input_schema` | the JSON Schema (2020-12) of the arguments, closed |
 | `output_schema` | the JSON Schema of the answer (`data`), open |
 | `annotations` | `read_only`; `dry_run` (the tool has `_dry_run`); `reason` (`required` or `optional` for an action, else null); `paging` (`offset` for a function, `cursor` for a set view, else null) |
@@ -1217,7 +1217,7 @@ tightening an input schema, or changing what an `on_error` value means. A harnes
 | `fix_input` | the arguments are wrong or name something that does not fit: correct them and call again |
 | `check_state` | the arguments are fine and the graph's state decides (`action.precondition_failed`, `action.nothing_to_do`): read the details, do not repeat the call unchanged |
 | `restart` | start again from the first page (`view.cursor_stale`: a write landed between two pages) |
-| `refresh` | the tool definitions are out of date: fetch the manifest again |
+| `refresh` | the tool definitions are out of date: fetch the manifest again (`tool.not_found` for a tool that has gone since, `tool.hash_mismatch`) |
 | `stop` | nothing the harness can change helps: report it (`access.denied`, a stale entry, a graph that is archived) |
 
 A precondition failure is `action.precondition_failed`, and `error.details.failed` lists each failing

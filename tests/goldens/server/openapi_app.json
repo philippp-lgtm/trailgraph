@@ -5165,6 +5165,9 @@
                 "output": {
                   "type": "object",
                   "additionalProperties": true
+                },
+                "skill_table": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -14905,7 +14908,7 @@
             ]
           },
           "403": {
-            "description": "Forbidden: access.denied, access.project_mismatch, access.reason_required, remote.unauthorized.",
+            "description": "Forbidden: access.batch_too_large, access.denied, access.project_mismatch, access.reason_required, remote.unauthorized.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -14924,6 +14927,7 @@
               }
             },
             "x-graph-cli-error-codes": [
+              "access.batch_too_large",
               "access.denied",
               "access.project_mismatch",
               "access.reason_required",

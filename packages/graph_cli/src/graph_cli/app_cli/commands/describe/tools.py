@@ -171,5 +171,6 @@ SPECS: Final = (
         errors=(*GRAPH_ERRORS, "term.unknown", "tool.not_found"),
         handler=describe_tools,
         output=TOOLS_OUTPUT,
+        skill_table=False,  # for agent harnesses; shell agents have describe, run, do and view
     ),
 )

@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly. Run `graph start` once per session before loading this or any graph skill."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:a9c0a1b0a3c9ffef29e6dc538996a34ceffa48a3a617e643b37e9edab87142fa"
+  inventory_hash: "sha256:608eb89fb99bfa2ecf4c6a0f43930a8a6407b790cfb1c03be68f4acceb6e2870"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.30.0"
@@ -184,7 +184,6 @@ Every `--json` call prints one JSON object on stdout.
 | `graph describe relations` | read | List the relations of the selected graph's ontology. |
 | `graph describe schema` | read | Show the model as graph query sees it: labels, relationship patterns, properties. |
 | `graph describe search` | read | Search the model by text: types, relations, fields, enum values, states, functions, actions, views. |
-| `graph describe tools` | read | List the functions, actions and views you may use as tools with JSON Schemas. |
 | `graph describe type` | read | Describe one type: fields, lifecycles, relations and rules. |
 | `graph describe types` | read | List the types of the selected graph's ontology. |
 | `graph describe view` | read | Describe one view: what it takes, its parameters and sections and how to call it. |

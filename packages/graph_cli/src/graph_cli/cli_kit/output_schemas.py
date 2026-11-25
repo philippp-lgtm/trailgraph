@@ -165,7 +165,11 @@ def _inventory() -> Schema:
             "exit_codes": array(INTEGER),
             "limits": obj(extra=ANY),
         },
-        {"remote": enum("server", "hooked", "client", "local"), "output": OPEN},
+        {
+            "remote": enum("server", "hooked", "client", "local"),
+            "output": OPEN,
+            "skill_table": BOOLEAN,
+        },
     )
     return obj(
         {

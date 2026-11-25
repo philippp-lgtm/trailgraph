@@ -64,11 +64,11 @@ class ParamType:
         return _JSON_TYPES.get(self.kind, "string")
 
 
-def _default_value(kind: str, value: JsonValue) -> JsonValue:
-    """The default as the JSON of the input: a decimal is text there, whatever the file wrote
-    (``5`` and ``"5"`` bind to the same decimal)."""
+def input_value(kind: str, value: JsonValue) -> JsonValue:
+    """A value a file wrote (a default, an example) as the JSON of the input: a decimal is text
+    there, whatever the file wrote (``5`` and ``"5"`` bind to the same decimal)."""
     if isinstance(value, list):
-        return [_default_value(kind, v) for v in value]
+        return [input_value(kind, v) for v in value]
     if kind == "decimal" and isinstance(value, int) and not isinstance(value, bool):
         return str(value)
     return value
@@ -83,7 +83,7 @@ def param_type(param: ParamDef) -> ParamType:
         summary=param.summary,
         many=param.many,
         required=param.required,
-        default=_default_value(param.type, param.default),
+        default=input_value(param.type, param.default),
         of_class=param.of_class,
         enum=param.enum,
         pattern=_PATTERNS.get(param.type),

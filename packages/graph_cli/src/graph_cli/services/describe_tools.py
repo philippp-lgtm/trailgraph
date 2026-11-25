@@ -34,7 +34,8 @@ from graph_cli.kernel.changeset import MAX_REASON
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kinetic.action_entries import ActionEntry
 from graph_cli.kinetic.entries import FunctionEntry, Named, seen_replacement
-from graph_cli.kinetic.tool_types import ParamType, param_types, ref_type
+from graph_cli.kinetic.params import ParamDef
+from graph_cli.kinetic.tool_types import ParamType, input_value, param_types, ref_type
 from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.kinetic.view_format import MIN_BYTES, PAGE_BYTES_MAX
 from graph_cli.kinetic.view_page import PAGE_BYTES
@@ -237,7 +238,8 @@ def action_input(entry: ActionEntry, model: CompiledModel, *, reason_needed: boo
     """The input of ``do_<action>``: its parameters, then ``_reason`` (required when
     ``reason_needed``) and ``_dry_run``."""
     reason = _control(
-        {"type": "string", "minLength": 1, "maxLength": MAX_REASON},
+        # \S: a reason of blanks only is refused, as the binder refuses it
+        {"type": "string", "minLength": 1, "maxLength": MAX_REASON, "pattern": r"\S"},
         "Why this change is made; recorded in the audit trail."
         + (" Required for this action." if reason_needed else ""),
         nullable=not reason_needed,
@@ -271,15 +273,30 @@ def view_input(entry: ViewEntry, model: CompiledModel) -> JsonObject:
     )
     page_bytes = _control(
         {"type": "integer", "minimum": MIN_BYTES, "maximum": PAGE_BYTES_MAX},
-        f"Page size in bytes; the view's own size, else {PAGE_BYTES}.",
+        f"Page size in bytes, at least {MIN_BYTES}; the view's own size, else {PAGE_BYTES}.",
         nullable=True,
     )
     return _input((), params, ((CURSOR, cursor, False), (PAGE_BYTES_ARG, page_bytes, False)), model)
 
 
-def _example_line(question: str, params: JsonObject) -> str:
-    given = json.dumps(params, ensure_ascii=False, sort_keys=True)
-    return f"- {question} Input: {given}" if params else f"- {question}"
+REFERENCES_NOTE: Final = "Supply the references it needs."
+
+
+def _example_line(
+    question: str, given: JsonObject, params: Sequence[ParamDef], *, entity: bool = False
+) -> str:
+    """``- <question> Arguments: {...}``: the arguments the example gives, in the form the input
+    takes (a decimal as text). An example never gives a reference, so a line that leaves one out
+    (a required ``ref`` parameter, the entity of an entity view) says to supply it."""
+    kinds = {p.name: p.type for p in params}
+    shown = {k: input_value(kinds.get(k, "string"), v) for k, v in given.items()}
+    needs = entity or any(p.type == "ref" and p.required and p.name not in given for p in params)
+    parts = [f"- {question}"]
+    if shown:
+        parts.append(f"Arguments: {json.dumps(shown, ensure_ascii=False, sort_keys=True)}")
+    if needs:
+        parts.append(REFERENCES_NOTE)
+    return " ".join(parts)
 
 
 def description_text(
@@ -314,7 +331,7 @@ def function_head(
 ) -> ToolHead:
     defn = entry.defn
     replaced = _replacement(FUNCTION, defn.replaced_by, visible)
-    examples = [_example_line(e.question, dict(e.params)) for e in defn.examples]
+    examples = [_example_line(e.question, dict(e.params), defn.params) for e in defn.examples]
     return ToolHead(
         name=tool_name(FUNCTION, entry.name),
         kind=FUNCTION,
@@ -368,7 +385,10 @@ def action_head(
 def view_head(entry: ViewEntry, model: CompiledModel, visible: Sequence[ViewEntry]) -> ToolHead:
     defn = entry.defn
     replaced = _replacement(VIEW, defn.replaced_by, visible)
-    examples = [_example_line(e.question, dict(e.params)) for e in defn.examples]
+    examples = [
+        _example_line(e.question, dict(e.params), defn.params, entity=entry.entity)
+        for e in defn.examples
+    ]
     return ToolHead(
         name=tool_name(VIEW, entry.name),
         kind=VIEW,

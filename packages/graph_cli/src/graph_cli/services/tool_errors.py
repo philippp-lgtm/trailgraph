@@ -53,6 +53,7 @@ OVERRIDES: Final[Mapping[str, str]] = {
     "view.cursor_stale": RESTART,
     # the tool definition the harness holds is not the current one
     "tool.hash_mismatch": REFRESH,
+    "tool.not_found": REFRESH,  # the entry may have gone since the manifest was fetched
     # the stored entry no longer fits the ontology: only a maintainer can fix that
     "function.stale": STOP,
     "action.stale": STOP,

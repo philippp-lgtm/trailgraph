@@ -265,9 +265,12 @@ def test_a_tool_lists_the_codes_of_its_command_the_call_and_the_transport() -> N
     run = document["run_members_of_unit"]["errors"]
     do = document["do_assign_position"]["errors"]
     view = document["view_unit_overview"]["errors"]
-    assert {"function.not_found", "function.parameter_invalid", "function.stale"} <= set(run)
+    assert {"function.parameter_invalid", "function.stale"} <= set(run)
     assert {"action.precondition_failed", "action.reason_required", "action.stale"} <= set(do)
-    assert {"view.cursor_stale", "view.not_found", "view.stale"} <= set(view)
+    assert {"view.cursor_stale", "view.stale"} <= set(view)
+    assert "access.batch_too_large" in do
+    for codes in (run, do, view):  # a call of an entry the caller cannot see is tool.not_found
+        assert not {"function.not_found", "action.not_found", "view.not_found"} & set(codes)
     for codes in (run, do, view):
         assert {
             "tool.not_found",
@@ -299,7 +302,7 @@ def test_the_error_map_covers_only_the_codes_of_the_tools_listed() -> None:
     views_only = manifest(COMPANY.scene(), kinds=("view",))
     assert "view.cursor_stale" in views_only["errors"]
     assert "action.precondition_failed" not in views_only["errors"]
-    assert "function.not_found" not in views_only["errors"]
+    assert "function.parameter_invalid" not in views_only["errors"]
 
 
 # ---- the selection -------------------------------------------------------------------------
