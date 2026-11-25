@@ -123,6 +123,15 @@ check "the full suite step passes no selection" bash -c "$(declare -f step); wor
 check "the selected suite step runs only when the selection says selected" bash -c "$(declare -f step); workflow='$workflow'; step 'Test suite (selected)' | grep -qF \"steps.select.outputs.mode == 'selected'\" && step 'Test suite (selected)' | grep -qF 'PYTEST_ARGS=\${{ steps.select.outputs.args }}'"
 check "the reuse rule names the whole-suite step" grep -qxF "  CI_REUSE_REQUIRE: 'test/Test suite (full)'" "$workflow"
 check "the reuse rule refuses a pull request that changed the CI itself" grep -qE "^  CI_REUSE_REFUSE_PATHS: .*check.*ci-.*Dockerfile" "$workflow"
+# fetch-depth 0 is falsy in `a && 0 || b`: the expression must pick 0 through the other branch
+check "the full history is fetched for a pull request (no falsy 0 in && ||)" bash -c "grep -qF 'fetch-depth: \${{ github.event_name != '\\''pull_request'\\'' && 1 || 0 }}' '$workflow' && ! grep -qE '&& 0 \|\|' '$workflow'"
+regex=$(sed -n "s/^  CI_REUSE_REFUSE_PATHS: '\(.*\)'\$/\1/p" "$workflow")
+for f in .github/workflows/check.yml .github/actions/x/action.yml scripts/ci-reuse-pr-run.sh scripts/smoke_image.sh scripts/lint-workflows.sh tests/ci-reuse/run.sh tests/integration/run_garage.sh Dockerfile .dockerignore; do
+  check "the reuse rule refuses a change to $f" bash -c "grep -qE '$regex' <<<'$f'"
+done
+for f in docs/a.md scripts/bench_store.py .github/workflows/build.yml sub/Dockerfile; do
+  check "the reuse rule lets a change to $f through" bash -c "! grep -qE '$regex' <<<'$f'"
+done
 check "the test job is named test" bash -c "grep -q '^  test:\$' '$workflow'"
 check "only pull requests can select: the selection step sees the event" bash -c "$(declare -f step); workflow='$workflow'; step 'Select the tests' | grep -qF 'run: scripts/ci-select-tests.sh'"
 check "the Dockerfile test stage takes PYTEST_ARGS and defaults to the whole suite" bash -c "grep -qx 'ARG PYTEST_ARGS=\"\"' '$root/Dockerfile' && grep -qF 'RUN uv run pytest -q -p no:cacheprovider -n 8 \${PYTEST_ARGS}' '$root/Dockerfile'"

@@ -581,7 +581,8 @@ class Selector:
         # importers in the new tree, and a conftest.py takes its fixtures along.
         gone = sorted(p for p in modules if p not in self.graph.modules)
         if gone:
-            return self._full(f"{gone[0]} no longer exists")
+            why = "is outside the import graph" if gone[0] in present else "no longer exists"
+            return self._full(f"{gone[0]} {why}")
         known = {p for p in modules if p in self.graph.modules}
         self._add(self._depending_on(known), "imports a changed module")
         if source:  # a module that nothing imports (new, deleted) is still read by tree scanners

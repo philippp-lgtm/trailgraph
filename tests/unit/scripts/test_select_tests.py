@@ -379,6 +379,11 @@ def test_a_deleted_test_file_is_the_whole_suite_too() -> None:
     assert isinstance(result, str) and "tests/test_removed.py no longer exists" in result
 
 
+def test_a_python_file_outside_the_import_graph_is_the_whole_suite_with_a_true_reason() -> None:
+    result = selected({"packages/app/setup_helper.py": ""}, ["packages/app/setup_helper.py"])
+    assert isinstance(result, str) and "is outside the import graph" in result
+
+
 def test_a_file_in_a_package_that_nothing_reads_is_the_whole_suite() -> None:
     for path in ("packages/app/README.md", "packages/app/src/new.txt"):
         result = selected({}, [path])

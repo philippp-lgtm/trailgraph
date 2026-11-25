@@ -89,7 +89,9 @@ the tree of the pull request head, and that head has a green first-attempt
 ..., validated in run ...; not re-run" and succeeds. That holds only when the
 pull request run ran the whole suite (its `Test suite (full)` step succeeded)
 and the pull request did not change the check workflow, `.github/actions/`,
-`scripts/ci-*`, `tests/ci-*`, the `Dockerfile` or `.dockerignore`; a run that
+`scripts/ci-*`, `scripts/smoke_image.sh`, `scripts/lint-workflows.sh`,
+`tests/ci-*`, `tests/integration/run_garage.sh`, the `Dockerfile` or
+`.dockerignore`; a run that
 tested a selection is never reused, so the commit that a release is tagged on
 has always passed the whole suite. `scripts/ci-reuse-pr-run.sh`
 decides, any doubt or API error means the full run, and

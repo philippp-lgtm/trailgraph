@@ -26,8 +26,9 @@ env:
   # A push to main reuses a pull request run only when its test job ran the whole suite (scripts/ci-reuse-pr-run.sh):
   # job/step names that must have succeeded in that run. A run that tested a selection never counts.
   CI_REUSE_REQUIRE: 'test/Test suite (full)'
-  # A pull request runs the workflow and scripts it carries: when it changed any of these, main runs the change itself.
-  CI_REUSE_REFUSE_PATHS: '^(\.github/workflows/check\.yml|\.github/actions/|scripts/ci-|tests/ci-|Dockerfile$|\.dockerignore$)'
+  # A pull request runs the workflow and the scripts it carries (also those that see the event): when it changed any
+  # of these, main runs the change itself.
+  CI_REUSE_REFUSE_PATHS: '^(\.github/workflows/check\.yml|\.github/actions/|scripts/ci-|scripts/smoke_image\.sh|scripts/lint-workflows\.sh|tests/ci-|tests/integration/run_garage\.sh|Dockerfile$|\.dockerignore$)'
 
 # A newer push to the same branch or pull request supersedes a running check.
 concurrency:
@@ -81,7 +82,7 @@ jobs:
       # The whole history for a pull request: it selects its tests by the diff to its base commit.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
+          fetch-depth: ${{ github.event_name != 'pull_request' && 1 || 0 }}
           persist-credentials: false
 
       - name: Reuse the pull request run
