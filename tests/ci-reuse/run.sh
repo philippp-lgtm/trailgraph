@@ -24,6 +24,14 @@ chmod +x "$tmp/bin/gh"
 # the stub turns / ? & = of the request path into _
 runs_file() { echo "$1/actions_workflows_validate.yml_runs_head_sha_${H}_event_pull_request_per_page_100"; }
 
+jobs_file() { echo "$1/actions_runs_99_jobs_per_page_100"; }
+# the jobs of run 99: the job `test` ran the whole-suite step to success and the selected-suite step was skipped
+set_jobs() { echo "$2" > "$(jobs_file "$1")"; }
+JOBS_FULL='{"total_count":2,"jobs":[{"name":"lint","steps":[{"name":"Lint","conclusion":"success"}]},{"name":"test","steps":[{"name":"Test suite (full)","conclusion":"success"},{"name":"Test suite (selected)","conclusion":"skipped"}]}]}'
+REQ=""   # CI_REUSE_REQUIRE of the next expect; empty: no step is required
+REFUSE=""   # CI_REUSE_REFUSE_PATHS of the next expect; empty: nothing is refused
+files_file() { echo "$1/pulls_7_files_per_page_100_page_$2"; }
+
 # fixture: the happy path, one merged PR #7 whose head was rebased on the base side and has a green first-attempt run
 fixture() {
   FX="$tmp/fx$1"; rm -rf "$FX"; mkdir -p "$FX"
@@ -32,6 +40,8 @@ fixture() {
   echo "{\"tree\":{\"sha\":\"$T1\"},\"parents\":[{\"sha\":\"$P\"},{\"sha\":\"$H\"}]}" > "$FX/git_commits_$M"
   echo "{\"tree\":{\"sha\":\"$T1\"},\"parents\":[{\"sha\":\"$P\"}]}" > "$FX/git_commits_$H"
   echo '{"status":"ahead"}' > "$FX/compare_${P}...${H}_per_page_1"
+  set_jobs "$FX" "$JOBS_FULL"
+  echo '[{"filename":"packages/a.py"},{"filename":"docs/b.md"}]' > "$(files_file "$FX" 1)"
   echo "{\"workflow_runs\":[{\"id\":99,\"head_sha\":\"$H\",\"head_repository\":{\"full_name\":\"$R\"},\"created_at\":\"2026-10-27T01:00:00Z\",\"pull_requests\":[{\"number\":7,\"base\":{\"ref\":\"main\",\"repo\":{\"url\":\"https://api.github.com/repos/$R\"}}}],\"path\":\".github/workflows/validate.yml\",\"status\":\"completed\",\"conclusion\":\"success\",\"run_attempt\":1}]}" > "$(runs_file "$FX")"
   echo "$FX"
 }
@@ -39,7 +49,7 @@ fixture() {
 # expect NAME reuse|full PATTERN [EVENT REF]  (fixture dir in $FX, may be edited before the call)
 expect() {
   local name=$1 want=$2 pat=$3 ev=${4:-push} ref=${5:-refs/heads/main} out
-  out=$(PATH="$tmp/bin:$PATH" FX="$FX" GITHUB_REPOSITORY=$R GITHUB_SHA=$M GITHUB_EVENT_NAME=$ev GITHUB_REF=$ref \
+  out=$(PATH="$tmp/bin:$PATH" FX="$FX" CI_REUSE_REQUIRE="$REQ" CI_REUSE_REFUSE_PATHS="$REFUSE" GITHUB_REPOSITORY=$R GITHUB_SHA=$M GITHUB_EVENT_NAME=$ev GITHUB_REF=$ref \
         GITHUB_OUTPUT="$tmp/out" "$script" validate.yml 2>&1); local rc=$?
   local got; got=$(tail -1 "$tmp/out" 2>/dev/null)
   if [ "$rc" -ne 0 ] || [ "$got" != "reuse=$([ "$want" = reuse ] && echo true || echo false)" ] || ! grep -Eq "$pat" <<<"$out"; then
@@ -91,5 +101,40 @@ good 37; jq '.workflow_runs += [(.workflow_runs[0] | .id=96 | .created_at="2026-
 
 good 38; jq -n --arg m "$M" '[range(0;100) | {number:., merged_at:null, merge_commit_sha:"x", base:{ref:"main"}, head:{sha:"y"}}] | .[0] = {number:7, merged_at:"2026-10-27T00:00:00Z", merge_commit_sha:$m, base:{ref:"main"}, head:{sha:"'$H'"}}' > "$FX/commits_${M}_pulls_per_page_100"; expect "pull request list of the commit hits the page size" full 'possibly truncated'
 good 39; jq -n '[range(0;100) | {number:.}]' > "$FX/commits_${H}_pulls_per_page_100"; expect "pull request list of the head hits the page size" full 'possibly truncated'
+
+# a workflow that tests only a selection on pull requests requires the step that ran the whole suite (CI_REUSE_REQUIRE)
+REQ='test/Test suite (full)'
+good 40; expect "required step succeeded (the whole suite ran)" reuse 'tree identical'
+good 41; set_jobs "$FX" '{"total_count":1,"jobs":[{"name":"test","steps":[{"name":"Test suite (full)","conclusion":"skipped"},{"name":"Test suite (selected)","conclusion":"success"}]}]}'; expect "the run tested a selection" full "did not succeed in the step 'Test suite \(full\)' of job 'test'"
+good 42; set_jobs "$FX" '{"total_count":1,"jobs":[{"name":"test","steps":[{"name":"Test suite (full)","conclusion":"failure"}]}]}'; expect "the whole-suite step failed" full 'did not succeed in the step'
+good 43; set_jobs "$FX" '{"total_count":1,"jobs":[{"name":"test","steps":[{"name":"Test suite (selected)","conclusion":"success"}]}]}'; expect "no whole-suite step in the run (an old run)" full 'did not succeed in the step'
+good 44; set_jobs "$FX" '{"total_count":1,"jobs":[{"name":"build","steps":[{"name":"Test suite (full)","conclusion":"success"}]}]}'; expect "the step belongs to another job" full 'did not succeed in the step'
+good 45; rm "$(jobs_file "$FX")"; expect "API error listing the jobs" full 'cannot list the jobs of run 99'
+good 46; echo 'not json' > "$(jobs_file "$FX")"; expect "garbage jobs answer" full 'did not succeed in the step'
+good 47; jq '.total_count=101' "$(jobs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(jobs_file "$FX")"; expect "more jobs than one page" full 'did not succeed in the step'
+good 48; jq '.jobs += [.jobs[1]] | .total_count=3' "$(jobs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(jobs_file "$FX")"; expect "two jobs of that name" full 'did not succeed in the step'
+good 49; jq '.jobs[1].steps += [.jobs[1].steps[0]]' "$(jobs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(jobs_file "$FX")"; expect "two steps of that name" full 'did not succeed in the step'
+good 50; REQ=$'test/Test suite (full)\nlint/Lint'; expect "two required steps, both succeeded" reuse 'tree identical'
+good 51; REQ=$'test/Test suite (full)\nlint/Typecheck'; expect "two required steps, one missing" full "step 'Typecheck' of job 'lint'"
+good 52; REQ='test/Test suite (full)'; jq '.workflow_runs[0].conclusion="failure"' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "required step ran but the run failed" full 'no usable green'
+REQ=""
+good 53; rm "$(jobs_file "$FX")"; expect "nothing required: the jobs are not looked at" reuse 'tree identical'
+
+# a pull request that changed the CI itself ran its own CI: main runs that change itself (CI_REUSE_REFUSE_PATHS)
+REFUSE='^(\.github/workflows/check\.yml|\.github/actions/|scripts/ci-|Dockerfile$|\.dockerignore$)'
+good 60; expect "no file of the pull request controls the CI" reuse 'tree identical'
+for f in .github/workflows/check.yml .github/actions/setup/action.yml scripts/ci-select-tests.sh Dockerfile .dockerignore; do
+  good 61; echo "[{\"filename\":\"docs/b.md\"},{\"filename\":\"$f\"}]" > "$(files_file "$FX" 1)"; expect "changed $f" full "changed $f, which controls its own CI run"
+done
+good 62; echo '[{"filename":"scripts/other.sh","previous_filename":"scripts/ci-old.sh"}]' > "$(files_file "$FX" 1)"; expect "renamed away from a CI script" full 'changed scripts/ci-old.sh'
+good 63; echo '[{"filename":".github/workflows/build.yml"},{"filename":"sub/Dockerfile"},{"filename":"scripts/lint.sh"}]' > "$(files_file "$FX" 1)"; expect "similar names that are not protected" reuse 'tree identical'
+good 64; rm "$(files_file "$FX" 1)"; expect "API error listing the files" full 'cannot list the files of #7'
+good 65; echo 'not json' > "$(files_file "$FX" 1)"; expect "garbage file list" full 'unreadable file list'
+good 66; jq -n '[range(0;100) | {filename:("docs/f\(.).md")}]' > "$(files_file "$FX" 1)"; jq -n '[{filename:"scripts/ci-x.sh"}]' > "$(files_file "$FX" 2)"; expect "the CI file is on the second page" full 'changed scripts/ci-x.sh'
+good 67; jq -n '[range(0;100) | {filename:("docs/f\(.).md")}]' > "$(files_file "$FX" 1)"; expect "a full page and no second page" full 'cannot list the files'
+good 68; jq -n '[range(0;100) | {filename:("docs/f\(.).md")}]' > "$(files_file "$FX" 1)"; jq -n '[{filename:"docs/z.md"}]' > "$(files_file "$FX" 2)"; expect "two pages, none protected" reuse 'tree identical'
+good 69; for i in 1 2 3 4 5 6 7 8 9 10; do jq -n '[range(0;100) | {filename:("docs/f\(.).md")}]' > "$(files_file "$FX" $i)"; done; expect "more pages than are read" full 'too many files'
+REFUSE=""
+good 70; rm "$(files_file "$FX" 1)"; expect "nothing refused: the file list is not looked at" reuse 'tree identical'
 
 exit "$failed"

@@ -63,10 +63,37 @@ store (`tests/integration/run_garage.sh`, see [Tests](#tests)). The repository v
 the jobs to a self-hosted runner; pull requests from forks always run on a
 hosted one.
 
+A push to `main`, and every run that is not a pull request, runs the whole
+suite. A pull request runs the tests its change affects
+([Which tests to run](#which-tests-to-run)): the step `Select the tests` runs
+`scripts/ci-select-tests.sh`, which names the tests or the whole suite, and the
+test job then has one of two steps, `Test suite (full)` or `Test suite
+(selected)`; the job summary shows which and why, with the selected files.
+The selector that decides is the one of the base commit, never the pull
+request's own, so a change to the selector cannot judge itself (a pull request
+that adds the selector, or finds no selector in its base, runs everything).
+That is all the protection there is against a change that narrows its own
+run: the workflow, `scripts/ci-*` and the `Dockerfile` come from the pull
+request, so review a change to them as a change to the CI. The push to `main`
+is the gate: it runs a change to any of them itself and never reuses the pull
+request run.
+The label `ci:full` on a pull request forces the whole suite; the job reads
+the labels when it runs, so after adding it, re-run the test job (a re-run is
+never reused on `main`, which then runs the whole suite again; push a commit
+instead if the merge should reuse the run).
+`tests/ci-select/run.sh` tests the script offline.
+
 A push to `main` that merges a pull request rebased on `main` (its tree equals
 the tree of the pull request head, and that head has a green first-attempt
 `check` run) is not tested again: every job logs "tree identical to PR #n head
-..., validated in run ...; not re-run" and succeeds. `scripts/ci-reuse-pr-run.sh`
+..., validated in run ...; not re-run" and succeeds. That holds only when the
+pull request run ran the whole suite (its `Test suite (full)` step succeeded)
+and the pull request did not change the check workflow, `.github/actions/`,
+`scripts/ci-*`, `scripts/smoke_image.sh`, `scripts/lint-workflows.sh`,
+`tests/ci-*`, `tests/integration/run_garage.sh`, the `Dockerfile` or
+`.dockerignore`; a run that
+tested a selection is never reused, so the commit that a release is tagged on
+has always passed the whole suite. `scripts/ci-reuse-pr-run.sh`
 decides, any doubt or API error means the full run, and
 `tests/ci-reuse/run.sh` tests it offline.
 
@@ -358,19 +385,77 @@ and prints the time of each phase and the peak memory.
 
 ### Which tests to run
 
-The whole suite runs on every pull request in CI, and a green `check` is the
-gate for merging. Locally, run it once before pushing, not after every edit:
+A pull request in CI runs the tests its change affects, and a green `check` is
+the gate for merging; the whole suite runs on every push to `main` and so
+before every release ([CI and releases](#ci-and-releases)). Locally, run the
+whole suite once before pushing, not after every edit:
 
 | When | Run |
 | --- | --- |
 | while changing code | the tests of the area: its unit tests and the end-to-end tests of the commands it touches, e.g. `uv run pytest tests/unit/services tests/cli/test_app_read.py`; `--lf` reruns only the tests that failed last time, `--sw` stops at the first failure and starts there next time |
+| the tests the change affects, as in CI | `uv run pytest -n 4 $(uv run python scripts/select_tests.py --base origin/main \| grep -vx full)`: the script prints the test files (the reasons go to standard error) or `full`, which the `grep` turns into the whole suite; it reads the committed, staged and untracked changes against the merge base |
 | a quick check across all layers but the end-to-end tests | `uv run pytest -n 4 --ignore=tests/cli --ignore=tests/server` |
 | before pushing | the whole suite, `uv run pytest -n 4` (or more workers where the machine has the cores) |
 
-There is no selection by changed files: the end-to-end tests in `tests/cli`
-and `tests/server`, which take most of the suite's time, run `graph`,
-`graph-admin` and `graph-server`, and those import nearly all of the code, so
-a selector would keep almost the whole suite for any code change.
+`docker build --target test .` runs the whole suite; the build argument
+`PYTEST_ARGS` names pytest paths instead
+(`--build-arg PYTEST_ARGS="tests/unit/kernel"`).
+
+How `scripts/select_tests.py` (standard library only) decides, from `git diff`
+to the base:
+
+- It builds the import graph of `packages/*/src` and `tests/`, with every
+  `import` statement (also inside functions), relative imports resolved, and
+  module names and file names that a module writes as string literals
+  (`python -m x.y`, `f"x.workers.{name}"`). A test file is selected when a
+  changed module is in its closure: what it imports, the `conftest.py` files
+  above it, and, for a test that runs `graph`, `graph-admin` or `graph-server`
+  as a process, the entry module of that program. A test that uses `run_cli`
+  (or the launcher) without naming a program counts as running all three.
+- A file that is no module (a golden, a fixture, a document, a skill, an
+  example, a file inside a package) selects the tests that name the file or the
+  directory it is in as a string literal (for `docs/` and `skills/` also those
+  that name the root, which is how the freshness check of the generated skill
+  is found), and a document also the tests that back one of its claims (`doc_claim`). A document selects the documentation
+  checks (`tests/test_docs.py`, `test_doc_facts.py`, `test_doc_claims.py`,
+  `test_doc_sets.py`); a changed test file runs itself.
+- A few cheap tests always run with a selection: the import contracts, the
+  source rules and the vocabulary check; a change under `packages/` also runs
+  the tests that scan the source tree.
+- The whole suite runs when the change touches the dependencies (`pyproject.toml`,
+  `uv.lock`), the image (`Dockerfile`, `.dockerignore`), the root
+  `tests/conftest.py`, `tests/harness.py` or one of the pytest plugins in
+  `tests/support`, a Python file under `packages/` or `tests/` (a test file too) that
+  is deleted or renamed away (its importers cannot be followed any more; also
+  a `conftest.py`), the CI plumbing that makes the selection (the check workflow,
+  `scripts/ci-*`, `tests/ci-*`, the selector itself), a file that no rule places
+  or that no test names, and when the selection holds more than 70% of the test
+  files (the same cost, and simpler).
+
+What it saves, and what it does not. The end-to-end tests in `tests/cli` and
+`tests/server`, which take most of the suite's time, run the programs, and the
+programs import nearly all of the code, so a change deep in the core (kernel,
+storage, ontology layer, services, the CLI framework) selects most of the suite
+and ends as the whole suite, as do the golden files and fixtures of the toy
+ontologies, which most tests use. It saves time on changes to documents, to
+tests only, to the server (`graph_cli_server`, which the tests of the app and
+of the maintenance CLI never import), to the maintenance CLI, and to modules
+at the edges of the app.
+
+Its limits: it reads the code, it does not run it. The pytest plugin that
+checks every envelope against the declared output schemas builds the validators
+of both programs when it first checks one, so every test that checks an
+envelope depends on the schema modules of `graph` and `graph-admin`; the
+selector does not follow that edge (it would turn a change to either program
+into a selection of nearly every end-to-end test), so a break of the schemas of
+the other program shows in that program's own tests. A dependency it cannot see
+(a module name or file path a test builds at run time from variables, a
+`glob` over a whole data tree that the test does not name) can be missed, and
+then a break shows on `main` after the merge, not on the pull request, where
+the whole suite runs. The guard tests catch a syntax error anywhere under `packages/`, and the
+label `ci:full` asks for everything when a change is risky. A test that selection misses
+points to a rule to improve in `scripts/select_tests.py` (with a case in
+`tests/unit/scripts/test_select_tests.py`), not to a test to be marked.
 
 ### Test harness
 

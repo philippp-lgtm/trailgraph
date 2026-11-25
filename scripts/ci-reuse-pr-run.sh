@@ -10,7 +10,13 @@
 #   - the newest `pull_request` run of the same workflow file on that exact head, belonging to this pull request
 #     (into this repository's main; the head commit must belong to that pull request only, always checked,
 #     because a run cannot name its pull request once the head branch is deleted); ALL its runs are completed, successful
-#     first attempts (a green re-run hides a failed attempt and must stay visible to the tag check).
+#     first attempts (a green re-run hides a failed attempt and must stay visible to the tag check),
+#   - when CI_REUSE_REFUSE_PATHS (an ERE) is set: none of the files of the pull request (nor a name one was renamed from)
+#     matches it. A pull request runs the workflow it carries, so a change to the CI itself (the workflow, its scripts,
+#     the image build) was tested by its own, possibly different, CI; main must run such a change itself,
+#   - when CI_REUSE_REQUIRE is set (one `<job name>/<step name>` per line): in that run, each named step succeeded in its
+#     job (jobs of that name: exactly one). A workflow that tests only what a change affects on a pull request names the
+#     step that ran the whole suite, so a push to main reuses only a run that tested everything.
 # Prints the decision and writes `reuse=true|false` to $GITHUB_OUTPUT; the steps after it run `if: steps.<id>.outputs.reuse != 'true'`.
 # Needs: gh and jq; GH_TOKEN with actions: read and pull-requests: read; GITHUB_REPOSITORY, GITHUB_SHA,
 # GITHUB_EVENT_NAME, GITHUB_REF (set by Actions). Only the GitHub API is read, no checkout is needed.
@@ -72,6 +78,33 @@ decide() {
     end // empty' <<<"$runs") \
     || { echo "unreadable run list"; return 1; }
   [ -n "$run" ] || { echo "no usable green first-attempt pull_request run of $wf for head ${head:0:7} of #$n (none, or one of them not a first-attempt success, or too many runs)"; return 1; }
+
+  local refuse=${CI_REUSE_REFUSE_PATHS:-} page=1 files hit count
+  while [ -n "$refuse" ]; do
+    files=$(api "pulls/$n/files?per_page=100&page=$page") || { echo "cannot list the files of #$n"; return 1; }
+    hit=$(jq -r --arg re "$refuse" 'first(.[] | (.filename, (.previous_filename // empty)) | select(test($re))) // empty' <<<"$files" 2>/dev/null) \
+      && count=$(jq 'length' <<<"$files" 2>/dev/null) || { echo "unreadable file list of #$n"; return 1; }
+    [ -z "$hit" ] || { echo "#$n changed $hit, which controls its own CI run: the commit runs in full"; return 1; }
+    [ "$count" -ge 100 ] || break
+    page=$((page + 1))
+    [ "$page" -le 10 ] || { echo "#$n has too many files to check"; return 1; }
+  done
+
+  local need jobs job step ok
+  need=${CI_REUSE_REQUIRE:-}
+  if [ -n "$need" ]; then
+    jobs=$(api "actions/runs/$run/jobs?per_page=100") || { echo "cannot list the jobs of run $run"; return 1; }
+    while IFS= read -r need; do
+      [ -n "$need" ] || continue
+      job=${need%%/*}; step=${need#*/}
+      ok=$(jq -r --arg j "$job" --arg s "$step" '
+        if (.total_count // 0) > (.jobs | length) then empty else
+        [.jobs[] | select(.name == $j)]
+        | if length == 1 and ([.[0].steps[] | select(.name == $s and .conclusion == "success")] | length) == 1 then "ok" else empty end
+        end // empty' <<<"$jobs" 2>/dev/null) || ok=""
+      [ "$ok" = ok ] || { echo "run $run did not succeed in the step '$step' of job '$job' (it tested a selection, or the step is unknown)"; return 1; }
+    done <<<"${CI_REUSE_REQUIRE}"
+  fi
 
   echo "tree identical to PR #$n head ${head:0:7}, validated in run $run; not re-run"
   return 0

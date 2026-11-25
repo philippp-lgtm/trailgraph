@@ -2,6 +2,8 @@
 # graph-server in a container that owns the data (docs/server.md#container).
 #
 #   docker build --target test .   the whole test suite on Linux
+#   docker build --target test --build-arg PYTEST_ARGS="tests/unit/kernel" .   only these tests
+#                                  (pull requests in CI run the tests a change affects, see CONTRIBUTING.md)
 #   docker compose up -d           the server on 127.0.0.1:8470
 
 ARG PYTHON=python:3.13-slim
@@ -31,7 +33,7 @@ RUN python scripts/build_id.py \
  && uv export --frozen --no-dev --no-emit-workspace --no-hashes --no-header \
       --package graph_cli_admin --format requirements-txt -o /dist/constraints.txt
 
-# ---- test: the whole suite on Linux (flock, the fsync path, temp dirs) ----
+# ---- test: the suite on Linux (flock, the fsync path, temp dirs); all of it unless PYTEST_ARGS names tests ----
 FROM ${PYTHON} AS test
 COPY --from=uv /uv /bin/uv
 ENV UV_PYTHON_DOWNLOADS=never UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/venv
@@ -42,7 +44,9 @@ USER tester
 RUN uv sync --frozen --all-packages
 # Eight workers on a four-core sidecar: the suite spends much of its time waiting on child
 # processes, so more workers than cores keep the cores busy (serial: 13.6 min; -n 4: 5.5 min, -n 8: 3.3 min on the same suite outside the image).
-RUN uv run pytest -q -p no:cacheprovider -n 8
+# PYTEST_ARGS: pytest paths, empty for the whole suite. After the sync, so a different selection reuses the venv layer.
+ARG PYTEST_ARGS=""
+RUN uv run pytest -q -p no:cacheprovider -n 8 ${PYTEST_ARGS}
 
 # ---- runtime: wheels only, a user without a login, data in volumes ----
 # pip goes after the install: nothing runs it here, and its vendored packages

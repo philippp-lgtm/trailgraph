@@ -2,8 +2,12 @@ name: check
 
 # The gate on every pull request and every push to main.
 #   lint:  ruff, ruff format, mypy and the import contracts (CONTRIBUTING.md, "Development")
-#   test:  the whole suite on Linux as a non-root user (the Dockerfile's `test` stage), then
-#          the runtime image: it builds, starts, answers /v1/health and its data root verifies
+#   test:  the suite on Linux as a non-root user (the Dockerfile's `test` stage), then
+#          the runtime image: it builds, starts, answers /v1/health and its data root verifies.
+#          A pull request runs the tests its change affects (scripts/select_tests.py, decided by
+#          scripts/ci-select-tests.sh: the selector of the base branch, label ci:full forces everything;
+#          a change to this workflow, its scripts or the Dockerfile controls its own run, so main runs it again);
+#          a push to main and every other event run the whole suite, so it stays the gate of a release
 #   object-store: tests/integration against a real S3-compatible store (the pinned Garage image,
 #          tests/integration/run_garage.sh); the suite of `test` skips it
 # All jobs only need Docker on the runner (no job containers, no `services:`), so they also run on
@@ -17,6 +21,14 @@ on:
 
 permissions:
   contents: read
+
+env:
+  # A push to main reuses a pull request run only when its test job ran the whole suite (scripts/ci-reuse-pr-run.sh):
+  # job/step names that must have succeeded in that run. A run that tested a selection never counts.
+  CI_REUSE_REQUIRE: 'test/Test suite (full)'
+  # A pull request runs the workflow and the scripts it carries (also those that see the event): when it changed any
+  # of these, main runs the change itself.
+  CI_REUSE_REFUSE_PATHS: '^(\.github/workflows/check\.yml|\.github/actions/|scripts/ci-|scripts/smoke_image\.sh|scripts/lint-workflows\.sh|tests/ci-|tests/integration/run_garage\.sh|Dockerfile$|\.dockerignore$)'
 
 # A newer push to the same branch or pull request supersedes a running check.
 concurrency:
@@ -61,14 +73,17 @@ jobs:
 
   test:
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') || 'ubuntu-24.04' }}
-    timeout-minutes: 30
+    # The full suite took 25-29 minutes on hosted runners in late 2026, plus the image, smoke and self-test steps.
+    timeout-minutes: 45
     permissions:           # actions/pull-requests: read only for ci-reuse-pr-run.sh
       contents: read
       actions: read
       pull-requests: read
     steps:
+      # The whole history for a pull request: it selects its tests by the diff to its base commit.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: ${{ github.event_name != 'pull_request' && 1 || 0 }}
           persist-credentials: false
 
       - name: Reuse the pull request run
@@ -80,15 +95,39 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         if: steps.reuse.outputs.reuse != 'true'
 
-      # Not as a container job: those run as root, and the suite checks file permissions.
-      - name: Test suite (Dockerfile target test)
+      # Which tests: all of them, or the ones a pull request's change affects (scripts/ci-select-tests.sh). The
+      # selector that runs is the base branch's version, never the pull request's own.
+      - name: Select the tests
+        id: select
         if: steps.reuse.outputs.reuse != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: scripts/ci-select-tests.sh
+
+      # Not as a container job: those run as root, and the suite checks file permissions. The step that runs the
+      # whole suite is named "Test suite (full)": ci-reuse-pr-run.sh lets a push to main reuse a pull request run only
+      # when that step succeeded in it.
+      - name: Test suite (full)
+        if: steps.reuse.outputs.reuse != 'true' && steps.select.outputs.mode != 'selected'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           target: test
           push: false
           provenance: false
+
+      - name: Test suite (selected)
+        if: steps.reuse.outputs.reuse != 'true' && steps.select.outputs.mode == 'selected'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: test
+          push: false
+          provenance: false
+          build-args: |
+            PYTEST_ARGS=${{ steps.select.outputs.args }}
 
       - name: Runtime image
         if: steps.reuse.outputs.reuse != 'true'
@@ -112,6 +151,10 @@ jobs:
       - name: CI promote self-test
         if: steps.reuse.outputs.reuse != 'true'
         run: tests/ci-promote/run.sh
+
+      - name: CI test selection self-test
+        if: steps.reuse.outputs.reuse != 'true'
+        run: tests/ci-select/run.sh
 
       - name: Lint the workflows
         if: steps.reuse.outputs.reuse != 'true'
