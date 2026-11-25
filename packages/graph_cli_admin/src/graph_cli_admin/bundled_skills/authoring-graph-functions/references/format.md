@@ -138,9 +138,12 @@ there:
 | a literal | its type, never null |
 
 An `OPTIONAL MATCH` never narrows a variable bound before it, since it keeps the rows when its
-pattern fails: such a variable keeps the type, class and nullability it had (one that was a value
-from `WITH ... AS` or `UNWIND` stays untyped), and only a name the clause binds for the first time
-is typed, as nullable. A `MATCH` filters, so it narrows.
+pattern fails: such a variable keeps the class and nullability it had (one that was a value from
+`WITH ... AS` or `UNWIND` stays untyped), and only a name the clause binds for the first time is
+typed, as nullable. A `MATCH` filters, so it narrows. A variable that an `OPTIONAL MATCH` names with
+a label (or a relationship with a type) is not trusted further: its properties, `id` and `alias` (a
+relationship's qualifiers) stay untyped in every later clause, also after `WITH v AS w`; declare
+those columns. `RETURN v` itself keeps the class of the variable's first label.
 
 Everything else is not typed by the query, so declare it when you want it typed: `sum` and
 `avg`, `min` and `max`, `coalesce`, `CASE`, arithmetic, `size()` and the other functions,

@@ -23,9 +23,16 @@ exactly those, and only where the text of the query makes the type certain:
 - literals.
 
 An ``OPTIONAL MATCH`` never narrows a variable bound before it: such a clause keeps its rows, so
-the variable keeps the type, the class and the nullability it had (a name that was a value, from
+the variable keeps the class and the nullability it had (a name that was a value, from
 ``WITH ... AS`` or ``UNWIND``, stays untyped), and only a name it binds for the first time is typed,
 as nullable. A ``MATCH`` filters, so it narrows.
+
+The resolver, though, does narrow a name by every pattern, and what it reports about the name
+afterwards (the classes it may have, the relations of a relationship) derives from that. So a name
+that an ``OPTIONAL MATCH`` narrowed (with a label or a relation type) is marked; the mark follows
+it through later clauses and ``WITH x AS y`` renames, and the fields of a marked node
+(attributes, ``id``, ``alias``, ...) and the qualifiers of a marked relationship stay untyped. The
+entity itself keeps the class of its first label, which the typer tracks on its own.
 
 Everything else stays untyped: ``sum`` and ``avg``, ``coalesce``, ``CASE``, arithmetic,
 relationships, and values that went through ``WITH ... AS`` (a bare ``WITH v`` keeps ``v``). A
@@ -204,6 +211,7 @@ class _Typer:
         self.bound: dict[str, _Bound] = {}
         self.rels: set[str] = set()  # relationship variables of one hop
         self.live: set[str] = set()  # the names in scope now (``scope`` also holds stale ones)
+        self.touched: set[str] = set()  # live names an OPTIONAL MATCH narrowed (see above)
         for clause, introduced in zip(resolved.query.clauses, resolved.introduced, strict=True):
             if isinstance(clause, Match):
                 self.match(clause, introduced)
@@ -223,6 +231,17 @@ class _Typer:
         def settled(name: str | None) -> bool:
             return clause.optional and name in before
 
+        if clause.optional:
+            # only a label or a relation type narrows what the resolver knows about a name
+            self.touched.update(
+                name
+                for part in clause.patterns
+                for name in (
+                    *(n.variable for n in part.nodes if n.labels),
+                    *(r.variable for r in part.rels if r.types),
+                )
+                if name in before
+            )
         for name, info in introduced.items():
             if not settled(name):
                 self.scope[name] = info
@@ -252,8 +271,13 @@ class _Typer:
         kept = dict(self.bound) if projection.star else {}
         rels = set(self.rels) if projection.star else set()
         live = set(self.live) if projection.star else set()
+        touched = set(self.touched) if projection.star else set()
         for item in projection.items:
             live.add(item.name)
+            if isinstance(item.expr, Variable) and item.expr.name in self.touched:
+                touched.add(item.name)
+            else:
+                touched.discard(item.name)
             if isinstance(item.expr, Variable) and item.expr.name == item.name:
                 if item.name in self.bound:
                     kept[item.name] = self.bound[item.name]
@@ -262,7 +286,7 @@ class _Typer:
             else:
                 kept.pop(item.name, None)
                 rels.discard(item.name)
-        self.bound, self.rels, self.live = kept, rels, live
+        self.bound, self.rels, self.live, self.touched = kept, rels, live, touched
 
     def of(self, e: Expr) -> ColumnType | None:
         match e:
@@ -291,7 +315,7 @@ class _Typer:
 
     def field(self, name: str, key: str) -> ColumnType | None:
         info = self.scope.get(name)
-        if info is None or info.kind != "node":
+        if info is None or info.kind != "node" or name in self.touched:
             return None
         bound = self.bound[name]
         system = _SYSTEM_KINDS.get(key)
@@ -311,7 +335,7 @@ class _Typer:
 
     def qualifier(self, name: str, key: str) -> ColumnType | None:
         info = self.scope.get(name)
-        if info is None or info.kind != "rel":
+        if info is None or info.kind != "rel" or name in self.touched:
             return None
         relations = tuple(sorted(self.model.relations)) if info.types is None else info.types
         found = {
