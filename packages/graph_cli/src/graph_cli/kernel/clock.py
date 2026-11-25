@@ -22,6 +22,33 @@ _RFC3339_RE: Final = re.compile(
 _DATE_RE: Final = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
 
 
+# What a machine-readable schema says a date or timestamp looks like. Both are *stricter* than
+# ``parse_date`` and ``parse_timestamp`` (one notation, no lower-case ``t`` or ``z``, no space):
+# every text that matches parses, and every real calendar date matches (a test sweeps both).
+# They avoid look-arounds and back-references, so any regular expression engine runs them.
+_MONTH_DAY: Final = (
+    r"(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])"
+    r"|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)"
+    r"|02-(?:0[1-9]|1\d|2[0-8]))"
+)
+_LEAP_YEAR: Final = r"(?:\d\d(?:0[48]|[2468][048]|[13579][26])|(?:0[48]|[2468][048]|[13579][26])00)"
+_YEARS: Final = r"(?:000[1-9]|00[1-9]\d|0[1-9]\d\d|[1-9]\d{3})"  # 0001 to 9999
+# 0002 to 9998: a timestamp's offset may move it one day, which must stay inside the calendar
+_INNER_YEARS: Final = r"(?:000[2-9]|00[1-9]\d|0[1-9]\d\d|[1-8]\d{3}|9[0-8]\d\d|99[0-8]\d|999[0-8])"
+
+
+def _date_text(years: str) -> str:
+    return rf"(?:{years}-{_MONTH_DAY}|{_LEAP_YEAR}-02-29)"
+
+
+DATE_PATTERN: Final = "^" + _date_text(_YEARS) + "$"
+TIMESTAMP_PATTERN: Final = (
+    "^"
+    + _date_text(_INNER_YEARS)
+    + r"T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$"
+)
+
+
 class Clock(Protocol):
     def now(self) -> datetime:
         """Timezone-aware UTC, truncated to milliseconds."""

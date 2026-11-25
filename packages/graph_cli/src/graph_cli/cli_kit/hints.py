@@ -101,6 +101,11 @@ def _view_search(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} describe search <words> --kind view"
 
 
+def _tools(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """A tool the caller cannot use, or one that changed: list the tools it may use."""
+    return f"{program} describe tools"
+
+
 def _view_same_state(details: Mapping[str, JsonValue], program: str) -> str | None:
     """A stale page cursor: the next page of the state it was issued for."""
     seq = details.get("cursor_seq")
@@ -424,6 +429,8 @@ _BASE: Final[dict[str, Hint | None]] = {
     "view.parameter_invalid": None,
     "view.parameter_type": _lookup_class,
     "view.not_found": _view_search,
+    "tool.not_found": _tools,
+    "tool.hash_mismatch": _tools,
     "view.takes_entity": None,
     "view.takes_no_entity": None,
     "view.class_mismatch": _lookup_class,

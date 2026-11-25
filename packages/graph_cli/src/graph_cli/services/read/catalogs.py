@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from graph_cli.access_control.effective import write_obligations
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext, Decision
 from graph_cli.kernel.errors import GraphCliError
@@ -243,6 +244,17 @@ class ReadCatalogs(ReadAccess):
 
         return self._hidden.of(
             "actions", catalog.compiled_hash, entry.pin.artifact_hash, view, compute
+        )
+
+    def reason_obligations(self, actor: ActorContext, entry: GraphEntry) -> frozenset[str]:
+        """The write actions (``write.create``, ...) the actor's policy demands a reason for
+        (a ``require_reason`` obligation), so that a listing can say which actions need one.
+        Obligations never make an entry not allowed. Records nothing."""
+        found = write_obligations(actor, entry.id, self._policy.current(entry.id))
+        return frozenset(
+            action
+            for action, item in found.items()
+            if isinstance(item, Mapping) and item.get("require_reason") is True
         )
 
     def refuse_not_allowed(
