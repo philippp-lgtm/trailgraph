@@ -70,19 +70,28 @@ suite. A pull request runs the tests its change affects
 test job then has one of two steps, `Test suite (full)` or `Test suite
 (selected)`; the job summary shows which and why, with the selected files.
 The selector that decides is the one of the base commit, never the pull
-request's own, so a change cannot narrow its own selection (a pull request
+request's own, so a change to the selector cannot judge itself (a pull request
 that adds the selector, or finds no selector in its base, runs everything).
+That is all the protection there is against a change that narrows its own
+run: the workflow, `scripts/ci-*` and the `Dockerfile` come from the pull
+request, so review a change to them as a change to the CI. The push to `main`
+is the gate: it runs a change to any of them itself and never reuses the pull
+request run.
 The label `ci:full` on a pull request forces the whole suite; the job reads
-the labels when it runs, so after adding it, re-run the test job.
+the labels when it runs, so after adding it, re-run the test job (a re-run is
+never reused on `main`, which then runs the whole suite again; push a commit
+instead if the merge should reuse the run).
 `tests/ci-select/run.sh` tests the script offline.
 
 A push to `main` that merges a pull request rebased on `main` (its tree equals
 the tree of the pull request head, and that head has a green first-attempt
 `check` run) is not tested again: every job logs "tree identical to PR #n head
 ..., validated in run ...; not re-run" and succeeds. That holds only when the
-pull request run ran the whole suite (its `Test suite (full)` step succeeded);
-a run that tested a selection is never reused, so the commit that a release is
-tagged on has always passed the whole suite. `scripts/ci-reuse-pr-run.sh`
+pull request run ran the whole suite (its `Test suite (full)` step succeeded)
+and the pull request did not change the check workflow, `.github/actions/`,
+`scripts/ci-*`, `tests/ci-*`, the `Dockerfile` or `.dockerignore`; a run that
+tested a selection is never reused, so the commit that a release is tagged on
+has always passed the whole suite. `scripts/ci-reuse-pr-run.sh`
 decides, any doubt or API error means the full run, and
 `tests/ci-reuse/run.sh` tests it offline.
 
@@ -382,7 +391,7 @@ whole suite once before pushing, not after every edit:
 | When | Run |
 | --- | --- |
 | while changing code | the tests of the area: its unit tests and the end-to-end tests of the commands it touches, e.g. `uv run pytest tests/unit/services tests/cli/test_app_read.py`; `--lf` reruns only the tests that failed last time, `--sw` stops at the first failure and starts there next time |
-| the tests the change affects, as in CI | `uv run pytest -n 4 $(python scripts/select_tests.py --base origin/main \| grep -vx full)`: the script prints the test files (the reasons go to standard error) or `full`, which the `grep` turns into the whole suite; it reads the committed, staged and untracked changes against the merge base |
+| the tests the change affects, as in CI | `uv run pytest -n 4 $(uv run python scripts/select_tests.py --base origin/main \| grep -vx full)`: the script prints the test files (the reasons go to standard error) or `full`, which the `grep` turns into the whole suite; it reads the committed, staged and untracked changes against the merge base |
 | a quick check across all layers but the end-to-end tests | `uv run pytest -n 4 --ignore=tests/cli --ignore=tests/server` |
 | before pushing | the whole suite, `uv run pytest -n 4` (or more workers where the machine has the cores) |
 
@@ -403,8 +412,9 @@ to the base:
   (or the launcher) without naming a program counts as running all three.
 - A file that is no module (a golden, a fixture, a document, a skill, an
   example, a file inside a package) selects the tests that name the file or the
-  directory it is in as a string literal, and a document also the tests that
-  back one of its claims (`doc_claim`). A document selects the documentation
+  directory it is in as a string literal (for `docs/` and `skills/` also those
+  that name the root, which is how the freshness check of the generated skill
+  is found), and a document also the tests that back one of its claims (`doc_claim`). A document selects the documentation
   checks (`tests/test_docs.py`, `test_doc_facts.py`, `test_doc_claims.py`,
   `test_doc_sets.py`); a changed test file runs itself.
 - A few cheap tests always run with a selection: the import contracts, the
@@ -413,7 +423,9 @@ to the base:
 - The whole suite runs when the change touches the dependencies (`pyproject.toml`,
   `uv.lock`), the image (`Dockerfile`, `.dockerignore`), the root
   `tests/conftest.py`, `tests/harness.py` or one of the pytest plugins in
-  `tests/support`, the CI plumbing that makes the selection (the check workflow,
+  `tests/support`, a module under `packages/` or `tests/` that is deleted or
+  renamed away (its importers cannot be followed any more; also a
+  `conftest.py`), the CI plumbing that makes the selection (the check workflow,
   `scripts/ci-*`, `tests/ci-*`, the selector itself), a file that no rule places
   or that no test names, and when the selection holds more than 70% of the test
   files (the same cost, and simpler).
@@ -428,7 +440,13 @@ tests only, to the server (`graph_cli_server`, which the tests of the app and
 of the maintenance CLI never import), to the maintenance CLI, and to modules
 at the edges of the app.
 
-Its limits: it reads the code, it does not run it. A dependency it cannot see
+Its limits: it reads the code, it does not run it. The pytest plugin that
+checks every envelope against the declared output schemas builds the validators
+of both programs when it first checks one, so every test that checks an
+envelope depends on the schema modules of `graph` and `graph-admin`; the
+selector does not follow that edge (it would turn a change to either program
+into a selection of nearly every end-to-end test), so a break of the schemas of
+the other program shows in that program's own tests. A dependency it cannot see
 (a module name or file path a test builds at run time from variables, a
 `glob` over a whole data tree that the test does not name) can be missed, and
 then a break shows on `main` after the merge, not on the pull request, where
