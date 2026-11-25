@@ -1285,6 +1285,13 @@ consumer can break on raises `tools_format`: removing or renaming a key, a tool 
 tightening an input schema, or changing what an `on_error` value means. A harness sends only what
 `input_schema` lists, and ignores what it does not know of an answer.
 
+The output schema of a function tool may become more precise within a format: a column that was
+untyped gets a type, or a type becomes exact, because the types of the columns are worked out from
+the stored query by the program that serves the manifest and not stored with the published
+function. The tool `hash` follows such a change, so it can change on a server upgrade without any
+publish; a harness that passes `--expect-hash` then gets `tool.hash_mismatch` and fetches the
+manifest again, as for any other change of the tool.
+
 **Errors.** `errors` maps every code any listed tool may return to its registry facts
 (`category`, `retryable`, `summary`) and `on_error`, the one move a harness makes next:
 
