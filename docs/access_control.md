@@ -795,7 +795,8 @@ every graph whose ontology uses no marking, is answered as before.
   The claim of an installed skill ([Skills](skills.md#per-reader)) goes stale when
   a marking grant or a release changes what the reader sees.
 - **Writes.** A write that names the attribute (`create`, `set`, `set_text`,
-  `unset`, `add`, `remove`, a transition's `attr`, an action's operations)
+  `unset`, `add`, `add_text`, `remove`, `remove_text`, a transition's `attr`, an
+  action's operations)
   is answered exactly like a write of an attribute the type lacks, a guess of
   the current value and a dry run included: `write.invalid` with
   `data.structural.unknown_attribute` when the caller's rights cover attribute

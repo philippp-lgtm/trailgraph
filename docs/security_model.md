@@ -313,7 +313,7 @@ marked or that something happened, with one exception that an author controls
   ([Skills](skills.md#per-reader)). The marking declarations themselves are not
   shown to a caller that lacks them.
 - **Bundled file attributes cannot be marked.** The attributes of
-  `files:File` (title, content, media type, file name, origin) stay visible to whoever
+  `files:File` ([Files](files.md#model)) stay visible to whoever
   sees the type, as do the download route and `file path`; a marked attribute of
   a file subclass is an ordinary attribute and hidden like any other.
 - **Smaller points.** `possible_duplicate` warnings never compare a hidden label

@@ -370,7 +370,7 @@ skills are then only reported: the update renders them again).
    and the user's ([Installing skills](skills.md#installing-skills)).
    Skills edited by hand stay and are reported unless `--force`.
 3. It checks the skills it refreshed; the answer lists the program step
-   (`current`, `updated` or `skipped`), each scope's skills and what
+   (its `action`, such as `current`, `updated` or `skipped`), each scope's skills and what
    changed.
 
 `--check` changes nothing: it compares the builds and dry-runs the skill

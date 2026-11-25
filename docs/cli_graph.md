@@ -307,8 +307,8 @@ reference of the generated skill (`references/changesets.md`).
   first import over as partial scopes in several documents, then one
   complete run. A run that finds nothing to do writes no transaction and no
   audit event.
-- **Answer.** The write result has `reconcile`: the `source` and, per scope,
-  `created`, `updated`, `unchanged`, `moved`, `adopted`, `kept`, `retired`,
+- **Answer.** The write result has `reconcile`: the `source` and, per scope
+  (`type`, `under`, `complete`), `created`, `updated`, `unchanged`, `moved`, `adopted`, `kept`, `retired`,
   `revived` and `retired_keys` (item keys; at most 20 in a write, all of them
   in a dry run). `--dry-run` shows the plan and writes nothing; `--summary`
   keeps the block. A retry that replays a recorded run has no `reconcile`
@@ -500,8 +500,8 @@ page.
 | `view` | `null` without read limits, else a digest of what the caller may see |
 | `items` | one entry per transaction in which the caller sees a change |
 
-An entry has `tx_seq`, `tx_id`, `recorded_at`, `command`, `reason` and
-`own_session` as `history` shows them, `action` (`name`, `hash`) for a write
+An entry has `tx_seq`, `tx_id`, `recorded_at`, `command`, `reason`, `source`
+and `own_session` as `history` shows them, `action` (`name`, `hash`) for a write
 by `do`, `migration` (below), `partial` and `entities`. Each item of `entities` has
 `id`, `type`, `rev` (1 is the creation), `record_status`, `changed` (the names
 of `history`, `null` for a creation) and `targets`: the ids of the entities at
@@ -566,7 +566,7 @@ named entity parts: `edges` or a system field such as `tx_seq` or
 `get REF --affordances` adds an `affordances` object to the answer; without
 the flag the answer is unchanged. It is computed from the current revision
 of the snapshot (with `--as-of`, the snapshot of that point) and nothing is
-stored. It holds `record_status` and four groups, each cut at 40 entries
+stored. It holds `record_status` and the groups below, each cut at 40 entries
 (`<group>_more` counts the rest):
 
 - `transitions`: per lifecycle attribute, the transitions out of the current
@@ -879,11 +879,10 @@ and fields are `term.unknown` with did-you-mean, as for `find`.
 
 The supported clauses, patterns, expressions and functions are listed in
 the generated [`references/query.md`](../skills/graph-cli/references/query.md).
-Everything else (write clauses, `CALL`, `UNION`, named paths, unbounded `*`,
-`shortestPath`, pattern comprehensions, `reduce`, map projections,
-subqueries, `id()`) is `query.unsupported` with the construct and, where one
-exists, the alternative. Variable-length relationships have an upper bound of
-at most five hops. A null argument makes a function null (`coalesce`
+Everything else, such as write clauses, `CALL` or `UNION`, is
+`query.unsupported` with the construct and, where one exists, the
+alternative. A variable-length relationship needs an upper bound within the
+limit the reference names. A null argument makes a function null (`coalesce`
 excepted).
 
 Semantics follow openCypher: three-valued null logic, a missing property is
