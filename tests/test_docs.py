@@ -7,8 +7,10 @@ docs/configuration.md names exactly the keys of `config.toml` with their real de
 tables name exactly the environment variables the code reads, the route tables of
 docs/server.md name exactly the paths of the OpenAPI goldens, every error code, finding code
 and policy action a document names exists, every policy example of
-docs/access_control.md compiles, and every command line of the human documents names a real
-command with options it takes (written in full: `graph-admin graph push`, not `graph push`).
+docs/access_control.md compiles, every command line of the human documents names a real
+command with options it takes (written in full: `graph-admin graph push`, not `graph push`),
+every core concept of docs/overview.md links exactly one home that names it, and the
+big-picture documents name no environment variable, error or finding code or policy action.
 
 Covers the tracked Markdown documentation (the root README, CONTRIBUTING.md, the
 example's README, docs/ and the hand-written admin skills that ship with graph-admin).
@@ -20,8 +22,11 @@ checks that they are in place. The variables the code reads are the string const
 packages' sources that look like `GRAPH_CLI_*`, `AWS_*`, `CLAUDE_*`, `XDG_*` or `UV_*`, less
 `ENV_NOT_DOCUMENTED`; a variable with another prefix is not seen. A code span is taken for
 a code when it has the shape of one and starts like a registered code or action, unless it
-names a file, a module (or a name in one) or is listed in `NOT_CODES`. Each check has a positive
-control, so a broken scanner cannot pass silently.
+names a file, a module (or a name in one) or is listed in `NOT_CODES`. The "Core concepts"
+table of docs/overview.md is the map from the big-picture documents to the technical ones: one
+term per row, one link to its home (a technical document or a skill reference, never a
+big-picture document), and the home names the term in the section the anchor points to. Each
+check has a positive control, so a broken scanner cannot pass silently.
 """
 
 import ast
@@ -124,6 +129,12 @@ POLICY_DOC = DOCS_DIR / "access_control.md"
 YAML_BLOCK = re.compile(r"^( *)```yaml\n(.*?)^\1```", re.MULTILINE | re.DOTALL)
 POLICY_SCHEMA_LINE = "schema: graph_cli.policy/1"
 # The graphs the policy examples name.
+OVERVIEW_DOC = DOCS_DIR / "overview.md"
+BIG_PICTURE = tuple(
+    DOCS_DIR / name for name in ("overview.md", "deployment_options.md", "design_decisions.md")
+)
+LEVELED_HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
+CONCEPT_TERM = re.compile(r"[A-Z][a-z]*(?: [a-z]+)*(?: \([a-z]+\))?")
 EXAMPLE_GRAPHS = {
     "example_graph": GraphId(UUID(int=1)),
     "other_graph": GraphId(UUID(int=2)),
@@ -423,6 +434,75 @@ def _compile_example(source: str) -> str:
     return compiled.layer
 
 
+def _concept_rows(section: str) -> list[tuple[str, list[str]]]:
+    """The rows of a concept table below its header: the term of the first column and the
+    link targets of the whole row."""
+    lines = [line for line in section.splitlines() if line.startswith("|")]
+    assert len(lines) > 2, "no concept table"
+    return [
+        (CELL_SEPARATOR.split(line.strip())[1].strip(), LINK.findall(line)) for line in lines[2:]
+    ]
+
+
+def _home_text(document: str, anchor: str) -> str:
+    """The section of a document under the heading an anchor names, down to the next heading
+    of the same or a higher level; the whole document without an anchor."""
+    text = _prose(document)
+    if not anchor:
+        return text
+    headings = list(LEVELED_HEADING.finditer(text))
+    for i, heading in enumerate(headings):
+        if _slug(heading.group(2)) == anchor:
+            level = len(heading.group(1))
+            ends = [h.start() for h in headings[i + 1 :] if len(h.group(1)) <= level]
+            return text[heading.start() : ends[0] if ends else len(text)]
+    raise AssertionError(f"no heading for #{anchor}")
+
+
+def _names_term(text: str, term: str) -> bool:
+    """The text names the term, in the singular or the plural; a parenthesis in the term
+    (`Relation (edge)`) is left out."""
+    *words, last = re.sub(r"\s*\(.*?\)", "", term).lower().split()
+    tail = f"{last[:-1]}(?:y|ies)" if last.endswith("y") else f"{re.escape(last)}(?:s|es)?"
+    pattern = r"\s+".join([*map(re.escape, words), tail])
+    return re.search(rf"\b{pattern}\b", text.lower()) is not None
+
+
+def _concept_problems(page: Path, section: str) -> list[str]:
+    """Every row of the concept table names one term, once, and links exactly one home: a
+    technical document or a skill reference, never a big-picture document, that names the
+    term (in the section its anchor points to)."""
+    problems: list[str] = []
+    seen: set[str] = set()
+    big_picture = {path.resolve() for path in BIG_PICTURE}
+    for term, links in _concept_rows(section):
+        if not CONCEPT_TERM.fullmatch(term):
+            problems.append(f"{term!r}: not one plain term")
+        if term.lower() in seen:
+            problems.append(f"{term}: twice")
+        seen.add(term.lower())
+        if len(links) != 1:
+            problems.append(f"{term}: {len(links)} links, not one home")
+            continue
+        file_part, _, anchor = links[0].partition("#")
+        dest = (page.parent / file_part).resolve()
+        if re.match(r"[a-z]+:", file_part) or not file_part or dest.suffix != ".md":
+            problems.append(f"{term}: {links[0]} is not a document")
+        elif dest in big_picture:
+            problems.append(f"{term}: {links[0]} is a big-picture document")
+        elif _broken_links(page, f"[home]({links[0]})"):
+            problems.append(f"{term}: {links[0]} does not resolve")
+        elif not _names_term(_home_text(dest.read_text(), anchor), term):
+            problems.append(f"{term}: not named in {links[0]}")
+    return problems
+
+
+def _too_fine(text: str, known: set[str]) -> list[str]:
+    """The code spans of a big-picture document that name an environment variable, an error
+    or finding code or a policy action: details whose home is a technical document."""
+    return [span for span in _spans(text) if ENV_NAME.search(span) or span in known]
+
+
 def _without_overview_paths(text: str) -> str:
     """The text with the first column of a command overview emptied: it holds command paths
     of its program (`graph create` there is `graph-admin graph create`), checked by the
@@ -580,6 +660,19 @@ def test_human_documents_name_real_command_lines() -> None:
     assert found == {}
 
 
+def test_core_concepts_link_their_one_home() -> None:
+    section = _section(OVERVIEW_DOC.read_text(), "Core concepts")
+    assert len(_concept_rows(section)) >= 10
+    assert _concept_problems(OVERVIEW_DOC, section) == []
+
+
+@pytest.mark.parametrize("path", BIG_PICTURE, ids=lambda path: path.name)
+def test_big_picture_documents_name_no_variable_or_code(path: Path) -> None:
+    """Config keys stay allowed: they name an option, and their defaults live in the
+    reference block of docs/configuration.md. Numbers are checked in tests/test_doc_facts.py."""
+    assert _too_fine(path.read_text(), _known_names()) == []
+
+
 def test_positive_controls() -> None:
     page = DOCS_DIR / "README.md"
     text = "[a](missing.md#x) [b](cli_graph.md#no-such-heading) [c](#nowhere)\n"
@@ -728,3 +821,41 @@ def test_positive_controls() -> None:
         "graph push: no such command",
     ]
     assert _without_overview_paths("no overview") == "no overview"
+
+    concepts = (
+        "| Concept | In short |\n| --- | --- |\n"
+        "| Graph | a graph ([Storage](storage.md#manifest)) |\n"
+        "| Graph | again ([Storage](storage.md)) |\n"
+        "| Entity | none |\n"
+        "| Policy | two ([a](access_control.md), [b](audit.md)) |\n"
+        "| Summary | big ([Overview](overview.md#core-concepts)) |\n"
+        "| Lifecycle | wrong home ([Manifest](storage.md#manifest)) |\n"
+        "| Change set | gone ([x](storage.md#no-such-heading)) |\n"
+        "| Web | external ([x](https://example.org)) |\n"
+        "| data root | lower case ([x](storage.md#filestore)) |\n"
+    )
+    assert _concept_rows(concepts)[0] == ("Graph", ["storage.md#manifest"])
+    assert _concept_problems(OVERVIEW_DOC, concepts) == [
+        "Graph: twice",
+        "Entity: 0 links, not one home",
+        "Policy: 2 links, not one home",
+        "Summary: overview.md#core-concepts is a big-picture document",
+        "Lifecycle: not named in storage.md#manifest",
+        "Change set: storage.md#no-such-heading does not resolve",
+        "Web: https://example.org is not a document",
+        "'data root': not one plain term",
+    ]
+    nested = "# D\n\n## A\na\n### B\nb\n## C\nc\n```\n# E\n```\n"
+    assert _home_text(nested, "a") == "## A\na\n### B\nb\n"
+    assert _home_text(nested, "b") == "### B\nb\n"
+    assert _home_text(nested, "c") == "## C\nc\n\n"
+    assert _home_text(nested, "") == _prose(nested)
+    assert _names_term("The entities and the data roots.", "Entity")
+    assert _names_term("A relation links two entities.", "Relation (edge)")
+    assert _names_term("an audit\ntrail", "Audit trail")
+    assert not _names_term("entitlement", "Entity")
+    assert _too_fine("`GRAPH_CLI_ROOT` `config.invalid` `write.create` `[files] store`", known) == [
+        "GRAPH_CLI_ROOT",
+        "config.invalid",
+        "write.create",
+    ]

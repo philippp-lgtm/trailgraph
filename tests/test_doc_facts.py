@@ -18,6 +18,8 @@
 - A format number (`format 2`, `formats 1 and 2`) must name a format of the manifest or the
   index the code reads; a released format keeps its number, so nothing more can go stale.
 - Every fact and every exemption must still occur, so the tables cannot rot.
+- The big-picture documents (`BIG_PICTURE`) hold no number in their prose at all, and no
+  fact or exemption names them: their details are links to the technical documents.
 
 Each scanner has a positive control, so a broken scan cannot pass silently.
 """
@@ -148,6 +150,8 @@ def _shortest(pattern: re.Pattern[str]) -> int:
 # docs/ (CONTRIBUTING.md describes the development process, the admin skills have their own
 # checks).
 SCANNED = ("README.md", *sorted(f"docs/{p.name}" for p in (REPO_ROOT / "docs").glob("*.md")))
+# The big-picture documents explain and link; they hold no number at all.
+BIG_PICTURE = ("docs/overview.md", "docs/deployment_options.md", "docs/design_decisions.md")
 
 FACTS: tuple[Fact, ...] = (
     # cli_graph.md
@@ -575,6 +579,15 @@ def test_exemptions_occur() -> None:
         if re.sub(r"\s+", " ", phrase) not in _prose(_source(doc))
     ]
     assert not missing, missing
+
+
+@pytest.mark.parametrize("doc", BIG_PICTURE)
+def test_big_picture_documents_hold_no_number(doc: str) -> None:
+    """They explain and link (CONTRIBUTING.md "Documentation"); a number belongs in the
+    technical document that is its home, where a fact checks it. Exit codes and format
+    numbers count too."""
+    assert [number for _, number in _numbers(_prose(_source(doc)))] == []
+    assert _phrases(doc) == []
 
 
 def test_facts_and_exemptions_name_scanned_documents() -> None:

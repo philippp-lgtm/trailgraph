@@ -3,7 +3,8 @@
 `graph_cli.audit` builds and verifies `graph_cli.audit/1` events. It is
 pure: storage appends and chains the events, audit never touches files.
 Each graph has its own stream; installation-wide events go to the
-installation stream.
+installation stream. Together the chained streams are the audit trail of an
+installation.
 
 | Module | Content |
 | --- | --- |
