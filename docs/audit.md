@@ -99,6 +99,7 @@ fails:
 
 | Key | Content |
 | --- | --- |
+| `schema` | `graph_cli.access/1` |
 | `ts` | when the command finished |
 | `command` | the command, e.g. `get`, `find`, `create`, `start` (which `usage report` counts as the first call of a session) |
 | `actor` | the actor, as in audit events |
@@ -107,6 +108,7 @@ fails:
 | `output` | `{format: json\|text, bytes, spilled_bytes}`: the bytes the caller received on stdout, and the size of an answer that went to a file instead (null otherwise) |
 | `timing_us` | `{total, phases}`: how long the command took, in microseconds, and where the time went |
 | `function` | only for `run`: `{name, hash}` of the function that ran (`hash` is `null` when the run failed, except for `function.stale`); never a parameter value |
+| `view` | only for `view`: `{name, hash}` of the published view that ran (the generated card has no hash and is not logged) |
 | `action` | only for `do`: `{name, hash}` of the action that ran (`hash` is `null` when it failed, except for `action.stale`); never a parameter value |
 | `query` | only for `query` (also with `--explain`; a parse or resolve error has none): `{shape_hash, shape, covered_by}`. `shape` is the canonical [query shape](#query-shape), or `null` above 4 KiB; `covered_by` lists at most three `{name, list_fit}`, the published functions that cover the query and that the caller may run |
 
@@ -127,6 +129,7 @@ claimed, so the phases add up to `total`:
 | `authorize` | policy decisions (and loading the policy) |
 | `query` | a read answering from the state: `get`, `history`, `find`, `lookup`, `neighbors` |
 | `parse` | `query` reading the Cypher text |
+| `plan` | a write that reconciles a source planning the ops from the desired state |
 | `resolve` | a write resolving its references; `query` resolving names, fields and parameters against the model |
 | `shape` | `query` computing its [shape](#query-shape) and finding the published functions that cover it |
 | `execute` | `query` matching patterns and computing the rows |

@@ -132,9 +132,9 @@ has
 signal_reads = true
 ```
 
-Then `graph get`, `history`, `find`, `lookup`, `search`, `neighbors`,
-`query`, `run`, `file path` and `file check` tell every running view what they
-returned, as Unix datagrams to sockets in the state directory. Nothing
+Then the read commands that return entities or edges (such as `graph get`,
+`graph find`, `graph view`, `graph query`, `graph run` and `graph file path`)
+tell every running view what they returned, as Unix datagrams to sockets in the state directory. Nothing
 is stored, a read never fails or waits because of it, and without a
 running view nothing is sent. A signal names the command, the reader
 (the agent if the harness names one, else the principal, as for writes)

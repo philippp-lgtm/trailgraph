@@ -14,8 +14,9 @@ returned as it came (``Result.forwarded``):
   server answers into ``OUT/graph-<graph>/``;
 - ``graph pull`` writes the files the server answers into ``DIR`` (the
   same checks as locally, ``services_admin.sources``);
-- ``graph push`` uploads only what push reads of ``DIR`` (the base file,
-  ``ontology/``, ``skill/``) and records the answered base in ``DIR``;
+- ``graph push`` uploads only what push reads of ``DIR`` (``sources.PARTS``: the base
+  file, ``ontology/``, ``skill/``, ``functions/``, ``actions/``, ``views/``) and records
+  the answered base in ``DIR``;
 - ``files move`` is driven by the client as short requests (``remote_move``): a dry run,
   copy passes, then the switch.
 
