@@ -33,8 +33,9 @@ MIN_INTEGER: Final = -(2**63)
 MAX_INTEGER: Final = 2**63 - 1
 # A decimal is shown in plain notation (the grammar of a decimal attribute and parameter) while that
 # text stays this long; one that would be longer (``1e999999999`` is a valid literal) keeps the
-# exponent notation instead of becoming a text of that many digits. Every stored decimal is far
-# below the bound, so what an attribute holds always comes back in plain notation.
+# exponent notation instead of becoming a text of that many digits. A decimal up to the bound is
+# shown in plain notation; a longer one keeps the exponent form, which the output schema of a
+# decimal column accepts and a decimal parameter does not.
 MAX_PLAIN_CHARS: Final = 4000
 
 

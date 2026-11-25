@@ -1289,7 +1289,7 @@ are what `run` shows:
 | --- | --- |
 | `string` | a string |
 | `integer`, `boolean` | an integer, a boolean |
-| `decimal` | a string in plain notation (`0.0000001`, `1000`: the grammar of a decimal parameter, so the cell can be passed back); every value an attribute can hold is shown this way, and only a computed value whose plain text would run to thousands of characters keeps the exponent notation, which the schema also accepts |
+| `decimal` | a string in plain notation (`0.0000001`, `1000`: the grammar of a decimal parameter, so the cell can be passed back); a value is shown this way unless its plain text would run to thousands of characters; then it keeps the exponent notation, which the schema accepts but a decimal parameter does not |
 | `date`, `datetime` | a string with `format` `date` or `date-time` |
 | `enum` | a string, `enum` the values of the enum as you see them |
 | `ref` | a string with the grammar of a reference, the class in `x-graph-cli: {class}` when the column has one; it can go into a `ref` parameter |
