@@ -73,6 +73,29 @@ examples:
 """
 
 
+DECIMALS = """\
+schema: graph_cli.function/1
+name: decimal_cells
+summary: Decimal values written in several ways.
+use_when: Checking how decimals are shown.
+query: |
+  MATCH (l:Location)
+  RETURN 1e3 AS thousand, 0.0000001 AS tiny, 1e-7 * 1 AS product, -0.0 AS negative_zero,
+    1.50 AS kept_zeros, 1e999999999 AS huge, 0.1 + 0.2 AS sum
+  LIMIT 1
+returns:
+  - {column: thousand, summary: An exponent literal.}
+  - {column: tiny, summary: A small literal.}
+  - {column: product, summary: A small product., type: decimal}
+  - {column: negative_zero, summary: Negative zero., type: decimal}
+  - {column: kept_zeros, summary: Trailing zeros.}
+  - {column: huge, summary: A literal with a huge exponent.}
+  - {column: sum, summary: A sum., type: decimal}
+examples:
+  - question: How are decimals shown?
+"""
+
+
 def documents() -> dict[str, Any]:
     ops: list[dict[str, Any]] = [
         {
@@ -109,6 +132,7 @@ def root(run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path) -> Pa
     shutil.copytree(FIXTURES / "functions" / "inventory" / "valid", folder)
     (folder / "item_cards.yaml").write_text(ITEM_CARDS)
     (folder / "condition_counts.yaml").write_text(CONDITION_COUNTS)
+    (folder / "decimal_cells.yaml").write_text(DECIMALS)
     published = admin(run_cli, "graph", "functions", "publish", "example_graph", str(folder))
     assert published.code == 0, published.envelope
     assert published.warning_codes == ["admin.function_single_ref"]  # every column is typed
@@ -265,3 +289,21 @@ def test_the_describe_of_the_function_lists_the_same_types(run_cli: CliRunner, r
     assert "  names: list of string (not null)  Their names." in text.stdout
     assert "  units: integer  Their units." in text.stdout
     assert "  cards: list of entity inv:Item (not null)  The items." in text.stdout
+
+
+def test_decimals_are_shown_in_plain_notation_and_validate(run_cli: CliRunner, root: Path) -> None:
+    tool = manifest(run_cli)["run_decimal_cells"]
+    data = answers(run_cli, tool)
+    (row,) = data["items"]
+    assert row == {
+        "thousand": "1000",
+        "tiny": "0.0000001",
+        "product": "0.0000001",
+        "negative_zero": "0.0",
+        "kept_zeros": "1.50",
+        "huge": "1E+999999999",  # beyond the bound: not a text of a billion digits
+        "sum": "0.3",
+    }
+    assert validator(tool).is_valid(data)
+    ran = app(run_cli, "run", "decimal_cells", env=ENV)
+    assert ran.data["items"] == [row]

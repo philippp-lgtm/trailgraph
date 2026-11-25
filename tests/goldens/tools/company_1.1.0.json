@@ -9,7 +9,7 @@
     "version": "1.1.0"
   },
   "tools_format": 1,
-  "version": "sha256:52f24a9a9aac986bf4cdf3ce1260401f6108a955f99e87bdbd58b85a20cc2647",
+  "version": "sha256:f1e1df5d48a6190ff4304605019360c6d75cd7462b97814bf901f1d86a289553",
   "tools": [
     {
       "name": "run_employer_of",
@@ -1294,7 +1294,7 @@
                   "anyOf": [
                     {
                       "type": "string",
-                      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+                      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?$"
                     },
                     {
                       "type": "null"
@@ -1380,7 +1380,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "legal",
-      "hash": "sha256:78bbfd5ae4facc023a4feca8e15a66f007c6450af09bb4063a9e1e178d421df7",
+      "hash": "sha256:c0edfa3fe1f89c7e302f99cc60d9c6ce88fef5078f9b6c70a1d321a1ef9dc33b",
       "entry_hash": "sha256:48e9019a37c1adb95427b61ff8f9bf176b49aac147db0dedefd41f176988df03",
       "errors": [
         "access.denied",
