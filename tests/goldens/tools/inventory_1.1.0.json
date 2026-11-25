@@ -9,7 +9,7 @@
     "version": "1.0.0"
   },
   "tools_format": 1,
-  "version": "sha256:0be162ac3898ed39f4946cad0f4564b9a9893e89a05bb9a578658cf7cc4433db",
+  "version": "sha256:a39a9de8f3b5cdea35809e751d3828afb9b65e106db071be8930557200035e5d",
   "tools": [
     {
       "name": "run_items_by_condition",
@@ -2335,7 +2335,7 @@
                           "quantity"
                         ]
                       },
-                      "description": "In an entity view a long text cell is cut and ends in an ellipsis, so a cell of a type with a pattern, format or enum may not match it."
+                      "description": "In an entity view a long text cell is cut and ends in an ellipsis, so a decimal cell may not match its pattern."
                     },
                     "more": {
                       "type": "integer"
@@ -2453,7 +2453,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "inventory",
-      "hash": "sha256:06c973d4c046a4195c1de60c8040d574b28484a9c0dee8ed86c0b542a120d4f7",
+      "hash": "sha256:436dd5260380ab190102255b103037c171d14d243138f7b6b99106e59780f870",
       "entry_hash": "sha256:bd9ea56ec4f7a9b11c4817696118da117311f0c16c38141f12688d31d5c4bf5e",
       "errors": [
         "access.denied",

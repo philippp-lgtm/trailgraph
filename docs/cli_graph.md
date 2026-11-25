@@ -1296,12 +1296,15 @@ by its `kind` and `id`: the sections of the generated card and of an authored vi
 `list`), a `rows` section, the form a `rows` section takes when its function gave an `error` instead
 of rows, and the stub `{kind, id, cut: true}` that a section shrinks to when an entity view is
 trimmed to its limit. The rows of a `rows` section have one property per column of the function the
-section runs, typed like the columns of the function's own tool (Typed columns, below);
-a function you cannot use leaves them any object. An entity view cuts long text cells and ends them
-in an ellipsis (`cells_cut` counts them), so there a cell keeps the type of its text but no
-`pattern`, `format` or `enum`; a set view cuts nothing and keeps them. The `view` command's own
-schema (`describe commands --output-schemas`) has the same sections for every view, with the cells
-of a `rows` section any value.
+section runs, typed like the columns of the function's own tool (Typed columns, below): a view is
+a tool only when you may run the functions of its `rows` sections. An entity view cuts long text
+cells and ends them in an ellipsis (`cells_cut` counts them); no enum value, reference or date is
+long enough to be cut, so only a decimal cell loses its `pattern` there, and a set view cuts nothing
+and keeps it. The `hash` of a view tool (and its schema) changes when the column types of a function
+its sections run change, by a functions publish or a program upgrade as for a function tool, so a
+harness that passes `--expect-hash` is told to fetch the manifest again for a view as well. The
+`view` command's own schema (`describe commands --output-schemas`) has the same sections for every
+view, with the cells of a `rows` section any value.
 
 **Paging a set view.** A set view tool pages by cursor (`annotations.paging` is `cursor`). The first
 call leaves `_cursor` out. A page that does not reach the end has `more: true` and `next`: pass that

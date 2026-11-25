@@ -109,7 +109,10 @@ def manifest(run_cli: CliRunner) -> dict[str, Any]:
 
 def schema_of(run_cli: CliRunner, view: str) -> Draft202012Validator:
     tools = {t["name"]: t for t in manifest(run_cli)["tools"]}
-    return Draft202012Validator(closed(tools[f"view_{view}"]["output_schema"]))
+    return Draft202012Validator(
+        closed(tools[f"view_{view}"]["output_schema"]),
+        format_checker=Draft202012Validator.FORMAT_CHECKER,
+    )
 
 
 def wrong(validator: Draft202012Validator, document: Any) -> list[str]:

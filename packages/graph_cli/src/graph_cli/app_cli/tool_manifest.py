@@ -30,7 +30,7 @@ from graph_cli.app_cli.commands.read.entity import VIEW_ERRORS
 from graph_cli.app_cli.commands.read.find import LOOKUP_ERRORS, LOOKUP_PAGE_OUTPUT
 from graph_cli.app_cli.commands.read.query import RUN_ERRORS, RUN_OUTPUT
 from graph_cli.app_cli.output_schemas import standalone
-from graph_cli.app_cli.view_schemas import SectionShape, cut_tolerant, view_schema
+from graph_cli.app_cli.view_schemas import SectionShape, view_schema
 from graph_cli.cli_kit.output_schemas import ref
 from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_value
 from graph_cli.kernel.errors import GraphCliError
@@ -89,13 +89,16 @@ NOT_FOR_LOOKUP: Final = frozenset(
 )
 
 
-def row_schema(columns: Sequence[ToolColumn], model: CompiledModel) -> JsonObject:
+def row_schema(
+    columns: Sequence[ToolColumn], model: CompiledModel, *, cut: bool = False
+) -> JsonObject:
     """One row of a function's result: a property per column, typed against the caller's
     ``model`` where the function's types allow (``app_cli.column_schemas``), else any JSON value
-    marked ``x-graph-cli: {typed: false}``."""
+    marked ``x-graph-cli: {typed: false}``. ``cut``: an entity view shows the row, which may cut
+    its long text cells."""
     return {
         "type": "object",
-        "properties": {c.name: column_schema(c.type, c.summary, model) for c in columns},
+        "properties": {c.name: column_schema(c.type, c.summary, model, cut=cut) for c in columns},
         "required": [c.name for c in columns],
     }
 
@@ -132,15 +135,13 @@ def action_output() -> JsonObject:
 def view_output(head: ToolHead, model: CompiledModel) -> JsonObject:
     """What a call of a view answers: the view model with the sections the view declares, each by
     its id (``app_cli.view_schemas``). The rows of a ``rows`` section are typed by the columns of
-    its function as the caller sees them; an entity view cuts long text cells, so there the
-    cells lose the patterns, formats and enum values a cut text cannot meet."""
+    its function as the caller sees them; an entity view cuts long text cells, so there a decimal
+    cell loses its pattern (``column_schemas.column_schema``)."""
     sections = []
     for section in head.sections:
         row = None
         if section.columns is not None:
-            row = row_schema(section.columns, model)
-            if head.entity:
-                row = cut_tolerant(row)
+            row = row_schema(section.columns, model, cut=head.entity)
         sections.append(SectionShape(section.kind, section.id, section.function, row))
     assert head.entry is not None  # only the lookup tool has no entry
     return standalone(view_schema(head.entry, sections, entity=head.entity))

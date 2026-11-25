@@ -38,24 +38,29 @@ def untyped(summary: str) -> JsonObject:
     return {"description": summary, EXTENSION: {"typed": False}}
 
 
-def column_schema(column: ColumnType | None, summary: str, model: CompiledModel) -> JsonObject:
-    """The schema of the cells of a column, ``nullable`` ones as ``anyOf [T, null]``."""
+def column_schema(
+    column: ColumnType | None, summary: str, model: CompiledModel, *, cut: bool = False
+) -> JsonObject:
+    """The schema of the cells of a column, ``nullable`` ones as ``anyOf [T, null]``. ``cut``: the
+    cells may have been cut by an entity view (``kinetic.card.ROWS_CELL_CHARS``), which only a
+    text that can be longer than the cut suffers from: a decimal loses its pattern; an enum value,
+    a reference and a date are never that long and keep theirs."""
     if column is None:
         return untyped(summary)
-    value = _value(column, model)
+    value = _value(column, model, cut)
     schema: JsonObject = {"type": "array", "items": value} if column.many else value
     if column.nullable:
         return {"anyOf": [schema, NULL], "description": summary}
     return {**schema, "description": summary}
 
 
-def _value(column: ColumnType, model: CompiledModel) -> JsonObject:
+def _value(column: ColumnType, model: CompiledModel, cut: bool = False) -> JsonObject:
     """The schema of one cell value, without the list around a ``many`` column."""
     kind = column.kind
     if kind in _SIMPLE:
         return {"type": _SIMPLE[kind]}
     if kind == "decimal":
-        return {"type": "string", "pattern": _DECIMAL_CELL}
+        return {"type": "string"} if cut else {"type": "string", "pattern": _DECIMAL_CELL}
     if kind == "date":
         return {"type": "string", "format": "date"}
     if kind == "datetime":
@@ -78,11 +83,11 @@ def _value(column: ColumnType, model: CompiledModel) -> JsonObject:
             "required": ["lang", "value"],
         }
     if kind == "entity":
-        return entity_schema(column.of_class, model)
+        return entity_schema(column.of_class, model, cut=cut)
     return {}
 
 
-def entity_schema(of_class: str | None, model: CompiledModel) -> JsonObject:
+def entity_schema(of_class: str | None, model: CompiledModel, *, cut: bool = False) -> JsonObject:
     """The lean entity object a ``RETURN v`` shows: the always shown keys, ``attrs`` typed by the
     attributes of the class the caller sees (an entity of a subclass may carry more, so the object
     stays open) and ``edges``. The class is the label of the pattern (``x-graph-cli.class``)."""
@@ -93,7 +98,7 @@ def entity_schema(of_class: str | None, model: CompiledModel) -> JsonObject:
         attrs: dict[str, JsonValue] = {}
         for name, attribute in sorted(cls.attributes.items()):
             found = attribute_type(model, attribute)
-            one = _value(ColumnType(found.kind, enum=found.enum), model)
+            one = _value(ColumnType(found.kind, enum=found.enum), model, cut)
             attrs[name] = {"type": "array", "items": one} if found.many else one
         properties["attrs"] = {"type": "object", "properties": attrs}
     schema: dict[str, JsonValue] = {

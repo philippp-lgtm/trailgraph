@@ -9,7 +9,7 @@
     "version": "1.1.0"
   },
   "tools_format": 1,
-  "version": "sha256:2503e96883d0048ed19969197cc1e15ea42ccc28c1d23e67362d736392de8e8a",
+  "version": "sha256:d37559a7b7c070808fa40f2e3b98909be5e4acfe1e7a8796aca2c0ac9ce5dec6",
   "tools": [
     {
       "name": "run_employer_of",
@@ -2956,7 +2956,7 @@
                           "unit"
                         ]
                       },
-                      "description": "In an entity view a long text cell is cut and ends in an ellipsis, so a cell of a type with a pattern, format or enum may not match it."
+                      "description": "In an entity view a long text cell is cut and ends in an ellipsis, so a decimal cell may not match its pattern."
                     },
                     "more": {
                       "type": "integer"
@@ -3074,7 +3074,7 @@
       "replaced_by": "view_unit_overview",
       "featured": false,
       "module": "organization",
-      "hash": "sha256:b02fbde720cd376c351a9c4c7e4f5582dd8823d62503464a0b035bb68a87478d",
+      "hash": "sha256:d68c891d1caea3fdf8ef45592614786c00c5e0633cdc8d1e3a37b587321fca2d",
       "entry_hash": "sha256:1f35aed569583a5cda9b2b935eba147ccc03de5787ba9263491f49c3475fd0a7",
       "errors": [
         "access.denied",
@@ -6083,7 +6083,7 @@
                           "unit"
                         ]
                       },
-                      "description": "In an entity view a long text cell is cut and ends in an ellipsis, so a cell of a type with a pattern, format or enum may not match it."
+                      "description": "In an entity view a long text cell is cut and ends in an ellipsis, so a decimal cell may not match its pattern."
                     },
                     "more": {
                       "type": "integer"
@@ -6469,7 +6469,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "organization",
-      "hash": "sha256:5e757035752f83e5375bd00a94b1fb217724950dcb4f7f3dd5656c62b186c444",
+      "hash": "sha256:14dee9127a255dda9f69639be798fc606d7b2859a830fe10451769de77b6320f",
       "entry_hash": "sha256:93899e2a71372c70e4e98fe5dc9312adb4fe8f1773580739c404c77823b162d7",
       "errors": [
         "access.denied",
