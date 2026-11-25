@@ -289,6 +289,17 @@ the edge, `fields` (the attribute values as `get` shows them), `relations` (grou
 - **`--as-of`.** The sections read the state of that point (it needs `read.history`); a `rows`
   section answers alone with `view.section_unavailable`, because a function reads the current state.
 
+### What an agent harness gets of a view
+
+`graph describe tools` lists each view you may use as a tool with the JSON Schema of its answer, built
+from the view's own sections: one entry per declared section (by `kind` and `id`) in each shape it can
+take, so the sections you declare are the contract. The rows of a `rows` section are typed by the
+columns of its function, so declare `type` on the function's `returns` columns where the query alone
+does not make one certain (see `authoring-graph-functions`); an untyped column is any value there. A
+view is a tool only for a caller who may run the functions of its `rows` sections, so its rows are
+typed like those functions' tools. An entity view cuts long text cells; only a decimal cell can be
+long enough, so its schema there names no pattern; set views cut nothing.
+
 ### Bounds
 
 | Bound | Value |

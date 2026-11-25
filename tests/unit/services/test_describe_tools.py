@@ -29,7 +29,7 @@ def heads(scene: Scene, obligations: frozenset[str] = frozenset()) -> dict[str, 
     found = [
         *(dt.function_head(e, scene.model, scene.functions) for e in scene.functions),
         *(dt.action_head(e, scene.model, scene.actions, obligations) for e in scene.actions),
-        *(dt.view_head(e, scene.model, scene.views) for e in scene.views),
+        *(dt.view_head(e, scene.model, scene.views, scene.functions) for e in scene.views),
     ]
     dt.unique_names(found)
     return {h.name: h for h in found}

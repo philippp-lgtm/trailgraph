@@ -133,13 +133,15 @@ def inventory(more_functions: dict[str, str] | None = None) -> Catalog:
     )
 
 
-def staff(more_functions: dict[str, str] | None = None) -> Catalog:
+def staff(
+    more_functions: dict[str, str] | None = None, more_views: dict[str, str] | None = None
+) -> Catalog:
     """The ``staff`` toy graph: its personal attributes carry markings; its functions and actions
-    are the ones of ``support.markings`` (no views), and the function files ``more_functions`` a
-    test adds."""
+    are the ones of ``support.markings``, it has no views of its own, and the function and view
+    files ``more_functions`` and ``more_views`` (file name -> content) a test adds."""
     return _compiled(
         compiled_model("staff"),
         {**FUNCTION_SOURCES, **(more_functions or {})},
         ACTION_SOURCES,
-        {},
+        dict(more_views or {}),
     )

@@ -9,7 +9,7 @@
     "version": "1.1.0"
   },
   "tools_format": 1,
-  "version": "sha256:f1e1df5d48a6190ff4304605019360c6d75cd7462b97814bf901f1d86a289553",
+  "version": "sha256:a76e2cae591fe3256654914517e05d78c86afcb4f80113da511a390e4a535c59",
   "tools": [
     {
       "name": "run_employer_of",
@@ -2740,10 +2740,10 @@
             "type": "object",
             "properties": {
               "name": {
-                "type": "string"
+                "const": "legacy_unit_overview"
               },
               "origin": {
-                "type": "string"
+                "const": "authored"
               },
               "hash": {
                 "type": "string"
@@ -2751,26 +2751,9 @@
             },
             "required": [
               "name",
-              "origin"
+              "origin",
+              "hash"
             ]
-          },
-          "sections": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "kind"
-              ],
-              "additionalProperties": {}
-            }
-          },
-          "bytes": {
-            "type": "integer"
           },
           "entity": {
             "type": "object",
@@ -2813,24 +2796,270 @@
               "record_status"
             ]
           },
-          "cut": {
-            "type": "boolean"
+          "sections": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "fields"
+                    },
+                    "id": {
+                      "const": "fields"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "value": {},
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "label",
+                              "alt_label",
+                              "state"
+                            ]
+                          },
+                          "chars": {
+                            "type": "integer"
+                          },
+                          "more": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "value"
+                        ]
+                      }
+                    },
+                    "other": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "other_more": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "fields"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "fields"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "rows"
+                    },
+                    "id": {
+                      "const": "rows"
+                    },
+                    "function": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "const": "members_of_unit"
+                        },
+                        "hash": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ]
+                    },
+                    "columns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "person": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Name of the holder."
+                          },
+                          "position": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Title of the position held."
+                          },
+                          "unit": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The unit the position belongs to, the given one or a unit below it."
+                          }
+                        },
+                        "required": [
+                          "person",
+                          "position",
+                          "unit"
+                        ]
+                      },
+                      "description": "In an entity view a long text cell is cut and ends in an ellipsis, so a decimal cell may not match its pattern."
+                    },
+                    "more": {
+                      "type": "integer"
+                    },
+                    "cells_cut": {
+                      "type": "integer"
+                    },
+                    "from": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "function",
+                    "columns",
+                    "count"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "rows"
+                    },
+                    "id": {
+                      "const": "rows"
+                    },
+                    "function": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "const": "members_of_unit"
+                        },
+                        "hash": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "function",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "rows"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "rows"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
+                }
+              ]
+            }
+          },
+          "bytes": {
+            "type": "integer"
           },
           "sections_cut": {
             "type": "integer"
           },
-          "next": {
-            "type": "string"
-          },
-          "more": {
-            "type": "boolean"
-          },
-          "oversize": {
+          "cut": {
             "type": "boolean"
           }
         },
         "required": [
           "view",
+          "entity",
           "sections",
           "bytes"
         ]
@@ -2845,7 +3074,7 @@
       "replaced_by": "view_unit_overview",
       "featured": false,
       "module": "organization",
-      "hash": "sha256:ad4f04c59b5b2978b8e5cdd719ae0cdda480ed4850f185f5d6e6d09346018cd0",
+      "hash": "sha256:188f80b0db85e57b39bdcdbdad3438982a754a3bb6b3479f7254ec7acdd09c8f",
       "entry_hash": "sha256:1f35aed569583a5cda9b2b935eba147ccc03de5787ba9263491f49c3475fd0a7",
       "errors": [
         "access.denied",
@@ -2927,10 +3156,10 @@
             "type": "object",
             "properties": {
               "name": {
-                "type": "string"
+                "const": "members_report"
               },
               "origin": {
-                "type": "string"
+                "const": "authored"
               },
               "hash": {
                 "type": "string"
@@ -2938,76 +3167,190 @@
             },
             "required": [
               "name",
-              "origin"
+              "origin",
+              "hash"
             ]
           },
           "sections": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "type": "string"
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "rows"
+                    },
+                    "id": {
+                      "const": "rows"
+                    },
+                    "function": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "const": "members_of_unit"
+                        },
+                        "hash": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ]
+                    },
+                    "columns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "person": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Name of the holder."
+                          },
+                          "position": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Title of the position held."
+                          },
+                          "unit": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The unit the position belongs to, the given one or a unit below it."
+                          }
+                        },
+                        "required": [
+                          "person",
+                          "position",
+                          "unit"
+                        ]
+                      }
+                    },
+                    "more": {
+                      "type": "integer"
+                    },
+                    "cells_cut": {
+                      "type": "integer"
+                    },
+                    "from": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "function",
+                    "columns",
+                    "count"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "rows"
+                    },
+                    "id": {
+                      "const": "rows"
+                    },
+                    "function": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "const": "members_of_unit"
+                        },
+                        "hash": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "function",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "rows"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "rows"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
                 }
-              },
-              "required": [
-                "kind"
-              ],
-              "additionalProperties": {}
+              ]
             }
           },
           "bytes": {
             "type": "integer"
           },
-          "entity": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string"
-              },
-              "rev": {
-                "type": "integer"
-              },
-              "record_status": {
-                "type": "string"
-              },
-              "alias": {
-                "type": "string"
-              },
-              "label": {
-                "type": "string"
-              },
-              "superseded_by": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "retracted_by": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            },
-            "required": [
-              "id",
-              "type",
-              "rev",
-              "record_status"
-            ]
-          },
-          "cut": {
-            "type": "boolean"
-          },
-          "sections_cut": {
-            "type": "integer"
-          },
           "next": {
-            "type": "string"
+            "type": "string",
+            "description": "Present when more is true: pass it as _cursor, with the same other arguments, to get the next page. view.cursor_stale means a write landed in between: start again from the first page."
           },
           "more": {
             "type": "boolean"
@@ -3032,7 +3375,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "organization",
-      "hash": "sha256:73bf6c02d57b34f1432bcd86508f69cb1e5381e4acd0e0b29c756c4e0fcd78c5",
+      "hash": "sha256:ca5c3fdb35c9d0568868e944876477442e5b1548cd298e38f5a89a3826f403df",
       "entry_hash": "sha256:5ece4734ba575d69e485ba18d056493ff32c518ceeeff081fdc7c4347a67a66d",
       "errors": [
         "access.denied",
@@ -3111,10 +3454,10 @@
             "type": "object",
             "properties": {
               "name": {
-                "type": "string"
+                "const": "org_catalog"
               },
               "origin": {
-                "type": "string"
+                "const": "authored"
               },
               "hash": {
                 "type": "string"
@@ -3122,76 +3465,746 @@
             },
             "required": [
               "name",
-              "origin"
+              "origin",
+              "hash"
             ]
           },
           "sections": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "type": "string"
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "list"
+                    },
+                    "id": {
+                      "const": "units"
+                    },
+                    "type": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ref": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "record_status": {
+                            "type": "string"
+                          },
+                          "qualifiers": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "fields": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "chars": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "more": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "relations": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "relation": {
+                                  "type": "string"
+                                },
+                                "direction": {
+                                  "type": "string",
+                                  "enum": [
+                                    "out",
+                                    "in"
+                                  ]
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "items": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ref": {
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      },
+                                      "type": {
+                                        "type": "string"
+                                      },
+                                      "state": {
+                                        "type": "string"
+                                      },
+                                      "record_status": {
+                                        "type": "string"
+                                      },
+                                      "qualifiers": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "fields": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "chars": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "more": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "integer"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "ref"
+                                    ]
+                                  }
+                                },
+                                "more": {
+                                  "type": "integer"
+                                },
+                                "sampled": {
+                                  "type": "integer"
+                                },
+                                "approx": {
+                                  "type": "boolean"
+                                },
+                                "unread": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "relation",
+                                "direction",
+                                "count"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "ref"
+                        ]
+                      }
+                    },
+                    "from": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "type",
+                    "count"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "list"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "units"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "list"
+                    },
+                    "id": {
+                      "const": "positions"
+                    },
+                    "type": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ref": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "record_status": {
+                            "type": "string"
+                          },
+                          "qualifiers": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "fields": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "chars": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "more": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "relations": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "relation": {
+                                  "type": "string"
+                                },
+                                "direction": {
+                                  "type": "string",
+                                  "enum": [
+                                    "out",
+                                    "in"
+                                  ]
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "items": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ref": {
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      },
+                                      "type": {
+                                        "type": "string"
+                                      },
+                                      "state": {
+                                        "type": "string"
+                                      },
+                                      "record_status": {
+                                        "type": "string"
+                                      },
+                                      "qualifiers": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "fields": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "chars": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "more": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "integer"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "ref"
+                                    ]
+                                  }
+                                },
+                                "more": {
+                                  "type": "integer"
+                                },
+                                "sampled": {
+                                  "type": "integer"
+                                },
+                                "approx": {
+                                  "type": "boolean"
+                                },
+                                "unread": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "relation",
+                                "direction",
+                                "count"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "ref"
+                        ]
+                      }
+                    },
+                    "from": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "type",
+                    "count"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "list"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "positions"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "list"
+                    },
+                    "id": {
+                      "const": "people"
+                    },
+                    "type": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ref": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "record_status": {
+                            "type": "string"
+                          },
+                          "qualifiers": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "fields": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "chars": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "more": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "relations": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "relation": {
+                                  "type": "string"
+                                },
+                                "direction": {
+                                  "type": "string",
+                                  "enum": [
+                                    "out",
+                                    "in"
+                                  ]
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "items": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ref": {
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      },
+                                      "type": {
+                                        "type": "string"
+                                      },
+                                      "state": {
+                                        "type": "string"
+                                      },
+                                      "record_status": {
+                                        "type": "string"
+                                      },
+                                      "qualifiers": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "fields": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "chars": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "more": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "integer"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "ref"
+                                    ]
+                                  }
+                                },
+                                "more": {
+                                  "type": "integer"
+                                },
+                                "sampled": {
+                                  "type": "integer"
+                                },
+                                "approx": {
+                                  "type": "boolean"
+                                },
+                                "unread": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "relation",
+                                "direction",
+                                "count"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "ref"
+                        ]
+                      }
+                    },
+                    "from": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "type",
+                    "count"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "list"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "people"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "rows"
+                    },
+                    "id": {
+                      "const": "completions"
+                    },
+                    "function": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "const": "training_completions"
+                        },
+                        "hash": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ]
+                    },
+                    "columns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "person": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Name of the person."
+                          },
+                          "training": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Title of the training."
+                          },
+                          "completed_on": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Date of completion."
+                          }
+                        },
+                        "required": [
+                          "person",
+                          "training",
+                          "completed_on"
+                        ]
+                      }
+                    },
+                    "more": {
+                      "type": "integer"
+                    },
+                    "cells_cut": {
+                      "type": "integer"
+                    },
+                    "from": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "function",
+                    "columns",
+                    "count"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "rows"
+                    },
+                    "id": {
+                      "const": "completions"
+                    },
+                    "function": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "const": "training_completions"
+                        },
+                        "hash": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "function",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "rows"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "completions"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
                 }
-              },
-              "required": [
-                "kind"
-              ],
-              "additionalProperties": {}
+              ]
             }
           },
           "bytes": {
             "type": "integer"
           },
-          "entity": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string"
-              },
-              "rev": {
-                "type": "integer"
-              },
-              "record_status": {
-                "type": "string"
-              },
-              "alias": {
-                "type": "string"
-              },
-              "label": {
-                "type": "string"
-              },
-              "superseded_by": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "retracted_by": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            },
-            "required": [
-              "id",
-              "type",
-              "rev",
-              "record_status"
-            ]
-          },
-          "cut": {
-            "type": "boolean"
-          },
-          "sections_cut": {
-            "type": "integer"
-          },
           "next": {
-            "type": "string"
+            "type": "string",
+            "description": "Present when more is true: pass it as _cursor, with the same other arguments, to get the next page. view.cursor_stale means a write landed in between: start again from the first page."
           },
           "more": {
             "type": "boolean"
@@ -3216,7 +4229,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "organization",
-      "hash": "sha256:ff3aab9504141b261e8061cd7c7cfe9d32774dc658035ba8d6e9a2b16bccee82",
+      "hash": "sha256:8e416212f14fd0c1fed21960afd6aec6719ad2f2d3e6458b6b05a1c6941cde1f",
       "entry_hash": "sha256:2611392b9d82e233b18dff49c24e5e22753ca2269c81ecc471db29496f4d2443",
       "errors": [
         "access.denied",
@@ -3273,10 +4286,10 @@
             "type": "object",
             "properties": {
               "name": {
-                "type": "string"
+                "const": "position_overview"
               },
               "origin": {
-                "type": "string"
+                "const": "authored"
               },
               "hash": {
                 "type": "string"
@@ -3284,26 +4297,9 @@
             },
             "required": [
               "name",
-              "origin"
+              "origin",
+              "hash"
             ]
-          },
-          "sections": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "kind"
-              ],
-              "additionalProperties": {}
-            }
-          },
-          "bytes": {
-            "type": "integer"
           },
           "entity": {
             "type": "object",
@@ -3346,24 +4342,810 @@
               "record_status"
             ]
           },
-          "cut": {
-            "type": "boolean"
+          "sections": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "fields"
+                    },
+                    "id": {
+                      "const": "fields"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "value": {},
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "label",
+                              "alt_label",
+                              "state"
+                            ]
+                          },
+                          "chars": {
+                            "type": "integer"
+                          },
+                          "more": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "value"
+                        ]
+                      }
+                    },
+                    "other": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "other_more": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "fields"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "fields"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "neighbors"
+                    },
+                    "id": {
+                      "const": "unit"
+                    },
+                    "relation": {
+                      "type": "string"
+                    },
+                    "direction": {
+                      "type": "string",
+                      "enum": [
+                        "out",
+                        "in"
+                      ]
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ref": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "record_status": {
+                            "type": "string"
+                          },
+                          "qualifiers": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "fields": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "chars": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "more": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "relations": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "relation": {
+                                  "type": "string"
+                                },
+                                "direction": {
+                                  "type": "string",
+                                  "enum": [
+                                    "out",
+                                    "in"
+                                  ]
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "items": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ref": {
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      },
+                                      "type": {
+                                        "type": "string"
+                                      },
+                                      "state": {
+                                        "type": "string"
+                                      },
+                                      "record_status": {
+                                        "type": "string"
+                                      },
+                                      "qualifiers": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "fields": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "chars": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "more": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "integer"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "ref"
+                                    ]
+                                  }
+                                },
+                                "more": {
+                                  "type": "integer"
+                                },
+                                "sampled": {
+                                  "type": "integer"
+                                },
+                                "approx": {
+                                  "type": "boolean"
+                                },
+                                "unread": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "relation",
+                                "direction",
+                                "count"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "ref"
+                        ]
+                      }
+                    },
+                    "more": {
+                      "type": "integer"
+                    },
+                    "sampled": {
+                      "type": "integer"
+                    },
+                    "approx": {
+                      "type": "boolean"
+                    },
+                    "unread": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "relation",
+                    "direction",
+                    "count"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "neighbors"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "unit"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "neighbors"
+                    },
+                    "id": {
+                      "const": "holder"
+                    },
+                    "relation": {
+                      "type": "string"
+                    },
+                    "direction": {
+                      "type": "string",
+                      "enum": [
+                        "out",
+                        "in"
+                      ]
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ref": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "record_status": {
+                            "type": "string"
+                          },
+                          "qualifiers": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "fields": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "chars": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "more": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "relations": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "relation": {
+                                  "type": "string"
+                                },
+                                "direction": {
+                                  "type": "string",
+                                  "enum": [
+                                    "out",
+                                    "in"
+                                  ]
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "items": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ref": {
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      },
+                                      "type": {
+                                        "type": "string"
+                                      },
+                                      "state": {
+                                        "type": "string"
+                                      },
+                                      "record_status": {
+                                        "type": "string"
+                                      },
+                                      "qualifiers": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "fields": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "chars": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "more": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "integer"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "ref"
+                                    ]
+                                  }
+                                },
+                                "more": {
+                                  "type": "integer"
+                                },
+                                "sampled": {
+                                  "type": "integer"
+                                },
+                                "approx": {
+                                  "type": "boolean"
+                                },
+                                "unread": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "relation",
+                                "direction",
+                                "count"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "ref"
+                        ]
+                      }
+                    },
+                    "more": {
+                      "type": "integer"
+                    },
+                    "sampled": {
+                      "type": "integer"
+                    },
+                    "approx": {
+                      "type": "boolean"
+                    },
+                    "unread": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "relation",
+                    "direction",
+                    "count"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "neighbors"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "holder"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "neighbors"
+                    },
+                    "id": {
+                      "const": "reports"
+                    },
+                    "relation": {
+                      "type": "string"
+                    },
+                    "direction": {
+                      "type": "string",
+                      "enum": [
+                        "out",
+                        "in"
+                      ]
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ref": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "record_status": {
+                            "type": "string"
+                          },
+                          "qualifiers": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "fields": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "chars": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "more": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "relations": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "relation": {
+                                  "type": "string"
+                                },
+                                "direction": {
+                                  "type": "string",
+                                  "enum": [
+                                    "out",
+                                    "in"
+                                  ]
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "items": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ref": {
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      },
+                                      "type": {
+                                        "type": "string"
+                                      },
+                                      "state": {
+                                        "type": "string"
+                                      },
+                                      "record_status": {
+                                        "type": "string"
+                                      },
+                                      "qualifiers": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "fields": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "chars": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "more": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "integer"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "ref"
+                                    ]
+                                  }
+                                },
+                                "more": {
+                                  "type": "integer"
+                                },
+                                "sampled": {
+                                  "type": "integer"
+                                },
+                                "approx": {
+                                  "type": "boolean"
+                                },
+                                "unread": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "relation",
+                                "direction",
+                                "count"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "ref"
+                        ]
+                      }
+                    },
+                    "more": {
+                      "type": "integer"
+                    },
+                    "sampled": {
+                      "type": "integer"
+                    },
+                    "approx": {
+                      "type": "boolean"
+                    },
+                    "unread": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "relation",
+                    "direction",
+                    "count"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "neighbors"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "reports"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "relations"
+                    },
+                    "id": {
+                      "const": "relations"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "relation": {
+                            "type": "string"
+                          },
+                          "direction": {
+                            "type": "string",
+                            "enum": [
+                              "out",
+                              "in"
+                            ]
+                          },
+                          "count": {
+                            "type": "integer"
+                          },
+                          "states": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "items": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "ref": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "type": "string"
+                                },
+                                "state": {
+                                  "type": "string"
+                                },
+                                "record_status": {
+                                  "type": "string"
+                                },
+                                "field": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "value"
+                                  ]
+                                },
+                                "qualifiers": {
+                                  "type": "object",
+                                  "additionalProperties": {}
+                                }
+                              },
+                              "required": [
+                                "ref"
+                              ]
+                            }
+                          },
+                          "more": {
+                            "type": "integer"
+                          },
+                          "sampled": {
+                            "type": "integer"
+                          },
+                          "approx": {
+                            "type": "boolean"
+                          },
+                          "missing": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "relation",
+                          "direction",
+                          "count"
+                        ]
+                      }
+                    },
+                    "more_groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "relations"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "relations"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
+                }
+              ]
+            }
+          },
+          "bytes": {
+            "type": "integer"
           },
           "sections_cut": {
             "type": "integer"
           },
-          "next": {
-            "type": "string"
-          },
-          "more": {
-            "type": "boolean"
-          },
-          "oversize": {
+          "cut": {
             "type": "boolean"
           }
         },
         "required": [
           "view",
+          "entity",
           "sections",
           "bytes"
         ]
@@ -3378,7 +5160,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "organization",
-      "hash": "sha256:0de89126b204d83ae525c714323d5b2509cecabf65b40d633c919aae28ab6628",
+      "hash": "sha256:8d28ba48002e25ae4f521c2cc44655c8d4411ce72f7da771b8ca6886cb81d750",
       "entry_hash": "sha256:2ea811f8ee12daf4780aa50d56776213c95caa194f994a3ed6dd42565ff59f61",
       "errors": [
         "access.denied",
@@ -3462,10 +5244,10 @@
             "type": "object",
             "properties": {
               "name": {
-                "type": "string"
+                "const": "tasks_by_state"
               },
               "origin": {
-                "type": "string"
+                "const": "authored"
               },
               "hash": {
                 "type": "string"
@@ -3473,76 +5255,208 @@
             },
             "required": [
               "name",
-              "origin"
+              "origin",
+              "hash"
             ]
           },
           "sections": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "type": "string"
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "list"
+                    },
+                    "id": {
+                      "const": "tasks"
+                    },
+                    "type": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ref": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "record_status": {
+                            "type": "string"
+                          },
+                          "qualifiers": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "fields": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "chars": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "more": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "relations": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "relation": {
+                                  "type": "string"
+                                },
+                                "direction": {
+                                  "type": "string",
+                                  "enum": [
+                                    "out",
+                                    "in"
+                                  ]
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "items": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ref": {
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      },
+                                      "type": {
+                                        "type": "string"
+                                      },
+                                      "state": {
+                                        "type": "string"
+                                      },
+                                      "record_status": {
+                                        "type": "string"
+                                      },
+                                      "qualifiers": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "fields": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "chars": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "more": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "integer"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "ref"
+                                    ]
+                                  }
+                                },
+                                "more": {
+                                  "type": "integer"
+                                },
+                                "sampled": {
+                                  "type": "integer"
+                                },
+                                "approx": {
+                                  "type": "boolean"
+                                },
+                                "unread": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "relation",
+                                "direction",
+                                "count"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "ref"
+                        ]
+                      }
+                    },
+                    "from": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "type",
+                    "count"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "list"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "tasks"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
                 }
-              },
-              "required": [
-                "kind"
-              ],
-              "additionalProperties": {}
+              ]
             }
           },
           "bytes": {
             "type": "integer"
           },
-          "entity": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string"
-              },
-              "rev": {
-                "type": "integer"
-              },
-              "record_status": {
-                "type": "string"
-              },
-              "alias": {
-                "type": "string"
-              },
-              "label": {
-                "type": "string"
-              },
-              "superseded_by": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "retracted_by": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            },
-            "required": [
-              "id",
-              "type",
-              "rev",
-              "record_status"
-            ]
-          },
-          "cut": {
-            "type": "boolean"
-          },
-          "sections_cut": {
-            "type": "integer"
-          },
           "next": {
-            "type": "string"
+            "type": "string",
+            "description": "Present when more is true: pass it as _cursor, with the same other arguments, to get the next page. view.cursor_stale means a write landed in between: start again from the first page."
           },
           "more": {
             "type": "boolean"
@@ -3567,7 +5481,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "operations",
-      "hash": "sha256:dbebb588d6a09c0e2875e367dd55009923292c5e6e4019997655010be2293205",
+      "hash": "sha256:65db7ea74e8521795d163261627f35ac1be56eff0ff4f9d6b2676455ffc74288",
       "entry_hash": "sha256:0963d3b61852e230b6b1d1cd689a781ccd4db2585e283ba62c26a9b462d53cea",
       "errors": [
         "access.denied",
@@ -3629,10 +5543,10 @@
             "type": "object",
             "properties": {
               "name": {
-                "type": "string"
+                "const": "unit_overview"
               },
               "origin": {
-                "type": "string"
+                "const": "authored"
               },
               "hash": {
                 "type": "string"
@@ -3640,26 +5554,9 @@
             },
             "required": [
               "name",
-              "origin"
+              "origin",
+              "hash"
             ]
-          },
-          "sections": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "kind"
-              ],
-              "additionalProperties": {}
-            }
-          },
-          "bytes": {
-            "type": "integer"
           },
           "entity": {
             "type": "object",
@@ -3702,24 +5599,862 @@
               "record_status"
             ]
           },
-          "cut": {
-            "type": "boolean"
+          "sections": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "fields"
+                    },
+                    "id": {
+                      "const": "fields"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "value": {},
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "label",
+                              "alt_label",
+                              "state"
+                            ]
+                          },
+                          "chars": {
+                            "type": "integer"
+                          },
+                          "more": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "value"
+                        ]
+                      }
+                    },
+                    "other": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "other_more": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "fields"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "fields"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "relations"
+                    },
+                    "id": {
+                      "const": "relations"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "relation": {
+                            "type": "string"
+                          },
+                          "direction": {
+                            "type": "string",
+                            "enum": [
+                              "out",
+                              "in"
+                            ]
+                          },
+                          "count": {
+                            "type": "integer"
+                          },
+                          "states": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "items": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "ref": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "type": "string"
+                                },
+                                "state": {
+                                  "type": "string"
+                                },
+                                "record_status": {
+                                  "type": "string"
+                                },
+                                "field": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "value"
+                                  ]
+                                },
+                                "qualifiers": {
+                                  "type": "object",
+                                  "additionalProperties": {}
+                                }
+                              },
+                              "required": [
+                                "ref"
+                              ]
+                            }
+                          },
+                          "more": {
+                            "type": "integer"
+                          },
+                          "sampled": {
+                            "type": "integer"
+                          },
+                          "approx": {
+                            "type": "boolean"
+                          },
+                          "missing": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "relation",
+                          "direction",
+                          "count"
+                        ]
+                      }
+                    },
+                    "more_groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "relations"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "relations"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "neighbors"
+                    },
+                    "id": {
+                      "const": "positions"
+                    },
+                    "relation": {
+                      "type": "string"
+                    },
+                    "direction": {
+                      "type": "string",
+                      "enum": [
+                        "out",
+                        "in"
+                      ]
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ref": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "record_status": {
+                            "type": "string"
+                          },
+                          "qualifiers": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "fields": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "chars": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "more": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "relations": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "relation": {
+                                  "type": "string"
+                                },
+                                "direction": {
+                                  "type": "string",
+                                  "enum": [
+                                    "out",
+                                    "in"
+                                  ]
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "items": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ref": {
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      },
+                                      "type": {
+                                        "type": "string"
+                                      },
+                                      "state": {
+                                        "type": "string"
+                                      },
+                                      "record_status": {
+                                        "type": "string"
+                                      },
+                                      "qualifiers": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "fields": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "chars": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "more": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "integer"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "ref"
+                                    ]
+                                  }
+                                },
+                                "more": {
+                                  "type": "integer"
+                                },
+                                "sampled": {
+                                  "type": "integer"
+                                },
+                                "approx": {
+                                  "type": "boolean"
+                                },
+                                "unread": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "relation",
+                                "direction",
+                                "count"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "ref"
+                        ]
+                      }
+                    },
+                    "more": {
+                      "type": "integer"
+                    },
+                    "sampled": {
+                      "type": "integer"
+                    },
+                    "approx": {
+                      "type": "boolean"
+                    },
+                    "unread": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "relation",
+                    "direction",
+                    "count"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "neighbors"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "positions"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "rows"
+                    },
+                    "id": {
+                      "const": "members"
+                    },
+                    "function": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "const": "members_of_unit"
+                        },
+                        "hash": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ]
+                    },
+                    "columns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "person": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Name of the holder."
+                          },
+                          "position": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Title of the position held."
+                          },
+                          "unit": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The unit the position belongs to, the given one or a unit below it."
+                          }
+                        },
+                        "required": [
+                          "person",
+                          "position",
+                          "unit"
+                        ]
+                      },
+                      "description": "In an entity view a long text cell is cut and ends in an ellipsis, so a decimal cell may not match its pattern."
+                    },
+                    "more": {
+                      "type": "integer"
+                    },
+                    "cells_cut": {
+                      "type": "integer"
+                    },
+                    "from": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "function",
+                    "columns",
+                    "count"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "rows"
+                    },
+                    "id": {
+                      "const": "members"
+                    },
+                    "function": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "const": "members_of_unit"
+                        },
+                        "hash": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "function",
+                    "error"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "rows"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "members"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "files"
+                    },
+                    "id": {
+                      "const": "files"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ref": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "page": {
+                            "type": "integer"
+                          },
+                          "last_page": {
+                            "type": "integer"
+                          },
+                          "locator": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "ref"
+                        ]
+                      }
+                    },
+                    "more": {
+                      "type": "integer"
+                    },
+                    "sampled": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "files"
+                    },
+                    "id": {
+                      "const": "files"
+                    },
+                    "variant": {
+                      "const": "cited_by"
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "page_min": {
+                      "type": "integer"
+                    },
+                    "page_max": {
+                      "type": "integer"
+                    },
+                    "pages_cited": {
+                      "type": "integer"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ref": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "page": {
+                            "type": "integer"
+                          },
+                          "last_page": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "ref"
+                        ]
+                      }
+                    },
+                    "more": {
+                      "type": "integer"
+                    },
+                    "sampled": {
+                      "type": "integer"
+                    },
+                    "approx": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "variant",
+                    "count"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "files"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "files"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "affordances"
+                    },
+                    "id": {
+                      "const": "affordances"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "transitions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "attr": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "allowed": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "allowed_more": {
+                            "type": "integer"
+                          },
+                          "blocked": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "type": "string"
+                                },
+                                "by": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "state",
+                                "by"
+                              ]
+                            }
+                          },
+                          "blocked_more": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "attr"
+                        ]
+                      }
+                    },
+                    "transitions_more": {
+                      "type": "integer"
+                    },
+                    "actions": {
+                      "type": "object",
+                      "properties": {
+                        "apply": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "blocked": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "actions_more": {
+                      "type": "integer"
+                    },
+                    "functions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "functions_more": {
+                      "type": "integer"
+                    },
+                    "views": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "views_more": {
+                      "type": "integer"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "affordances"
+                    },
+                    "cut": {
+                      "const": true
+                    },
+                    "id": {
+                      "const": "affordances"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "cut",
+                    "id"
+                  ]
+                }
+              ]
+            }
+          },
+          "bytes": {
+            "type": "integer"
           },
           "sections_cut": {
             "type": "integer"
           },
-          "next": {
-            "type": "string"
-          },
-          "more": {
-            "type": "boolean"
-          },
-          "oversize": {
+          "cut": {
             "type": "boolean"
           }
         },
         "required": [
           "view",
+          "entity",
           "sections",
           "bytes"
         ]
@@ -3734,7 +6469,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "organization",
-      "hash": "sha256:28b2bd99f9cf87ef3c08c4ae50e4cce40920df3d1da7cb2727de94cab679ee5d",
+      "hash": "sha256:d5082c6ba6c0e566783fed754e4ad781b3e64596167090e2a7b3f2f8864c7df6",
       "entry_hash": "sha256:93899e2a71372c70e4e98fe5dc9312adb4fe8f1773580739c404c77823b162d7",
       "errors": [
         "access.denied",

@@ -38,7 +38,7 @@ from graph_cli.kinetic.params import ParamDef
 from graph_cli.kinetic.return_types import ColumnType
 from graph_cli.kinetic.tool_types import ParamType, input_value, param_types, ref_type
 from graph_cli.kinetic.view_entries import ViewEntry
-from graph_cli.kinetic.view_format import MIN_BYTES, PAGE_BYTES_MAX
+from graph_cli.kinetic.view_format import MIN_BYTES, PAGE_BYTES_MAX, RowsSection
 from graph_cli.kinetic.view_page import PAGE_BYTES
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT
@@ -87,10 +87,23 @@ class ToolColumn:
 
 
 @dataclass(frozen=True, slots=True)
+class ToolSection:
+    """A section a view declares, as its answer schema needs it: the ``kind`` and ``id`` and, for
+    a ``rows`` section, its ``function`` and the columns of it (``None``: the caller has no such
+    function, the rows are not typed)."""
+
+    kind: str
+    id: str
+    function: str | None = None
+    columns: tuple[ToolColumn, ...] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ToolHead:
     """A tool without its answer: everything of the manifest that follows from the entry, the
     model the caller sees and the caller's obligations. ``columns`` are the result columns of a
-    function (none for the other kinds)."""
+    function, ``sections`` the sections of a view and ``entity`` whether it shows one entity (none
+    of them for the other kinds)."""
 
     name: str
     kind: str
@@ -104,6 +117,8 @@ class ToolHead:
     module: str | None
     entry_hash: str
     columns: tuple[ToolColumn, ...] = ()
+    sections: tuple[ToolSection, ...] = ()
+    entity: bool = False
 
 
 def enum_values(
@@ -402,7 +417,39 @@ def action_head(
     )
 
 
-def view_head(entry: ViewEntry, model: CompiledModel, visible: Sequence[ViewEntry]) -> ToolHead:
+def view_sections(
+    entry: ViewEntry,
+    model: CompiledModel,
+    functions: Sequence[FunctionEntry],
+    known: dict[str, tuple[ToolColumn, ...]],
+) -> tuple[ToolSection, ...]:
+    """The sections of a view; a ``rows`` section carries the columns of its function as the
+    caller sees them, found among the ``functions`` the caller may use. A view is listed only for a
+    caller who may run the functions of its ``rows`` sections, so describe and call never get
+    ``None`` (no such function: the rows stay untyped) from a real catalog; it is the defensive
+    answer for an entry that does not fit it. ``known`` holds the columns worked out already, by
+    function name, and gets those this call works out: typing a function resolves its query."""
+    found: list[ToolSection] = []
+    for section in entry.defn.sections:
+        columns = None
+        if isinstance(section, RowsSection):
+            columns = known.get(section.function)
+            if columns is None:
+                runs = next((f for f in functions if f.name == section.function), None)
+                if runs is not None:
+                    columns = known[section.function] = function_columns(runs, model)
+        named = section.function if isinstance(section, RowsSection) else None
+        found.append(ToolSection(section.kind, section.id, named, columns))
+    return tuple(found)
+
+
+def view_head(
+    entry: ViewEntry,
+    model: CompiledModel,
+    visible: Sequence[ViewEntry],
+    functions: Sequence[FunctionEntry],
+    known: dict[str, tuple[ToolColumn, ...]] | None = None,
+) -> ToolHead:
     defn = entry.defn
     replaced = _replacement(VIEW, defn.replaced_by, visible)
     examples = [
@@ -428,6 +475,8 @@ def view_head(entry: ViewEntry, model: CompiledModel, visible: Sequence[ViewEntr
         featured=False,
         module=entry.module,
         entry_hash=entry.hash,
+        sections=view_sections(entry, model, functions, {} if known is None else known),
+        entity=entry.entity,
     )
 
 

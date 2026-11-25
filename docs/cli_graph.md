@@ -728,7 +728,8 @@ and the pages put together are the one-page answer. After a write the cursor is 
 (start again, or `--as-of tx:<seq>` pages the state you started with); after another view, other
 parameters, a functions publish, an ontology release or a change of what you may see it is
 `view.cursor_invalid`. `--cursor` and `--page-bytes` with an entity view or the card are
-`usage.invalid_argument`.
+`usage.invalid_argument`. The pages of a set view are also the paging of its tool for harnesses
+([Tools for agent harnesses](#tools-for-agent-harnesses)).
 
 `--param name=value` (repeatable) gives a view parameter, read by its declared type as for `run`; a
 missing or unknown one is `view.parameter_missing` or `view.parameter_unknown`. `--as-of` reads the
@@ -1251,8 +1252,33 @@ breaking one that validates. A function answers what `run` answers and `page`, t
 rows: `function`, `columns`, `items` and `page`, with one property per column of the function in a
 row, each typed where its type is known (below) and else any JSON value marked
 `x-graph-cli: {typed: false}`. An action answers the write result of `do`, as a dry run does. A
-view answers the view model, its sections as loose objects with a `kind`. Every schema is
-self-contained: no `$ref`, an object at its root.
+view answers the view model, with the sections that view declares (Views as tools, below).
+Every schema is self-contained: no `$ref`, an object at its root.
+
+**Views as tools.** A view tool's `output_schema` is the view model of that one view: `view` (its
+`name`, `origin` and `hash`), the entity header for an entity view, `sections` and `bytes`, and only
+the keys of its flavour. Each section the view declares has one schema per shape it may take, named
+by its `kind` and `id`: the sections of the generated card and of an authored view (`fields`,
+`relations`, `files` and its `cited_by` variant for a stored file, `affordances`, `neighbors`,
+`list`), a `rows` section, the form a `rows` section takes when its function gave an `error` instead
+of rows, and the stub `{kind, id, cut: true}` that a section shrinks to when an entity view is
+trimmed to its limit. The rows of a `rows` section have one property per column of the function the
+section runs, typed like the columns of the function's own tool (Typed columns, below): a view is
+a tool only when you may run the functions of its `rows` sections. An entity view cuts long text
+cells and ends them in an ellipsis (`cells_cut` counts them); no enum value, reference or date is
+long enough to be cut, so only a decimal cell loses its `pattern` there, and a set view cuts nothing
+and keeps it. The `hash` of a view tool (and its schema) changes when the column types of a function
+its sections run change, by a functions publish or a program upgrade as for a function tool, so a
+harness that passes `--expect-hash` is told to fetch the manifest again for a view as well. The
+`view` command's own schema (`describe commands --output-schemas`) has the same sections for every
+view, with the cells of a `rows` section any value.
+
+**Paging a set view.** A set view tool pages by cursor (`annotations.paging` is `cursor`). The first
+call leaves `_cursor` out. A page that does not reach the end has `more: true` and `next`: pass that
+`next` as `_cursor` of the next call, with the same other arguments (the parameters and
+`_page_bytes`), until `more` is absent. `view.cursor_stale` means a write landed between two pages
+(`on_error` `restart`): start again from the first page. An entity view has no pages and takes no
+`_cursor`.
 
 **Typed columns.** A column of a function has a type when the query makes it certain (a node, an
 attribute, a count, a list of values, a literal) or the maintainer declared one
@@ -1266,7 +1292,7 @@ are what `run` shows:
 | --- | --- |
 | `string` | a string |
 | `integer`, `boolean` | an integer, a boolean |
-| `decimal` | a string in plain notation (`0.0000001`, `1000`: the grammar of a decimal parameter, so the cell can be passed back); every value an attribute can hold is shown this way, and only a computed value whose plain text would run to thousands of characters keeps the exponent notation, which the schema also accepts |
+| `decimal` | a string in plain notation (`0.0000001`, `1000`: the grammar of a decimal parameter, so the cell can be passed back); a value is shown this way unless its plain text would run to thousands of characters; then it keeps the exponent notation, which the schema accepts but a decimal parameter does not |
 | `date`, `datetime` | a string with `format` `date` or `date-time` |
 | `enum` | a string, `enum` the values of the enum as you see them |
 | `ref` | a string with the grammar of a reference, the class in `x-graph-cli: {class}` when the column has one; it can go into a `ref` parameter |
