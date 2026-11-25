@@ -15192,7 +15192,7 @@
     "/v1/commands/file/check": {
       "post": {
         "operationId": "file_check",
-        "summary": "Compare the origins of stored files with their content: same, changed, missing.",
+        "summary": "Compare the origins of stored files with their content.",
         "responses": {
           "200": {
             "description": "The answer.",

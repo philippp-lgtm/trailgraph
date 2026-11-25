@@ -155,6 +155,38 @@ def test_files_of_a_graph_in_the_object_store(
     assert checked.code == 0, checked.envelope
 
 
+@pytest.mark.doc_claim("storage.manifest_rewrite_keeps_store")
+def test_a_release_keeps_the_store_of_a_graph_in_the_object_store(
+    run_cli: CliRunner, root: Path, s3_env: dict[str, str], fake: FakeS3
+) -> None:
+    """The pin switch of a release rewrites the manifest: it stays format 2 with the
+    feature it requires, keeps the location and the store id, and the stored files still
+    read from the store."""
+    graph_id = create(run_cli, s3_env, "example_graph").data["id"]
+    home = Path(s3_env["HOME"])
+    write_pdf(home / "report.pdf")
+    env = {**s3_env, "GRAPH_CLI_GRAPH": "example_graph"}
+    added = app(run_cli, "file", "add", str(home / "report.pdf"), "--no-extract", env=env)
+    assert added.code == 0, added.envelope
+    before = admin(run_cli, "graph", "show", "example_graph", env=s3_env).data["store"]
+    target = SOURCE.parent / "1.2.0"
+    released = admin(run_cli, "ontology", "release", "example_graph", str(target), env=s3_env)
+    assert released.code == 0, released.envelope
+
+    manifest = (root / "graphs" / graph_id / "manifest.toml").read_text()
+    assert manifest.startswith('format_version = 2\nrequires = ["blobs.s3"]\n')
+    assert 'version = "1.2.0"' in manifest
+    shown = admin(run_cli, "graph", "show", "example_graph", env=s3_env)
+    assert shown.data["store"] == before
+    assert before["blob_location"] == "s3"
+    shown_file = app(run_cli, "file", "path", "FILE-0001", env=env)  # fetched after the release
+    assert shown_file.code == 0, shown_file.envelope
+    assert Path(shown_file.data["path"]).read_bytes() == synthetic_pdf()
+    assert blob_gets(fake) == 1
+    verified = admin(run_cli, "audit", "verify", env=s3_env)
+    assert verified.code == 0, verified.envelope
+
+
 def test_a_store_that_refuses_the_marker_creates_no_graph(
     run_cli: CliRunner, root: Path, s3_env: dict[str, str], fake: FakeS3
 ) -> None:

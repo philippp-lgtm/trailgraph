@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly. Run `graph start` once per session before loading this or any graph skill."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:e7c3100b73e5a9f6821533437c3533e2c3b9ee2a55aaf5f0eec026fb9be7fab7"
+  inventory_hash: "sha256:534e593ebf8cfaf86687d975d3a907dd713fc66705013ca25b8f129339223a28"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.30.0"
@@ -190,7 +190,7 @@ Every `--json` call prints one JSON object on stdout.
 | `graph describe views` | read | List the published views of the graph with their parameters. |
 | `graph do` | write | Run a named action of the graph: a reviewed write with typed parameters. |
 | `graph file add` | write | Store a file as a files:File entity; known content is not stored twice. |
-| `graph file check` | read | Compare the origins of stored files with their content: same, changed, missing. |
+| `graph file check` | read | Compare the origins of stored files with their content. |
 | `graph file path` | read | Show the local path of a stored file (read only), or of its origin. |
 | `graph find` | read | Find entities by type, field filters and relations; paged. |
 | `graph get` | read | Show one entity by id, alias or id suffix. |
