@@ -750,7 +750,7 @@ Usage: `graph lookup TEXT... [OPTIONS]`
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
 | `--type` | term | no | yes | Type CURIE or unique local name, subtypes included. |
-| `--for` | string | no | no | Only candidates that can fill this slot: a relation (the candidate is its target) or <function or action>.<param> (a ref parameter). |
+| `--for` | string | no | no | Only candidates that can fill this slot: a relation (the candidate is its target), <function or action>.<param> or view:<view>.<param> (a ref parameter), or view:<view>._entity (the entity of an entity view). |
 | `--for-source` | term | no | no | Only candidates that can be the source of this relation. |
 | `--match` | choice | no | no | Whole name, or names that start with the text. One of `exact`, `prefix`. Default: `exact`. |
 | `--ignore-accents` | flag | no | no | Also match with accents and other combining marks ignored. |

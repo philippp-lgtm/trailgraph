@@ -785,7 +785,16 @@ range, subtypes included, because the entity is about to be its target;
 of a function's or action's `ref` parameter (it needs the right to run functions
 or the action, otherwise the name is `function.not_found`, also for one you see but
 may not use, [Entries you may not use](#entries-you-may-not-use)); `--for-source <relation>` keeps the types
-of its domain. Both options may be given and narrow `--type` further; when
+of its domain. A view's `ref` parameter is `--for view:<view>.<param>` and the
+entity of a view that shows one entity is `--for view:<view>._entity`, with the
+class the view takes: a view needs its kind in front of the name because it may
+share its name with a function (a plain `<name>.<param>` is an action or a
+function, never a view). The kind may be written for functions and actions too
+(`function:<function>.<param>`, `action:<action>.<param>`), which then look in
+that catalog only. A view you do not see or may not use is `view.not_found`,
+like the function and action forms; an unknown kind is `usage.invalid_argument`,
+a parameter the entry does not have is `<kind>.parameter_unknown` (`_entity` of a
+set view too). Both options may be given and narrow `--type` further; when
 no type is left the answer is `usage.invalid_argument`. Nothing is picked
 for the caller: every fitting candidate is listed, and matches of other
 types are only counted (`data.texts[].excluded`). `data.fit` names the
@@ -1059,7 +1068,7 @@ Find one before writing by hand:
   requires a `--reason`. `describe modules` and `describe module M` count
   and list the actions per module.
 - `lookup TEXT --for <action>.<param>` finds the entities a `ref` parameter
-  accepts by name.
+  accepts by name ([Names and lookup](#names-and-lookup)).
 
 Run one with `do NAME --param name=value ...`, with `--dry-run` first:
 

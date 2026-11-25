@@ -164,7 +164,7 @@ def test_the_flavour_and_the_class_of_a_view_are_checked(run_cli: CliRunner, roo
         "expected": "inv:Location",
         "found": "inv:Item",
     }
-    assert "lookup" in wrong.error["hint"] and "--type inv:Location" in wrong.error["hint"]
+    assert wrong.error["hint"] == "graph lookup <text> --for view:location_overview._entity"
     nothing = app(run_cli, "view", env=ENV)
     assert (nothing.code, nothing.error["code"]) == (2, "usage.missing_argument")
     assert nothing.error["message"] == "Missing argument 'REF'." and nothing.error["details"] == {}
@@ -465,7 +465,7 @@ def test_a_ref_parameter_is_resolved_and_class_checked(run_cli: CliRunner, root:
     )
     assert (wrong.code, wrong.error["code"]) == (1, "view.parameter_type")
     assert wrong.error["details"]["view"] == "items_in_location"
-    assert "--type inv:Location" in wrong.error["hint"]
+    assert wrong.error["hint"] == "graph lookup <text> --for view:items_in_location.location"
     missing = app(run_cli, "view", "--name", "items_in_location", env=ENV)
     assert (missing.code, missing.error["code"]) == (2, "view.parameter_missing")
     absent = app(

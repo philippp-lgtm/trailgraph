@@ -2901,7 +2901,7 @@
           "type": "string",
           "required": false,
           "repeatable": false,
-          "summary": "Only candidates that can fill this slot: a relation (the candidate is its target) or <function or action>.<param> (a ref parameter)."
+          "summary": "Only candidates that can fill this slot: a relation (the candidate is its target), <function or action>.<param> or view:<view>.<param> (a ref parameter), or view:<view>._entity (the entity of an entity view)."
         },
         {
           "name": "--for-source",
@@ -2995,6 +2995,7 @@
       "errors": [
         "access.denied",
         "access.project_mismatch",
+        "action.not_found",
         "action.parameter_unknown",
         "backend.unavailable",
         "config.forbidden_key",
@@ -3014,7 +3015,9 @@
         "temporal.as_of_unsupported",
         "term.no_labels",
         "term.unknown",
-        "usage.invalid_argument"
+        "usage.invalid_argument",
+        "view.not_found",
+        "view.parameter_unknown"
       ],
       "exit_codes": [
         0,

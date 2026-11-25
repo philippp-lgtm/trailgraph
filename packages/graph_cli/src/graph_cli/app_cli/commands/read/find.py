@@ -30,7 +30,7 @@ from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.query.lookup import MATCH_KINDS, LookupSpec
+from graph_cli.query.lookup import MATCH_KINDS, MAX_LOOKUP_TEXTS, LookupSpec
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT, FindSpec, parse_rel_flag
 from graph_cli.query.search import SearchSpec
 
@@ -96,9 +96,6 @@ def find(
 
     hints = next_page(page_json, line)
     return Result(data=data, graph=view.envelope_graph(), page=page_json, hints=hints)
-
-
-MAX_LOOKUP_TEXTS: Final = 50
 
 
 MAX_SEARCH_HINTS: Final = 5
@@ -386,36 +383,50 @@ _SEARCH_MATCH: Final = {**_MATCH, "role": nullable(enum(*_LABEL_ROLES))}
 FIND_OUTPUT: Final = obj({"items": array(ref("entity"))})
 
 
-LOOKUP_OUTPUT: Final = obj(
-    {
-        "items": array(
-            obj(
-                {
-                    "text": STRING,
-                    **_FOUND,
-                    "match": obj({**_MATCH, "value": NULLABLE_STRING}),
-                    "facts": nullable(  # query.lookup.fact_edges
-                        array(
-                            obj(
-                                {
-                                    "rel": STRING,
-                                    "id": STRING,
-                                    "alias": NULLABLE_STRING,
-                                    "label": NULLABLE_STRING,
-                                }
-                            )
+_LOOKUP_ANSWER: Final = {
+    "items": array(
+        obj(
+            {
+                "text": STRING,
+                **_FOUND,
+                "match": obj({**_MATCH, "value": NULLABLE_STRING}),
+                "facts": nullable(  # query.lookup.fact_edges
+                    array(
+                        obj(
+                            {
+                                "rel": STRING,
+                                "id": STRING,
+                                "alias": NULLABLE_STRING,
+                                "label": NULLABLE_STRING,
+                            }
                         )
-                    ),
-                }
-            )
-        ),
-        "texts": array(
-            obj({"text": STRING, "total": INTEGER, "exact": INTEGER, "excluded": INTEGER})
-        ),
-        "fit": nullable(  # --for, --for-source: services.read.finding.ReadFinding.lookup
-            obj({"for": NULLABLE_STRING, "for_source": NULLABLE_STRING, "types": nullable(STRINGS)})
-        ),
-    }
+                    )
+                ),
+            }
+        )
+    ),
+    "texts": array(obj({"text": STRING, "total": INTEGER, "exact": INTEGER, "excluded": INTEGER})),
+    "fit": nullable(  # --for, --for-source: services.read.finding.ReadFinding.lookup
+        obj({"for": NULLABLE_STRING, "for_source": NULLABLE_STRING, "types": nullable(STRINGS)})
+    ),
+}
+LOOKUP_OUTPUT: Final = obj(_LOOKUP_ANSWER)
+# what a call of the lookup tool answers: the page is in data, not in the envelope
+LOOKUP_PAGE_OUTPUT: Final = obj({**_LOOKUP_ANSWER, "page": ref("page")})
+
+
+LOOKUP_ERRORS: Final = (
+    *GRAPH_ERRORS,
+    "temporal.as_of_unsupported",
+    "term.unknown",
+    "query.ambiguous_term",
+    "term.no_labels",
+    "function.not_found",
+    "function.parameter_unknown",
+    "action.not_found",
+    "action.parameter_unknown",
+    "view.not_found",
+    "view.parameter_unknown",
 )
 
 
@@ -541,7 +552,8 @@ SPECS: Final = (
                 "--for",
                 "string",
                 "Only candidates that can fill this slot: a relation (the candidate is its "
-                "target) or <function or action>.<param> (a ref parameter).",
+                "target), <function or action>.<param> or view:<view>.<param> (a ref "
+                "parameter), or view:<view>._entity (the entity of an entity view).",
                 keyword="for_use",
             ),
             ParamSpec(
@@ -590,16 +602,7 @@ SPECS: Final = (
                 "Only candidates that can be the target of the relation.",
             ),
         ),
-        errors=(
-            *GRAPH_ERRORS,
-            "temporal.as_of_unsupported",
-            "term.unknown",
-            "query.ambiguous_term",
-            "term.no_labels",
-            "function.not_found",
-            "function.parameter_unknown",
-            "action.parameter_unknown",
-        ),
+        errors=LOOKUP_ERRORS,
         handler=lookup,
         output=LOOKUP_OUTPUT,
         limits={"limit": MAX_LIMIT},

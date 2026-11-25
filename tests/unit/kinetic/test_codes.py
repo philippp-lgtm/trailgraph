@@ -126,3 +126,17 @@ def test_hints_point_at_discovery_and_the_action() -> None:
         {"action": "a", "parameter": "p", "type": "ref x"},
         program="graph",
     ) == ("graph lookup <text> --for a.p")
+
+
+def test_a_reference_of_the_wrong_class_in_a_view_is_looked_up_by_the_kind_of_the_view() -> None:
+    from graph_cli.cli_kit.hints import hint_for
+
+    # the kind names a view (a function may share its name); an entity view's slot is _entity
+    assert hint_for(
+        "view.parameter_type",
+        {"view": "v", "parameter": "p", "expected": "ex:C", "found": "ex:D"},
+        program="graph",
+    ) == ("graph lookup <text> --for view:v.p")
+    assert hint_for(
+        "view.class_mismatch", {"view": "v", "expected": "ex:C", "found": "ex:D"}, program="graph"
+    ) == ("graph lookup <text> --for view:v._entity")

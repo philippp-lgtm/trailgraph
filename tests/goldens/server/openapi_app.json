@@ -20212,7 +20212,7 @@
             }
           },
           "400": {
-            "description": "Bad Request: action.parameter_unknown, function.parameter_unknown, graph.not_selected, usage.invalid_argument.",
+            "description": "Bad Request: action.parameter_unknown, function.parameter_unknown, graph.not_selected, usage.invalid_argument, view.parameter_unknown.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -20234,7 +20234,8 @@
               "action.parameter_unknown",
               "function.parameter_unknown",
               "graph.not_selected",
-              "usage.invalid_argument"
+              "usage.invalid_argument",
+              "view.parameter_unknown"
             ]
           },
           "401": {
@@ -20286,7 +20287,7 @@
             ]
           },
           "404": {
-            "description": "Not Found: function.not_found, graph.not_found, term.unknown.",
+            "description": "Not Found: action.not_found, function.not_found, graph.not_found, term.unknown, view.not_found.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -20305,9 +20306,11 @@
               }
             },
             "x-graph-cli-error-codes": [
+              "action.not_found",
               "function.not_found",
               "graph.not_found",
-              "term.unknown"
+              "term.unknown",
+              "view.not_found"
             ]
           },
           "422": {
@@ -20441,7 +20444,7 @@
                       },
                       "for": {
                         "type": "string",
-                        "description": "Only candidates that can fill this slot: a relation (the candidate is its target) or <function or action>.<param> (a ref parameter)."
+                        "description": "Only candidates that can fill this slot: a relation (the candidate is its target), <function or action>.<param> or view:<view>.<param> (a ref parameter), or view:<view>._entity (the entity of an entity view)."
                       },
                       "--for": {
                         "type": "string",

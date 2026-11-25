@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import difflib
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
@@ -12,6 +13,8 @@ from graph_cli.kernel.ids import EntityId
 from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import EdgeRecord
 from graph_cli.kinetic.entries import find_entry
+from graph_cli.kinetic.params import ParamDef
+from graph_cli.kinetic.view_entries import find_view
 from graph_cli.query.cypher.errors import did_you_mean
 from graph_cli.query.lookup import (
     LookupPlan,
@@ -34,6 +37,25 @@ from graph_cli.services.read.graph_read import GraphRead, Page
 from graph_cli.services.read.json_shapes import entity_json
 from graph_cli.services.read.state import query_phase
 from graph_cli.services.refs import resolve_ref
+
+# The kinds ``--for`` may name before a function, action or view (``view:NAME.PARAM``), and the
+# slot of the entity of a view that shows one.
+SLOT_KINDS: Final = ("function", "action", "view")
+ENTITY_SLOT: Final = "_entity"
+
+
+@dataclass(frozen=True, slots=True)
+class _Slot:
+    """A parameter a lookup can be for: its name, its type as written, and its class (``None``
+    unless it is a ``ref``)."""
+
+    name: str
+    type_text: str
+    of_class: str | None
+
+
+def _param_slots(params: Sequence[ParamDef]) -> list[_Slot]:
+    return [_Slot(p.name, p.type_text, p.of_class if p.type == "ref" else None) for p in params]
 
 
 class ReadFinding(ReadCatalogs):
@@ -113,30 +135,21 @@ class ReadFinding(ReadCatalogs):
         return tuple(sorted(set.intersection(*allowed))), True
 
     def _parameter_fit(self, view: GraphRead, use: str) -> tuple[str, ...]:
-        """The class of a ``ref`` parameter of a function or an action and its subclasses
-        (``--for f.p``). Names are unique across both kinds, so a visible action is looked up
-        first."""
-        name, _, param_name = use.partition(".")
-        actions = self.actions(view.actor, view.entry)
-        action = next((a for a in actions or () if a.name == name), None)
-        if action is not None:
-            kind, params = "action", action.defn.params
-        else:
-            functions = self.functions(view.actor, view.entry)
-            if actions is not None and all(f.name != name for f in functions or ()):
-                names = sorted([*(f.name for f in functions or ()), *(a.name for a in actions)])
-                raise GraphCliError(
-                    "function.not_found",
-                    f"no function or action {name!r}",
-                    details={
-                        "name": name,
-                        "did_you_mean": difflib.get_close_matches(name, names, n=5),
-                    },
-                )
-            kind, params = "function", find_entry(functions, name).defn.params
-        found = next((p for p in params if p.name == param_name), None)
+        """The class of a ``ref`` parameter of a function, an action or a view and its subclasses
+        (``--for NAME.PARAM``): the slot ``--for`` names (see ``_slot``)."""
+        owner, _, param_name = use.partition(".")
+        qualifier, colon, name = owner.rpartition(":")
+        if colon and qualifier not in SLOT_KINDS:
+            raise GraphCliError(
+                "usage.invalid_argument",
+                f"--for: {qualifier!r} is not a kind; write NAME.PARAM or "
+                + " or ".join(f"{kind}:NAME.PARAM" for kind in SLOT_KINDS),
+                details={"argument": "--for", "actual": use, "expected": list(SLOT_KINDS)},
+            )
+        kind, slots = self._slots(view, qualifier if colon else None, name)
+        found = next((s for s in slots if s.name == param_name), None)
         if found is None:
-            known = [p.name for p in params]
+            known = [s.name for s in slots]
             raise GraphCliError(
                 f"{kind}.parameter_unknown",
                 f"{name} has no parameter {param_name!r}"
@@ -148,13 +161,54 @@ class ReadFinding(ReadCatalogs):
                     "did_you_mean": did_you_mean(param_name, known),
                 },
             )
-        if found.type != "ref" or found.of_class is None:
+        if found.of_class is None:
             raise GraphCliError(
                 "usage.invalid_argument",
                 f"--for: parameter {param_name!r} of {name} is {found.type_text}, not a ref",
                 details={"argument": "--for", kind: name, "parameter": param_name},
             )
         return view.model.subtypes(found.of_class)
+
+    def _slots(self, view: GraphRead, qualifier: str | None, name: str) -> tuple[str, list[_Slot]]:
+        """The kind and the slots of the function, action or view ``name`` the actor may use: its
+        parameters and, for a view that shows one entity, its entity (``ENTITY_SLOT``). A
+        ``qualifier`` (``function``, ``action`` or ``view``) says which catalog to look in; without
+        one, names are unique across functions and actions, so a visible action is looked up
+        first, then the functions (a view needs its qualifier: it may share its name with a
+        function). What the actor may not use is not found, like what it does not see."""
+        if qualifier == "view":
+            found = find_view(self.views(view.actor, view.entry), name)
+            slots = _param_slots(found.defn.params)
+            if found.takes is not None:
+                slots.insert(0, _Slot(ENTITY_SLOT, "ref", found.takes))
+            return "view", slots
+        actions = self.actions(view.actor, view.entry)
+        action = next((a for a in actions or () if a.name == name), None)
+        if qualifier == "action" and action is None:
+            names = sorted(a.name for a in actions or ())
+            raise GraphCliError(
+                "action.not_found",
+                f"no action {name!r}",
+                details={"name": name, "did_you_mean": difflib.get_close_matches(name, names, n=5)},
+            )
+        if action is not None and qualifier != "function":
+            return "action", _param_slots(action.defn.params)
+        functions = self.functions(view.actor, view.entry)
+        if (
+            qualifier is None
+            and actions is not None
+            and all(f.name != name for f in functions or ())
+        ):
+            names = sorted([*(f.name for f in functions or ()), *(a.name for a in actions)])
+            raise GraphCliError(
+                "function.not_found",
+                f"no function or action {name!r}",
+                details={
+                    "name": name,
+                    "did_you_mean": difflib.get_close_matches(name, names, n=5),
+                },
+            )
+        return "function", _param_slots(find_entry(functions, name).defn.params)
 
     @query_phase
     def lookup(
