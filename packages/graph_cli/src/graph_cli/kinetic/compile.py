@@ -39,7 +39,8 @@ from graph_cli.kinetic.format import (
     Problem,
     load_function,
 )
-from graph_cli.kinetic.return_types import ColumnType, contradicts, infer_columns, merge
+from graph_cli.kinetic.return_inference import infer_columns
+from graph_cli.kinetic.return_types import ColumnType, contradicts, merge
 from graph_cli.ontology_layer.connecting import connecting
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.vocabulary import BUILTIN_MODULES, SYSTEM_FIELDS
