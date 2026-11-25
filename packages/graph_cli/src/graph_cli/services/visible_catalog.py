@@ -7,7 +7,9 @@ hidden when:
 
 - a type or relation its compiled query or ops touch is missing from the filtered model, or an
   action needs a write on a type that is missing;
-- a parameter names a class (``ref``) or an enum that is missing;
+- a parameter names a class (``ref``) or an enum that is missing, or a declared type of a result
+  column does (the classes and enums the query makes certain are terms it touches or attributes it
+  reads, which the first and last rule already cover);
 - the module it belongs to lost all its terms to the filter (a main module that holds none in
   the full model either, an umbrella, is not hidden by that);
 - it no longer compiles against the filtered model although it compiles against the full one:
@@ -28,6 +30,7 @@ from typing import Final
 from graph_cli.kernel.canonical import JsonObject
 from graph_cli.kinetic.action_entries import ActionEntry
 from graph_cli.kinetic.entries import FunctionEntry, Touched
+from graph_cli.kinetic.format import ReturnDef
 from graph_cli.kinetic.params import ParamDef, Problem
 from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.ontology_layer.model import CompiledModel
@@ -42,9 +45,11 @@ def names_missing(
     types: Iterable[str],
     relations: Iterable[str],
     params: Iterable[ParamDef],
+    returns: Iterable[ReturnDef] = (),
 ) -> bool:
     """Whether a term of a catalog entry is missing from ``model``: a class, relation, enum
-    or the module that owns the entry."""
+    or the module that owns the entry; ``returns`` are the result columns of a function, whose
+    declared enum and class count like those of a parameter."""
     if module is not None and all(info.id != module for info in model.modules):
         return True
     if any(t not in model.classes for t in types):
@@ -56,6 +61,11 @@ def names_missing(
             return True
         if param.type == "enum" and param.enum not in model.enums:
             return True
+    for column in returns:
+        if column.enum is not None and column.enum not in model.enums:
+            return True
+        if column.of_class is not None and column.of_class not in model.classes:
+            return True
     return False
 
 
@@ -65,13 +75,14 @@ def _curies(touched: Iterable[Touched]) -> list[str]:
 
 def function_hidden(entry: FunctionEntry, model: CompiledModel) -> bool:
     """Whether ``entry`` names a term that ``model`` (a filtered model) does not have: what
-    its query touches, its parameters and its module."""
+    its query touches, its parameters, the declared types of its columns and its module."""
     return names_missing(
         model,
         module=entry.module,
         types=_curies(entry.types),
         relations=_curies(entry.relations),
         params=entry.defn.params,
+        returns=entry.defn.returns,
     )
 
 

@@ -20,6 +20,7 @@ from graph_cli.kinetic.action_compile import compile_actions
 from graph_cli.kinetic.action_entries import load_action_entries
 from graph_cli.kinetic.compile import compile_catalog
 from graph_cli.kinetic.entries import FunctionEntry, load_entries
+from graph_cli.kinetic.format import ReturnDef
 from graph_cli.kinetic.params import ParamDef
 from graph_cli.services.describe import (
     describe_action,
@@ -190,6 +191,81 @@ def test_a_parameter_that_names_a_missing_enum_hides_the_function() -> None:
     assert not function_hidden(with_params(on_places, code), view)
     assert function_hidden(with_params(on_places, code, enum), view)
     assert function_hidden(with_params(on_places, ParamDef("l", "ref", "L.", "inv:Item")), view)
+
+
+def with_returns(entry: FunctionEntry, *returns: ReturnDef) -> FunctionEntry:
+    return replace(entry, defn=replace(entry.defn, returns=tuple(returns)))
+
+
+def test_a_declared_enum_or_class_of_a_column_hides_the_function_like_a_parameter_does() -> None:
+    places = filter_model(MODEL, PLACES)
+    items = filter_model(MODEL, ITEMS)
+    assert "inv:Condition" not in places.enums and "inv:Item" not in places.classes
+    base = next(f for f in FUNCTIONS if f.name == "items_by_condition")
+    bare = replace(
+        base, types=(), relations=(), module="inventory", defn=replace(base.defn, params=())
+    )
+    plain = ReturnDef("name", "A name.")
+    enum = ReturnDef("kind", "A kind.", "enum", enum="inv:Condition")
+    reference = ReturnDef("item", "An item.", "ref", of_class="inv:Item")
+    entity = ReturnDef("place", "A place.", "entity", of_class="inv:Location")
+    untyped_class = ReturnDef("any", "Anything.", "entity")
+    assert not function_hidden(with_returns(bare, plain, untyped_class), places)
+    assert function_hidden(with_returns(bare, plain, enum), places)  # the enum is missing
+    assert function_hidden(with_returns(bare, plain, reference), places)  # the class is missing
+    assert not function_hidden(with_returns(bare, plain, enum, reference), items)
+    assert function_hidden(with_returns(bare, plain, entity), items)  # a place is not visible
+
+
+# Touches nothing and takes no enum: only its declared column names an enum
+CONDITION_BY_NAME = """\
+schema: graph_cli.function/1
+name: condition_by_name
+summary: A condition derived from a name.
+use_when: Which condition a thing is assumed to be in, whatever it is.
+params:
+  name:
+    type: string
+    summary: The name to look for.
+query: |
+  MATCH (n) WHERE n.name = $name
+  RETURN CASE WHEN n.name = 'a' THEN 'new' ELSE 'good' END AS kind
+returns:
+  - column: kind
+    summary: The assumed condition.
+    type: enum
+    enum: inv:Condition
+examples:
+  - question: Which condition is a thing of this name assumed to have?
+"""
+
+
+@pytest.mark.doc_claim("security_model.tool_manifest_per_caller")
+def test_a_function_that_only_declares_a_hidden_enum_in_a_column_is_hidden_end_to_end() -> None:
+    document, problems = compile_catalog({"condition_by_name.yaml": CONDITION_BY_NAME}, MODEL)
+    assert [p.to_json() for p in problems] == []
+    entries = load_entries(document)
+    assert entries[0].types == () and entries[0].defn.params[0].type == "string"
+    assert hidden_functions(entries, document, MODEL, filter_model(MODEL, PLACES)) == {
+        "condition_by_name"
+    }
+    assert hidden_functions(entries, document, MODEL, filter_model(MODEL, ITEMS)) == frozenset()
+
+
+def test_the_inferred_class_of_an_entity_column_is_a_label_the_function_touches() -> None:
+    """The class an entity column is inferred to have is the label of its pattern, so a function
+    that returns a hidden class hides through ``touches`` already."""
+    source = NAMED_BY_QUANTITY.replace("name: named_by_quantity", "name: places")
+    source = source.replace(
+        "MATCH (n) WHERE n.quantity > $limit RETURN n.name AS name",
+        "MATCH (n:Location) WHERE n.name = $limit RETURN n AS name",
+    ).replace("type: integer", "type: string")
+    document, problems = compile_catalog({"places.yaml": source}, MODEL)
+    assert [p.to_json() for p in problems] == []
+    (entry,) = load_entries(document)
+    assert [t.curie for t in entry.types] == ["inv:Location"]
+    assert function_hidden(entry, filter_model(MODEL, ITEMS))
+    assert not function_hidden(entry, filter_model(MODEL, PLACES))
 
 
 def test_the_module_of_an_entry_must_still_hold_a_term() -> None:
