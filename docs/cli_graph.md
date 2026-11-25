@@ -1236,23 +1236,28 @@ graph call lookup --input text='"<value>"' --input for='"run_<function>.<param>"
 Each `--input` is one member of the object, its value a JSON value (a string is written with its
 quotes), repeated for more members. Over the server the same call is `POST /v1/commands/call` with
 `args.tool` and `args.input`, the object itself:
-`{"args": {"tool": "run_x", "input": {"since": "2026-01-01", "titles": ["a"]}}}`. The call answers
-what `run`, `do` or `view` answers for the same arguments: the same service runs, binds the
-parameters by the same types, resolves references the same way, authorizes, audits and refuses the
-same. What differs:
+`{"args": {"tool": "run_x", "input": {"since": "2026-01-01", "titles": ["a"]}}}`; the options go by
+their API names like those of every command ([API](server.md#api)): `graph`, `expect_hash` and
+`idempotency_key`. The call answers what `run`, `do` or `view` answers for the same arguments: the
+same service runs, binds the parameters by the same types, resolves references the same way,
+authorizes, audits and refuses the same. What differs:
 
 - **The tool name** is looked up among the entries you see. One you do not see is `tool.not_found`
   with the close names in `did_you_mean`; one you see but may not use gives what the command gives,
   `access.denied`, recorded like that of the command.
-- **The `lookup` tool** is called like the others, with `text`, `for` and `limit`. It is there only for a
-  caller that holds `read.find` while some tool takes a reference: with that right missing it is
-  `access.denied`, as for `lookup`, with no reference input at all it is `tool.not_found`. A `for` that is
-  none of the slots (a name without its kind prefix, a slot of a tool you cannot use) is
-  `usage.invalid_argument` with the close slots in `did_you_mean`, and so is any input other than `text`,
-  `for` and `limit`; a missing `text` or `for` is `usage.missing_argument`. It is a read: it takes no key.
-- **`null` is "not given"** for every parameter and control that is not required: a typed client
-  sends `null` for an argument it leaves out, and a default applies. For a required parameter it is
-  as good as missing (`function.parameter_missing`, `action.parameter_missing` or
+- **The `lookup` tool** is called like the others, with `text`, `for` and `limit`. It is there only
+  for a caller that holds `read.find` while some tool takes a reference: with that right missing it
+  is `access.denied`, as for `lookup`, with no reference input the lookup tool can serve (a
+  reference whose class has no label attribute does not count) it is `tool.not_found`. A `for` that
+  is none of the slots (a name without its kind prefix, a slot of a tool you cannot use) is
+  `usage.invalid_argument` with the close slots in `did_you_mean`, and so is any input other than
+  `text`, `for` and `limit`; a missing `text` or `for` is `usage.missing_argument`. It is a read: it
+  takes no key.
+- **`null` is "not given"** for every parameter and control that is not required, and a default
+  applies. `input_schema` lets only a property without a default take `null` (a property with a
+  default is not nullable there), so a client that validates its input against the schema leaves a
+  defaulted argument out; the server is the more lenient of the two. For a required parameter
+  `null` is as good as missing (`function.parameter_missing`, `action.parameter_missing` or
   `view.parameter_missing`). A number written with a fraction or an exponent (`5.0`) is an integer
   when it is a whole number, so a client that writes every number as a float still binds `integer`
   parameters and controls; for any other type, and for a number with a fraction, it is refused.
