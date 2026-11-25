@@ -258,8 +258,8 @@ def call(
         obligations = reader.reason_obligations(actor, entry) if kind == ACTION else frozenset()
         parts = {FUNCTION: none, ACTION: none, VIEW: none, kind: usable}
         model = reader.visible_model(actor, entry)
-        manifest = heads(model, parts[FUNCTION], parts[ACTION], parts[VIEW], obligations)
-        current = tool_hash(next(h for h in manifest if h.name == tool), model)
+        (head,) = heads(model, parts[FUNCTION], parts[ACTION], parts[VIEW], obligations, only=tool)
+        current = tool_hash(head, model)
         if current != expect_hash:
             raise GraphCliError(
                 "tool.hash_mismatch",

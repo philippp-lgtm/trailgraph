@@ -175,12 +175,29 @@ def heads(
     actions: Sequence[ActionEntry],
     views: Sequence[ViewEntry],
     obligations: frozenset[str],
+    *,
+    only: str | None = None,
 ) -> tuple[ToolHead, ...]:
-    """Every tool the caller may use: functions, then actions, then views, each by name."""
+    """Every tool the caller may use: functions, then actions, then views, each by name. With
+    ``only`` just the tool of that name is built (a function's head resolves its query to type its
+    columns, which a call that needs one tool should not pay for every function); the entries
+    still count as the ones a replacement is looked up in."""
+
+    def wanted(kind: str, entry: FunctionEntry | ActionEntry | ViewEntry) -> bool:
+        return only is None or describe_tools.tool_name(kind, entry.name) == only
+
     found = (
-        *(describe_tools.function_head(e, model, functions) for e in _by_name(functions)),
-        *(describe_tools.action_head(e, model, actions, obligations) for e in _by_name(actions)),
-        *(describe_tools.view_head(e, model, views) for e in _by_name(views)),
+        *(
+            describe_tools.function_head(e, model, functions)
+            for e in _by_name(functions)
+            if wanted(FUNCTION, e)
+        ),
+        *(
+            describe_tools.action_head(e, model, actions, obligations)
+            for e in _by_name(actions)
+            if wanted(ACTION, e)
+        ),
+        *(describe_tools.view_head(e, model, views) for e in _by_name(views) if wanted(VIEW, e)),
     )
     describe_tools.unique_names(found)
     return found

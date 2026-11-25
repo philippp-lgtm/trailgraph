@@ -139,6 +139,31 @@ def test_a_tool_hash_covers_what_a_harness_builds_its_tool_from() -> None:
     assert tool["hash"] == hash_value(covered)
 
 
+def test_heads_of_one_tool_resolve_only_that_function(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A call that checks the hash of one tool must not type the columns of every function."""
+    from graph_cli.services import describe_tools
+
+    scene = COMPANY.scene()
+    asked: list[str] = []
+    original = describe_tools.column_types_of
+
+    def spy(entry: Any, model: Any) -> Any:
+        asked.append(entry.name)
+        return original(entry, model)
+
+    monkeypatch.setattr(describe_tools, "column_types_of", spy)
+    args = (scene.model, scene.functions, scene.actions, scene.views, NO_OBLIGATIONS)
+    (head,) = tm.heads(*args, only="run_members_of_unit")
+    assert asked == ["members_of_unit"]
+    every = {h.name: h for h in tm.heads(*args)}
+    assert len(asked) == 1 + len(scene.functions)
+    assert tm.tool_hash(head, scene.model) == tm.tool_hash(
+        every["run_members_of_unit"], scene.model
+    )
+    assert tm.heads(*args, only="do_assign_position")[0].kind == "action"
+    assert tm.heads(*args, only="run_nothing") == ()
+
+
 def test_an_enum_change_changes_the_tool_hash_but_not_the_entry_hash() -> None:
     scene = INVENTORY.scene()
     shorter = replace(
