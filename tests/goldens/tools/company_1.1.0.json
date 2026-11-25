@@ -1,0 +1,3899 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "company",
+    "version": "1.1.0"
+  },
+  "tools_format": 1,
+  "version": "sha256:78876647bc4a055a27d3833458b22daba5c78fe99722e5c981192d2c0bdeadbc",
+  "tools": [
+    {
+      "name": "run_employer_of",
+      "kind": "function",
+      "entry": "employer_of",
+      "description": "The legal entity that employs an employee, with its legal form, country and status.\n\nUse when: Which company, legal entity or subsidiary employs a person, who the employer under the employment contract is, in which country. Employees only; an external person has no employer in the graph. Not for who owns the employer, and not for the unit a person works in.\n\nExamples:\n- Which legal entity employs this person?\n- In which country is the employer of this employee registered?",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "person": {
+            "type": "string",
+            "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+            "x-graph-cli": {
+              "class": "ppl:Employee"
+            },
+            "description": "The employee whose employer is asked for. An entity of class ppl:Employee: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          },
+          "_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page, at most 500.",
+            "default": 50
+          },
+          "_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip; the next page starts at page.next_offset.",
+            "default": 0
+          }
+        },
+        "required": [
+          "person"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "hash"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "entity": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "legal_form": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "country": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "status": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                }
+              },
+              "required": [
+                "entity",
+                "legal_form",
+                "country",
+                "status"
+              ]
+            }
+          },
+          "page": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "shown": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "offset": {
+                "type": "integer"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "next_offset": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "total",
+              "shown",
+              "limit",
+              "offset",
+              "truncated",
+              "next_offset"
+            ]
+          }
+        },
+        "required": [
+          "function",
+          "columns",
+          "items",
+          "page"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": "offset"
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": false,
+      "module": "legal",
+      "hash": "sha256:3e984a557b1dc0071110e225105772453c8169f712ddcf765c9f621cb5dfc111",
+      "entry_hash": "sha256:8f2a737e47b0c2076c1cdfa05b871e6e0cbc7975b547323c6c1a96056713ff4a",
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "function.not_found",
+        "function.parameter_invalid",
+        "function.parameter_missing",
+        "function.parameter_type",
+        "function.parameter_unknown",
+        "function.stale",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "query.invalid_value",
+        "query.too_large",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input"
+      ]
+    },
+    {
+      "name": "run_members_of_unit",
+      "kind": "function",
+      "entry": "members_of_unit",
+      "description": "People holding a position in a unit or in any unit below it, with the position and its unit.\n\nUse when: Who works in a department or team, who belongs to a unit including its sub-units, headcount or staffing of a unit, who sits in which position of a unit. Lists holders of positions, so a position nobody holds does not appear; use vacant_positions for those. Not for the reporting line of one position.\n\nExamples:\n- Who works in the engineering department, including its teams?\n- Which people hold a position in this team?",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "unit": {
+            "type": "string",
+            "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+            "x-graph-cli": {
+              "class": "org:OrgUnit"
+            },
+            "description": "The department or team to list; its sub-units are included. An entity of class org:OrgUnit: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          },
+          "_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page, at most 500.",
+            "default": 50
+          },
+          "_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip; the next page starts at page.next_offset.",
+            "default": 0
+          }
+        },
+        "required": [
+          "unit"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "hash"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "person": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "position": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "unit": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                }
+              },
+              "required": [
+                "person",
+                "position",
+                "unit"
+              ]
+            }
+          },
+          "page": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "shown": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "offset": {
+                "type": "integer"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "next_offset": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "total",
+              "shown",
+              "limit",
+              "offset",
+              "truncated",
+              "next_offset"
+            ]
+          }
+        },
+        "required": [
+          "function",
+          "columns",
+          "items",
+          "page"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": "offset"
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": true,
+      "module": "organization",
+      "hash": "sha256:4ddce5b02b877893a82c0827166dbf8328c115e072ad39029d8f03e4d8a02c56",
+      "entry_hash": "sha256:881b801a4480a9db641bfae24f8cda89045a7275d58a1847038c3031e4c646c2",
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "function.not_found",
+        "function.parameter_invalid",
+        "function.parameter_missing",
+        "function.parameter_type",
+        "function.parameter_unknown",
+        "function.stale",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "query.invalid_value",
+        "query.too_large",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input"
+      ]
+    },
+    {
+      "name": "run_missing_required_trainings",
+      "kind": "function",
+      "entry": "missing_required_trainings",
+      "description": "Trainings that the holders of positions in a unit must still complete, per person.\n\nUse when: Which trainings are outstanding, overdue or not yet completed in a department or team, who still has to complete a required training, training gaps or compliance of a unit including its sub-units. A training is required through the role a position carries. Answers per unit, not for one person's full list of required trainings.\n\nExamples:\n- Which required trainings are still open for the people of the infrastructure department?\n- Who in this team has not completed all trainings their role requires?",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "unit": {
+            "type": "string",
+            "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+            "x-graph-cli": {
+              "class": "org:OrgUnit"
+            },
+            "description": "The department or team to check; its sub-units are included. An entity of class org:OrgUnit: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          },
+          "_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page, at most 500.",
+            "default": 50
+          },
+          "_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip; the next page starts at page.next_offset.",
+            "default": 0
+          }
+        },
+        "required": [
+          "unit"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "hash"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "person": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "position": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "training": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                }
+              },
+              "required": [
+                "person",
+                "position",
+                "training"
+              ]
+            }
+          },
+          "page": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "shown": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "offset": {
+                "type": "integer"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "next_offset": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "total",
+              "shown",
+              "limit",
+              "offset",
+              "truncated",
+              "next_offset"
+            ]
+          }
+        },
+        "required": [
+          "function",
+          "columns",
+          "items",
+          "page"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": "offset"
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": true,
+      "module": "operations",
+      "hash": "sha256:a697ed0c50fbffd6ea447f325e4643e51127b294743bf0194a29497576fd2555",
+      "entry_hash": "sha256:82dc798df7fbe2a05733359772c41081c8e980f172d1f63b599b6467381aaf38",
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "function.not_found",
+        "function.parameter_invalid",
+        "function.parameter_missing",
+        "function.parameter_type",
+        "function.parameter_unknown",
+        "function.stale",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "query.invalid_value",
+        "query.too_large",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input"
+      ]
+    },
+    {
+      "name": "run_policies_for_unit",
+      "kind": "function",
+      "entry": "policies_for_unit",
+      "description": "Policies that bind a unit, directly or through a unit above it, with status and dates.\n\nUse when: Which policies apply to a department or team, which rules a unit is bound by, whether a policy is in force or due for review. A policy that applies to a unit binds the units below it too, so policies of parent units are included. Not for the processes a policy governs or for the text of a policy.\n\nExamples:\n- Which policies is the finance department bound by?\n- Which policies apply to this team, including those of its department?",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "unit": {
+            "type": "string",
+            "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+            "x-graph-cli": {
+              "class": "org:OrgUnit"
+            },
+            "description": "The department or team whose policies are listed. An entity of class org:OrgUnit: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          },
+          "_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page, at most 500.",
+            "default": 50
+          },
+          "_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip; the next page starts at page.next_offset.",
+            "default": 0
+          }
+        },
+        "required": [
+          "unit"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "hash"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "policy": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "status": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "effective_from": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "review_due": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                }
+              },
+              "required": [
+                "policy",
+                "status",
+                "effective_from",
+                "review_due"
+              ]
+            }
+          },
+          "page": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "shown": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "offset": {
+                "type": "integer"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "next_offset": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "total",
+              "shown",
+              "limit",
+              "offset",
+              "truncated",
+              "next_offset"
+            ]
+          }
+        },
+        "required": [
+          "function",
+          "columns",
+          "items",
+          "page"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": "offset"
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": true,
+      "module": "operations",
+      "hash": "sha256:4e75c8a4c55b20fac8790c201da6925d41c38af5c94015d8a3260ac9aa6bdb5d",
+      "entry_hash": "sha256:12e2bc39d34abbc6291d34ae898e92982dc42e96eaebab952f92559f6b7754e7",
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "function.not_found",
+        "function.parameter_invalid",
+        "function.parameter_missing",
+        "function.parameter_type",
+        "function.parameter_unknown",
+        "function.stale",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "query.invalid_value",
+        "query.too_large",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input"
+      ]
+    },
+    {
+      "name": "run_reporting_chain",
+      "kind": "function",
+      "entry": "reporting_chain",
+      "description": "The positions a position reports to, up to the top, nearest first, with their current holders.\n\nUse when: Who is the manager or boss of a position, whom a position reports to, the escalation path or chain of command up to the top of the org chart. Walks the reporting line of one position, not the people who report to it. A position nobody holds shows an empty holder.\n\nExamples:\n- Whom does this position report to, all the way up?\n- Who is the manager of this position?",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "position": {
+            "type": "string",
+            "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+            "x-graph-cli": {
+              "class": "org:Position"
+            },
+            "description": "The position whose reporting line is walked. An entity of class org:Position: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          },
+          "_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page, at most 500.",
+            "default": 50
+          },
+          "_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip; the next page starts at page.next_offset.",
+            "default": 0
+          }
+        },
+        "required": [
+          "position"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "hash"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "level": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "position": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "holder": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                }
+              },
+              "required": [
+                "level",
+                "position",
+                "holder"
+              ]
+            }
+          },
+          "page": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "shown": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "offset": {
+                "type": "integer"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "next_offset": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "total",
+              "shown",
+              "limit",
+              "offset",
+              "truncated",
+              "next_offset"
+            ]
+          }
+        },
+        "required": [
+          "function",
+          "columns",
+          "items",
+          "page"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": "offset"
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": true,
+      "module": "organization",
+      "hash": "sha256:8de8a1d535a096e71ccf41f71c87167d62a6fa302eec9ce7aa3ab711f8c62786",
+      "entry_hash": "sha256:2bb29e80be5ffa4047c170519156b28025779013a7caefd68c2490942b0e9570",
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "function.not_found",
+        "function.parameter_invalid",
+        "function.parameter_missing",
+        "function.parameter_type",
+        "function.parameter_unknown",
+        "function.stale",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "query.invalid_value",
+        "query.too_large",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input"
+      ]
+    },
+    {
+      "name": "run_required_trainings",
+      "kind": "function",
+      "entry": "required_trainings",
+      "description": "Every training the given people need through the roles of their positions, and whether they did it.\n\nUse when: Which trainings a person (or several people) needs, has completed or still lacks, through which position and role a training is required, and when it was completed. One person's full training list; for the gaps of a whole department or team use missing_required_trainings.\n\nExamples:\n- Which trainings does this employee need, and which are done?",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "person": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+              "x-graph-cli": {
+                "class": "ppl:Person"
+              }
+            },
+            "minItems": 1,
+            "description": "The people to check; repeat the parameter for several. An entity of class ppl:Person: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          },
+          "_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page, at most 500.",
+            "default": 50
+          },
+          "_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip; the next page starts at page.next_offset.",
+            "default": 0
+          }
+        },
+        "required": [
+          "person"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "hash"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "person": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "training": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "position": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "role": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "completed_on": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                }
+              },
+              "required": [
+                "person",
+                "training",
+                "position",
+                "role",
+                "completed_on"
+              ]
+            }
+          },
+          "page": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "shown": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "offset": {
+                "type": "integer"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "next_offset": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "total",
+              "shown",
+              "limit",
+              "offset",
+              "truncated",
+              "next_offset"
+            ]
+          }
+        },
+        "required": [
+          "function",
+          "columns",
+          "items",
+          "page"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": "offset"
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": true,
+      "module": "operations",
+      "hash": "sha256:cc997f506c776ff65c27d9bc76c2217f3b047f39ee41dcc1064e0f6bc704ceaf",
+      "entry_hash": "sha256:a6ec8e54131cb2d45d9119a6648ca2525e3d716dc7b0f7e698dc609a5d07c501",
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "function.not_found",
+        "function.parameter_invalid",
+        "function.parameter_missing",
+        "function.parameter_type",
+        "function.parameter_unknown",
+        "function.stale",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "query.invalid_value",
+        "query.too_large",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input"
+      ]
+    },
+    {
+      "name": "run_shareholders_of",
+      "kind": "function",
+      "entry": "shareholders_of",
+      "description": "Who holds stakes in the given legal entities, with the percent of each stake and its date.\n\nUse when: Who owns a legal entity or subsidiary, the shareholders and their percentages, whether a holder owns more than half (the parent company), and which stakes are recorded at all. Not for what an entity itself owns.\n\nExamples:\n- Who owns this company, and is there a parent company?",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entity": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+              "x-graph-cli": {
+                "class": "leg:LegalEntity"
+              }
+            },
+            "minItems": 1,
+            "description": "The legal entities whose shareholders are asked for; repeat the parameter for several. An entity of class leg:LegalEntity: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          },
+          "_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page, at most 500.",
+            "default": 50
+          },
+          "_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip; the next page starts at page.next_offset.",
+            "default": 0
+          }
+        },
+        "required": [
+          "entity"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "hash"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "entity": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "shareholder": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "shareholder_alias": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "percent": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "since": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                }
+              },
+              "required": [
+                "entity",
+                "shareholder",
+                "shareholder_alias",
+                "percent",
+                "since"
+              ]
+            }
+          },
+          "page": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "shown": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "offset": {
+                "type": "integer"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "next_offset": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "total",
+              "shown",
+              "limit",
+              "offset",
+              "truncated",
+              "next_offset"
+            ]
+          }
+        },
+        "required": [
+          "function",
+          "columns",
+          "items",
+          "page"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": "offset"
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": true,
+      "module": "legal",
+      "hash": "sha256:46ad2281c0d91b41251f9799a26665984bdeaa6439b3c97c27a64ea39dd04980",
+      "entry_hash": "sha256:48e9019a37c1adb95427b61ff8f9bf176b49aac147db0dedefd41f176988df03",
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "function.not_found",
+        "function.parameter_invalid",
+        "function.parameter_missing",
+        "function.parameter_type",
+        "function.parameter_unknown",
+        "function.stale",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "query.invalid_value",
+        "query.too_large",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input"
+      ]
+    },
+    {
+      "name": "run_training_completions",
+      "kind": "function",
+      "entry": "training_completions",
+      "description": "Who completed which of the given trainings since a date.\n\nUse when: Completion records of named trainings, certificates earned in a period.\n\nExamples:\n- Who completed the safety or the security training this year? Input: {\"since\": \"2026-01-01\", \"titles\": [\"Safety\", \"Security\"]}",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "titles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Titles of the trainings to include."
+          },
+          "since": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:000[1-9]|00[1-9]\\d|0[1-9]\\d\\d|[1-9]\\d{3})-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|02-(?:0[1-9]|1\\d|2[0-8]))|(?:\\d\\d(?:0[48]|[2468][048]|[13579][26])|(?:0[48]|[2468][048]|[13579][26])00)-02-29)$",
+            "description": "Only completions on or after this date.",
+            "default": "2000-01-01"
+          },
+          "_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page, at most 500.",
+            "default": 50
+          },
+          "_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip; the next page starts at page.next_offset.",
+            "default": 0
+          }
+        },
+        "required": [
+          "titles"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "hash"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "person": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "training": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "completed_on": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                }
+              },
+              "required": [
+                "person",
+                "training",
+                "completed_on"
+              ]
+            }
+          },
+          "page": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "shown": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "offset": {
+                "type": "integer"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "next_offset": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "total",
+              "shown",
+              "limit",
+              "offset",
+              "truncated",
+              "next_offset"
+            ]
+          }
+        },
+        "required": [
+          "function",
+          "columns",
+          "items",
+          "page"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": "offset"
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": false,
+      "module": "operations",
+      "hash": "sha256:7ed27425eb48ff0360b0ff413cac9badec9a1ea4d24202d22a398ecd5a5cf6a0",
+      "entry_hash": "sha256:f4e7ae9f40d04bde3d9ad2e0f1765d1b11c122dd354945d10a689449e5dfbb1e",
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "function.not_found",
+        "function.parameter_invalid",
+        "function.parameter_missing",
+        "function.parameter_type",
+        "function.parameter_unknown",
+        "function.stale",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "query.invalid_value",
+        "query.too_large",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input"
+      ]
+    },
+    {
+      "name": "run_vacant_positions",
+      "kind": "function",
+      "entry": "vacant_positions",
+      "description": "Positions of a unit or of any unit below it that nobody holds, active or still planned.\n\nUse when: Which positions are open, vacant or unfilled in a department or team, where hiring is needed, staffing gaps of a unit including its sub-units. Abolished positions are left out; the status column tells an open position from a planned one. Not for who holds the filled positions; use members_of_unit for that.\n\nExamples:\n- Which positions in the engineering department are currently vacant?\n- Where do we still have open positions in this team?",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "unit": {
+            "type": "string",
+            "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+            "x-graph-cli": {
+              "class": "org:OrgUnit"
+            },
+            "description": "The department or team to check; its sub-units are included. An entity of class org:OrgUnit: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          },
+          "_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page, at most 500.",
+            "default": 50
+          },
+          "_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip; the next page starts at page.next_offset.",
+            "default": 0
+          }
+        },
+        "required": [
+          "unit"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "function": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "hash"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "status": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                },
+                "unit": {
+                  "x-graph-cli": {
+                    "typed": false
+                  }
+                }
+              },
+              "required": [
+                "position",
+                "status",
+                "unit"
+              ]
+            }
+          },
+          "page": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "shown": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "offset": {
+                "type": "integer"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "next_offset": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "total",
+              "shown",
+              "limit",
+              "offset",
+              "truncated",
+              "next_offset"
+            ]
+          }
+        },
+        "required": [
+          "function",
+          "columns",
+          "items",
+          "page"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": "offset"
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": true,
+      "module": "organization",
+      "hash": "sha256:dfc56c6662ff4fa1f45f0d605ea404c1a695cccb8ba65b2791aa849fd975f212",
+      "entry_hash": "sha256:0ee626e74ed8ab77c6d79f699b1ae231c0da766ec8333ba6790ffeb397007180",
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "function.not_found",
+        "function.parameter_invalid",
+        "function.parameter_missing",
+        "function.parameter_type",
+        "function.parameter_unknown",
+        "function.stale",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "query.invalid_value",
+        "query.too_large",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input"
+      ]
+    },
+    {
+      "name": "do_assign_position",
+      "kind": "action",
+      "entry": "assign_position",
+      "description": "Staff a vacant position from a date; a person joins a unit by holding one of its positions.\n\nUse when: Someone starts in, joins, takes over or is appointed to a job, a role in the org chart or a unit; staffing a vacant position. Not for replacing the current holder: use hand_over_position.\n\nExamples:\n- The new recruiter starts as the support lead on the first of March.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "person": {
+            "type": "string",
+            "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+            "x-graph-cli": {
+              "class": "ppl:Person"
+            },
+            "description": "Who takes over the position. An entity of class ppl:Person: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          },
+          "position": {
+            "type": "string",
+            "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+            "x-graph-cli": {
+              "class": "org:Position"
+            },
+            "description": "The vacant position. An entity of class org:Position: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          },
+          "since": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:000[1-9]|00[1-9]\\d|0[1-9]\\d\\d|[1-9]\\d{3})-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|02-(?:0[1-9]|1\\d|2[0-8]))|(?:\\d\\d(?:0[48]|[2468][048]|[13579][26])|(?:0[48]|[2468][048]|[13579][26])00)-02-29)$",
+            "description": "Date the person takes over."
+          },
+          "_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why this change is made; recorded in the audit trail."
+          },
+          "_dry_run": {
+            "type": "boolean",
+            "description": "Check the preconditions and report what would change; nothing is written.",
+            "default": false
+          }
+        },
+        "required": [
+          "person",
+          "position",
+          "since"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "tx_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "idempotent_replay": {
+            "type": "boolean"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "entity_count": {
+            "type": "integer"
+          },
+          "entities": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "alias": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "rev": {
+                      "type": "integer"
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "ops": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "local": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "changed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "alias",
+                    "rev",
+                    "type",
+                    "ops",
+                    "local",
+                    "changed"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "code": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "message": {
+                  "type": "string"
+                },
+                "expected": {},
+                "actual": {},
+                "rule_id": {
+                  "type": "string"
+                },
+                "hint": {
+                  "type": "string"
+                },
+                "connecting": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "severity",
+                "code",
+                "target",
+                "message"
+              ]
+            }
+          },
+          "action": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "hash"
+            ]
+          }
+        },
+        "required": [
+          "tx_id",
+          "seq",
+          "event_id",
+          "dry_run",
+          "idempotent_replay",
+          "id",
+          "version",
+          "entity_count",
+          "entities",
+          "findings",
+          "action"
+        ]
+      },
+      "annotations": {
+        "read_only": false,
+        "dry_run": true,
+        "reason": "optional",
+        "paging": null
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": true,
+      "module": "organization",
+      "hash": "sha256:4e729894138762abbc4db89646b050a5847e8aa38a044437ad9f5d6472539578",
+      "entry_hash": "sha256:18cc1879fd22e4b8feb6549a20f9eed358462ee733890dc0bdfa6dd27a410a34",
+      "errors": [
+        "access.denied",
+        "access.reason_required",
+        "action.not_found",
+        "action.nothing_to_do",
+        "action.parameter_invalid",
+        "action.parameter_missing",
+        "action.parameter_type",
+        "action.parameter_unknown",
+        "action.precondition_failed",
+        "action.reason_required",
+        "action.stale",
+        "actions.slot_invalid",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "changeset.too_large",
+        "config.forbidden_key",
+        "config.invalid",
+        "conflict.idempotency_key_reuse",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.archived",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.readonly",
+        "internal.error",
+        "ontology.artifact_missing",
+        "ontology.pin_mismatch",
+        "remote.unauthorized",
+        "skills.outdated",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input",
+        "write.invalid",
+        "write.migration_incomplete"
+      ]
+    },
+    {
+      "name": "do_hand_over_position",
+      "kind": "action",
+      "entry": "hand_over_position",
+      "description": "Replace the current holder of a position by another person, from a date.\n\nUse when: A position that somebody holds gets a new holder: succession, a swap, a handover. Not for staffing a vacant position: use assign_position.\n\nExamples:\n- The head of the support team hands the lead position over to a colleague.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "position": {
+            "type": "string",
+            "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+            "x-graph-cli": {
+              "class": "org:Position"
+            },
+            "description": "The position that changes hands. An entity of class org:Position: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          },
+          "person": {
+            "type": "string",
+            "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+            "x-graph-cli": {
+              "class": "ppl:Person"
+            },
+            "description": "The new holder. An entity of class ppl:Person: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:000[1-9]|00[1-9]\\d|0[1-9]\\d\\d|[1-9]\\d{3})-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|02-(?:0[1-9]|1\\d|2[0-8]))|(?:\\d\\d(?:0[48]|[2468][048]|[13579][26])|(?:0[48]|[2468][048]|[13579][26])00)-02-29)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Date the new holder takes over."
+          },
+          "_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why this change is made; recorded in the audit trail."
+          },
+          "_dry_run": {
+            "type": "boolean",
+            "description": "Check the preconditions and report what would change; nothing is written.",
+            "default": false
+          }
+        },
+        "required": [
+          "position",
+          "person"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "tx_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "idempotent_replay": {
+            "type": "boolean"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "entity_count": {
+            "type": "integer"
+          },
+          "entities": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "alias": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "rev": {
+                      "type": "integer"
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "ops": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "local": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "changed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "alias",
+                    "rev",
+                    "type",
+                    "ops",
+                    "local",
+                    "changed"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "code": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "message": {
+                  "type": "string"
+                },
+                "expected": {},
+                "actual": {},
+                "rule_id": {
+                  "type": "string"
+                },
+                "hint": {
+                  "type": "string"
+                },
+                "connecting": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "severity",
+                "code",
+                "target",
+                "message"
+              ]
+            }
+          },
+          "action": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "hash"
+            ]
+          }
+        },
+        "required": [
+          "tx_id",
+          "seq",
+          "event_id",
+          "dry_run",
+          "idempotent_replay",
+          "id",
+          "version",
+          "entity_count",
+          "entities",
+          "findings",
+          "action"
+        ]
+      },
+      "annotations": {
+        "read_only": false,
+        "dry_run": true,
+        "reason": "optional",
+        "paging": null
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": true,
+      "module": "organization",
+      "hash": "sha256:b607ee9e196b8d8e92eae966754d9837d319f8775d510f01a9173a3458190edb",
+      "entry_hash": "sha256:f3d5a5b3c287274b2bc60192bdf7d18c7b335b235ae4b2b459234dd99a1ebbd4",
+      "errors": [
+        "access.denied",
+        "access.reason_required",
+        "action.not_found",
+        "action.nothing_to_do",
+        "action.parameter_invalid",
+        "action.parameter_missing",
+        "action.parameter_type",
+        "action.parameter_unknown",
+        "action.precondition_failed",
+        "action.reason_required",
+        "action.stale",
+        "actions.slot_invalid",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "changeset.too_large",
+        "config.forbidden_key",
+        "config.invalid",
+        "conflict.idempotency_key_reuse",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.archived",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.readonly",
+        "internal.error",
+        "ontology.artifact_missing",
+        "ontology.pin_mismatch",
+        "remote.unauthorized",
+        "skills.outdated",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input",
+        "write.invalid",
+        "write.migration_incomplete"
+      ]
+    },
+    {
+      "name": "do_offboard_employee",
+      "kind": "action",
+      "entry": "offboard_employee",
+      "description": "Record that an employee has left; remove their positions and employer first.\n\nUse when: An employee leaves the company or their employment ends. Removes the positions they hold and their employer link, then moves the employee to the state left.\n\nExamples:\n- A colleague from the sales team left the company at the end of the month.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "employee": {
+            "type": "string",
+            "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+            "x-graph-cli": {
+              "class": "ppl:Employee"
+            },
+            "description": "The employee who leaves. An entity of class ppl:Employee: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          },
+          "_reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Why this change is made; recorded in the audit trail. Required for this action."
+          },
+          "_dry_run": {
+            "type": "boolean",
+            "description": "Check the preconditions and report what would change; nothing is written.",
+            "default": false
+          }
+        },
+        "required": [
+          "employee",
+          "_reason"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "tx_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "idempotent_replay": {
+            "type": "boolean"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "entity_count": {
+            "type": "integer"
+          },
+          "entities": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "alias": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "rev": {
+                      "type": "integer"
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "ops": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "local": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "changed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "alias",
+                    "rev",
+                    "type",
+                    "ops",
+                    "local",
+                    "changed"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "code": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "message": {
+                  "type": "string"
+                },
+                "expected": {},
+                "actual": {},
+                "rule_id": {
+                  "type": "string"
+                },
+                "hint": {
+                  "type": "string"
+                },
+                "connecting": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "severity",
+                "code",
+                "target",
+                "message"
+              ]
+            }
+          },
+          "action": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "hash"
+            ]
+          }
+        },
+        "required": [
+          "tx_id",
+          "seq",
+          "event_id",
+          "dry_run",
+          "idempotent_replay",
+          "id",
+          "version",
+          "entity_count",
+          "entities",
+          "findings",
+          "action"
+        ]
+      },
+      "annotations": {
+        "read_only": false,
+        "dry_run": true,
+        "reason": "required",
+        "paging": null
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": true,
+      "module": "people",
+      "hash": "sha256:8363b6a46d67e88fec13e681aca558308a71a72e7de396fc489f6df0bb40de00",
+      "entry_hash": "sha256:ebf52a17ea0e793091c1fdfdffb49096d3499a91565e24582e118ff608a7e7f2",
+      "errors": [
+        "access.denied",
+        "access.reason_required",
+        "action.not_found",
+        "action.nothing_to_do",
+        "action.parameter_invalid",
+        "action.parameter_missing",
+        "action.parameter_type",
+        "action.parameter_unknown",
+        "action.precondition_failed",
+        "action.reason_required",
+        "action.stale",
+        "actions.slot_invalid",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "changeset.too_large",
+        "config.forbidden_key",
+        "config.invalid",
+        "conflict.idempotency_key_reuse",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.archived",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.readonly",
+        "internal.error",
+        "ontology.artifact_missing",
+        "ontology.pin_mismatch",
+        "remote.unauthorized",
+        "skills.outdated",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input",
+        "write.invalid",
+        "write.migration_incomplete"
+      ]
+    },
+    {
+      "name": "view_legacy_unit_overview",
+      "kind": "view",
+      "entry": "legacy_unit_overview",
+      "description": "The old team overview; use unit_overview.\n\nDeprecated; use view_unit_overview.\n\nUse when: Replaced by unit_overview; kept until the last reader has moved.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "_entity": {
+            "type": "string",
+            "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+            "x-graph-cli": {
+              "class": "org:Team"
+            },
+            "description": "The entity to show. An entity of class org:Team: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          }
+        },
+        "required": [
+          "_entity"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "view": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "origin": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "origin"
+            ]
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": {}
+            }
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "entity": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "rev": {
+                "type": "integer"
+              },
+              "record_status": {
+                "type": "string"
+              },
+              "alias": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "superseded_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "retracted_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "rev",
+              "record_status"
+            ]
+          },
+          "cut": {
+            "type": "boolean"
+          },
+          "sections_cut": {
+            "type": "integer"
+          },
+          "next": {
+            "type": "string"
+          },
+          "more": {
+            "type": "boolean"
+          },
+          "oversize": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "view",
+          "sections",
+          "bytes"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": null
+      },
+      "status": "deprecated",
+      "replaced_by": "view_unit_overview",
+      "featured": false,
+      "module": "organization",
+      "hash": "sha256:ad4f04c59b5b2978b8e5cdd719ae0cdda480ed4850f185f5d6e6d09346018cd0",
+      "entry_hash": "sha256:1f35aed569583a5cda9b2b935eba147ccc03de5787ba9263491f49c3475fd0a7",
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input",
+        "usage.missing_argument",
+        "view.class_mismatch",
+        "view.cursor_invalid",
+        "view.cursor_stale",
+        "view.not_found",
+        "view.parameter_invalid",
+        "view.parameter_missing",
+        "view.parameter_type",
+        "view.parameter_unknown",
+        "view.stale"
+      ]
+    },
+    {
+      "name": "view_members_report",
+      "kind": "view",
+      "entry": "members_report",
+      "description": "The people of one department, from the published function.\n\nUse when: Who works in a department including its teams, as a set view with a reference parameter.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "unit": {
+            "type": "string",
+            "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+            "x-graph-cli": {
+              "class": "org:Department"
+            },
+            "description": "The department to report on. An entity of class org:Department: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          },
+          "_cursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The next of the previous page of this view, with the same parameters; leave it out for the first page."
+          },
+          "_page_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 262144
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Page size in bytes; the view's own size, else 12288."
+          }
+        },
+        "required": [
+          "unit"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "view": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "origin": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "origin"
+            ]
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": {}
+            }
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "entity": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "rev": {
+                "type": "integer"
+              },
+              "record_status": {
+                "type": "string"
+              },
+              "alias": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "superseded_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "retracted_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "rev",
+              "record_status"
+            ]
+          },
+          "cut": {
+            "type": "boolean"
+          },
+          "sections_cut": {
+            "type": "integer"
+          },
+          "next": {
+            "type": "string"
+          },
+          "more": {
+            "type": "boolean"
+          },
+          "oversize": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "view",
+          "sections",
+          "bytes"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": "cursor"
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": false,
+      "module": "organization",
+      "hash": "sha256:8884db8dbf138d78d4ba8c1325ca16da91a344cbe110bd2a9875816af8c00c30",
+      "entry_hash": "sha256:5ece4734ba575d69e485ba18d056493ff32c518ceeeff081fdc7c4347a67a66d",
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input",
+        "usage.missing_argument",
+        "view.class_mismatch",
+        "view.cursor_invalid",
+        "view.cursor_stale",
+        "view.not_found",
+        "view.parameter_invalid",
+        "view.parameter_missing",
+        "view.parameter_type",
+        "view.parameter_unknown",
+        "view.stale"
+      ]
+    },
+    {
+      "name": "view_org_catalog",
+      "kind": "view",
+      "entry": "org_catalog",
+      "description": "Every unit, position and person with their keys and relations, for catalog renderers.\n\nUse when: Render or export the organisation as a whole, one listing per kind of thing; not for one entity (use graph view REF).",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "since": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:000[1-9]|00[1-9]\\d|0[1-9]\\d\\d|[1-9]\\d{3})-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|02-(?:0[1-9]|1\\d|2[0-8]))|(?:\\d\\d(?:0[48]|[2468][048]|[13579][26])|(?:0[48]|[2468][048]|[13579][26])00)-02-29)$",
+            "description": "Only trainings completed on or after this date.",
+            "default": "2000-01-01"
+          },
+          "_cursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The next of the previous page of this view, with the same parameters; leave it out for the first page."
+          },
+          "_page_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 262144
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Page size in bytes; the view's own size, else 12288."
+          }
+        },
+        "required": []
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "view": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "origin": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "origin"
+            ]
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": {}
+            }
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "entity": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "rev": {
+                "type": "integer"
+              },
+              "record_status": {
+                "type": "string"
+              },
+              "alias": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "superseded_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "retracted_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "rev",
+              "record_status"
+            ]
+          },
+          "cut": {
+            "type": "boolean"
+          },
+          "sections_cut": {
+            "type": "integer"
+          },
+          "next": {
+            "type": "string"
+          },
+          "more": {
+            "type": "boolean"
+          },
+          "oversize": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "view",
+          "sections",
+          "bytes"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": "cursor"
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": false,
+      "module": "organization",
+      "hash": "sha256:88cda18849cc4e45972911ff462640ce95dc33f6632f74fd990c28c1b3372040",
+      "entry_hash": "sha256:2611392b9d82e233b18dff49c24e5e22753ca2269c81ecc471db29496f4d2443",
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input",
+        "usage.missing_argument",
+        "view.class_mismatch",
+        "view.cursor_invalid",
+        "view.cursor_stale",
+        "view.not_found",
+        "view.parameter_invalid",
+        "view.parameter_missing",
+        "view.parameter_type",
+        "view.parameter_unknown",
+        "view.stale"
+      ]
+    },
+    {
+      "name": "view_position_overview",
+      "kind": "view",
+      "entry": "position_overview",
+      "description": "A position with its unit, its holder and the positions that report to it.\n\nUse when: Who holds a position, where it sits in the org chart and who reports to it. Local relation names are accepted and stored as CURIEs.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "_entity": {
+            "type": "string",
+            "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+            "x-graph-cli": {
+              "class": "org:Position"
+            },
+            "description": "The entity to show. An entity of class org:Position: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          }
+        },
+        "required": [
+          "_entity"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "view": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "origin": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "origin"
+            ]
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": {}
+            }
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "entity": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "rev": {
+                "type": "integer"
+              },
+              "record_status": {
+                "type": "string"
+              },
+              "alias": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "superseded_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "retracted_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "rev",
+              "record_status"
+            ]
+          },
+          "cut": {
+            "type": "boolean"
+          },
+          "sections_cut": {
+            "type": "integer"
+          },
+          "next": {
+            "type": "string"
+          },
+          "more": {
+            "type": "boolean"
+          },
+          "oversize": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "view",
+          "sections",
+          "bytes"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": null
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": false,
+      "module": "organization",
+      "hash": "sha256:0de89126b204d83ae525c714323d5b2509cecabf65b40d633c919aae28ab6628",
+      "entry_hash": "sha256:2ea811f8ee12daf4780aa50d56776213c95caa194f994a3ed6dd42565ff59f61",
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input",
+        "usage.missing_argument",
+        "view.class_mismatch",
+        "view.cursor_invalid",
+        "view.cursor_stale",
+        "view.not_found",
+        "view.parameter_invalid",
+        "view.parameter_missing",
+        "view.parameter_type",
+        "view.parameter_unknown",
+        "view.stale"
+      ]
+    },
+    {
+      "name": "view_tasks_by_state",
+      "kind": "view",
+      "entry": "tasks_by_state",
+      "description": "The tasks in one state that are due before a day, oldest first.\n\nUse when: Which tasks are open, in progress or done, and which are overdue.\n\nExamples:\n- Which tasks are still open this quarter? Input: {\"before\": \"2026-04-01\", \"status\": \"open\"}",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Lifecycle state of the tasks to list.",
+            "default": "open"
+          },
+          "before": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:000[1-9]|00[1-9]\\d|0[1-9]\\d\\d|[1-9]\\d{3})-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|02-(?:0[1-9]|1\\d|2[0-8]))|(?:\\d\\d(?:0[48]|[2468][048]|[13579][26])|(?:0[48]|[2468][048]|[13579][26])00)-02-29)$",
+            "description": "Only tasks due before this day.",
+            "default": "2100-01-01"
+          },
+          "_cursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The next of the previous page of this view, with the same parameters; leave it out for the first page."
+          },
+          "_page_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 262144
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Page size in bytes; the view's own size, else 12288."
+          }
+        },
+        "required": []
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "view": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "origin": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "origin"
+            ]
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": {}
+            }
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "entity": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "rev": {
+                "type": "integer"
+              },
+              "record_status": {
+                "type": "string"
+              },
+              "alias": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "superseded_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "retracted_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "rev",
+              "record_status"
+            ]
+          },
+          "cut": {
+            "type": "boolean"
+          },
+          "sections_cut": {
+            "type": "integer"
+          },
+          "next": {
+            "type": "string"
+          },
+          "more": {
+            "type": "boolean"
+          },
+          "oversize": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "view",
+          "sections",
+          "bytes"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": "cursor"
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": false,
+      "module": "operations",
+      "hash": "sha256:8178817b7431b46c5068771f0dd731dc3b4c16e05d178d9b72eac09ff851a133",
+      "entry_hash": "sha256:0963d3b61852e230b6b1d1cd689a781ccd4db2585e283ba62c26a9b462d53cea",
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input",
+        "usage.missing_argument",
+        "view.class_mismatch",
+        "view.cursor_invalid",
+        "view.cursor_stale",
+        "view.not_found",
+        "view.parameter_invalid",
+        "view.parameter_missing",
+        "view.parameter_type",
+        "view.parameter_unknown",
+        "view.stale"
+      ]
+    },
+    {
+      "name": "view_unit_overview",
+      "kind": "view",
+      "entry": "unit_overview",
+      "description": "A unit with its cost center, its positions in a state and who holds them.\n\nUse when: What a department or team is about: where it sits, what it costs, which positions it has in a given state and who holds them, which policies bind it.\n\nExamples:\n- Which active positions does the engineering department have? Input: {\"status\": \"active\"}",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "_entity": {
+            "type": "string",
+            "pattern": "^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$",
+            "x-graph-cli": {
+              "class": "org:OrgUnit"
+            },
+            "description": "The entity to show. An entity of class org:OrgUnit: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+          },
+          "status": {
+            "type": "string",
+            "description": "Lifecycle state of the positions to list.",
+            "default": "active"
+          }
+        },
+        "required": [
+          "_entity"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "view": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "origin": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "origin"
+            ]
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": {}
+            }
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "entity": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "rev": {
+                "type": "integer"
+              },
+              "record_status": {
+                "type": "string"
+              },
+              "alias": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "superseded_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "retracted_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "rev",
+              "record_status"
+            ]
+          },
+          "cut": {
+            "type": "boolean"
+          },
+          "sections_cut": {
+            "type": "integer"
+          },
+          "next": {
+            "type": "string"
+          },
+          "more": {
+            "type": "boolean"
+          },
+          "oversize": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "view",
+          "sections",
+          "bytes"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": null
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": false,
+      "module": "organization",
+      "hash": "sha256:9b3b16aaf34396ca0b5e40eb9987e091ecadee7904966a464097dcc89ad3fdf4",
+      "entry_hash": "sha256:93899e2a71372c70e4e98fe5dc9312adb4fe8f1773580739c404c77823b162d7",
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input",
+        "usage.missing_argument",
+        "view.class_mismatch",
+        "view.cursor_invalid",
+        "view.cursor_stale",
+        "view.not_found",
+        "view.parameter_invalid",
+        "view.parameter_missing",
+        "view.parameter_type",
+        "view.parameter_unknown",
+        "view.stale"
+      ]
+    }
+  ],
+  "errors": {
+    "access.denied": {
+      "category": "denied",
+      "retryable": false,
+      "summary": "The action is not permitted.",
+      "on_error": "stop"
+    },
+    "access.reason_required": {
+      "category": "denied",
+      "retryable": false,
+      "summary": "The action requires a reason.",
+      "on_error": "fix_input"
+    },
+    "action.not_found": {
+      "category": "not_found",
+      "retryable": false,
+      "summary": "The graph has no such action.",
+      "on_error": "stop"
+    },
+    "action.nothing_to_do": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "The action expands to no op in the current state.",
+      "on_error": "check_state"
+    },
+    "action.parameter_invalid": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "An action parameter value does not fit its declared type.",
+      "on_error": "fix_input"
+    },
+    "action.parameter_missing": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "An action parameter has no value.",
+      "on_error": "fix_input"
+    },
+    "action.parameter_type": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "A reference parameter names an entity of the wrong class.",
+      "on_error": "fix_input"
+    },
+    "action.parameter_unknown": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "The action has no such parameter.",
+      "on_error": "fix_input"
+    },
+    "action.precondition_failed": {
+      "category": "invalid",
+      "retryable": false,
+      "summary": "A precondition of the action does not hold in the current state.",
+      "on_error": "check_state"
+    },
+    "action.reason_required": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "The action demands a reason and none was given.",
+      "on_error": "fix_input"
+    },
+    "action.stale": {
+      "category": "invalid",
+      "retryable": false,
+      "summary": "An action no longer compiles against the graph's ontology.",
+      "on_error": "stop"
+    },
+    "actions.slot_invalid": {
+      "category": "invalid",
+      "retryable": false,
+      "summary": "The published action catalog is invalid.",
+      "on_error": "stop"
+    },
+    "audit.unavailable": {
+      "category": "unavailable",
+      "retryable": true,
+      "summary": "The audit log could not be written.",
+      "on_error": "retry"
+    },
+    "backend.corrupt": {
+      "category": "unavailable",
+      "retryable": false,
+      "summary": "The transaction log is damaged.",
+      "on_error": "stop"
+    },
+    "backend.lock_timeout": {
+      "category": "unavailable",
+      "retryable": true,
+      "summary": "The graph lock was not acquired.",
+      "on_error": "retry"
+    },
+    "changeset.too_large": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "The change set exceeds the size limits.",
+      "on_error": "stop"
+    },
+    "config.forbidden_key": {
+      "category": "unavailable",
+      "retryable": false,
+      "summary": "A configuration key is not allowed.",
+      "on_error": "stop"
+    },
+    "config.invalid": {
+      "category": "unavailable",
+      "retryable": false,
+      "summary": "The configuration is invalid.",
+      "on_error": "stop"
+    },
+    "conflict.idempotency_key_reuse": {
+      "category": "conflict",
+      "retryable": false,
+      "summary": "Key reused, content differs.",
+      "on_error": "stop"
+    },
+    "entity.ambiguous_ref": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "The reference matches several entities.",
+      "on_error": "fix_input"
+    },
+    "entity.not_found": {
+      "category": "not_found",
+      "retryable": false,
+      "summary": "The entity does not exist.",
+      "on_error": "fix_input"
+    },
+    "function.not_found": {
+      "category": "not_found",
+      "retryable": false,
+      "summary": "The graph has no such function.",
+      "on_error": "stop"
+    },
+    "function.parameter_invalid": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "A function parameter value does not fit its declared type.",
+      "on_error": "fix_input"
+    },
+    "function.parameter_missing": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "A function parameter has no value.",
+      "on_error": "fix_input"
+    },
+    "function.parameter_type": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "A reference parameter names an entity of the wrong class.",
+      "on_error": "fix_input"
+    },
+    "function.parameter_unknown": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "The function has no such parameter.",
+      "on_error": "fix_input"
+    },
+    "function.stale": {
+      "category": "invalid",
+      "retryable": false,
+      "summary": "A function no longer resolves against the graph's ontology.",
+      "on_error": "stop"
+    },
+    "graph.archived": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "The graph is archived.",
+      "on_error": "stop"
+    },
+    "graph.not_found": {
+      "category": "not_found",
+      "retryable": false,
+      "summary": "The graph does not exist.",
+      "on_error": "stop"
+    },
+    "graph.not_in_project": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "The graph is not allowed here.",
+      "on_error": "stop"
+    },
+    "graph.readonly": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "The graph is read-only.",
+      "on_error": "stop"
+    },
+    "internal.error": {
+      "category": "internal",
+      "retryable": false,
+      "summary": "Internal error.",
+      "on_error": "stop"
+    },
+    "ontology.artifact_missing": {
+      "category": "unavailable",
+      "retryable": false,
+      "summary": "Ontology release is missing.",
+      "on_error": "stop"
+    },
+    "ontology.pin_mismatch": {
+      "category": "unavailable",
+      "retryable": false,
+      "summary": "Ontology artifact hash differs.",
+      "on_error": "stop"
+    },
+    "query.invalid_value": {
+      "category": "invalid",
+      "retryable": false,
+      "summary": "A query value has the wrong type or cannot be computed.",
+      "on_error": "fix_input"
+    },
+    "query.too_large": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "The query produces too many rows.",
+      "on_error": "fix_input"
+    },
+    "remote.unauthorized": {
+      "category": "denied",
+      "retryable": false,
+      "summary": "The server refused the token.",
+      "on_error": "stop"
+    },
+    "skills.outdated": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "An installed skill is older than what it describes.",
+      "on_error": "stop"
+    },
+    "tool.hash_mismatch": {
+      "category": "conflict",
+      "retryable": false,
+      "summary": "The tool is not the one the caller built its definition from.",
+      "on_error": "refresh"
+    },
+    "tool.not_found": {
+      "category": "not_found",
+      "retryable": false,
+      "summary": "The graph has no such tool for this caller.",
+      "on_error": "stop"
+    },
+    "usage.invalid_argument": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "An argument has an invalid value.",
+      "on_error": "fix_input"
+    },
+    "usage.invalid_input": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "Input is not valid JSON, JSONL or UTF-8.",
+      "on_error": "fix_input"
+    },
+    "usage.missing_argument": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "A required argument is missing.",
+      "on_error": "fix_input"
+    },
+    "view.class_mismatch": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "The entity is not of the class the view takes.",
+      "on_error": "fix_input"
+    },
+    "view.cursor_invalid": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "A page cursor is malformed or belongs to another view or other parameters.",
+      "on_error": "fix_input"
+    },
+    "view.cursor_stale": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "The graph changed since the page cursor was issued.",
+      "on_error": "restart"
+    },
+    "view.not_found": {
+      "category": "not_found",
+      "retryable": false,
+      "summary": "The graph has no such view.",
+      "on_error": "stop"
+    },
+    "view.parameter_invalid": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "A view parameter value does not fit its declared type.",
+      "on_error": "fix_input"
+    },
+    "view.parameter_missing": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "A view parameter has no value.",
+      "on_error": "fix_input"
+    },
+    "view.parameter_type": {
+      "category": "refused",
+      "retryable": false,
+      "summary": "A reference parameter names an entity of the wrong class.",
+      "on_error": "fix_input"
+    },
+    "view.parameter_unknown": {
+      "category": "usage",
+      "retryable": false,
+      "summary": "The view has no such parameter.",
+      "on_error": "fix_input"
+    },
+    "view.stale": {
+      "category": "invalid",
+      "retryable": false,
+      "summary": "A published view no longer reads as compiled against this model.",
+      "on_error": "stop"
+    },
+    "write.invalid": {
+      "category": "invalid",
+      "retryable": false,
+      "summary": "The write violates the ontology.",
+      "on_error": "fix_input"
+    },
+    "write.migration_incomplete": {
+      "category": "unavailable",
+      "retryable": true,
+      "summary": "A data migration is committed but not pinned yet; writes wait.",
+      "on_error": "retry"
+    }
+  }
+}

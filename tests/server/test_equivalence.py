@@ -160,6 +160,11 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
         ("describe", "view", "items_in_location"),
         ("describe", "view", "no_such_view"),
         ("describe", "search", "location", "--kind", "view"),
+        ("describe", "tools"),
+        ("describe", "tools", "--kind", "view", "--exclude-deprecated"),
+        ("describe", "tools", "--tool", "run_items_in_location", "--tool", "do_move_item"),
+        ("describe", "tools", "--tool", "run_no_such_tool"),
+        ("describe", "tools", "--module", "no_such_module"),
     ):
         call(*args)
     text("describe", "types")
@@ -169,6 +174,7 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
     text("describe", "action", "move_item")
     text("describe", "views")
     text("describe", "view", "location_overview")
+    text("describe", "tools")
     text("describe", "modules")
     entity = create(cls, "x")
     attr = next(n for n, v in factory.attrs(cls).items() if isinstance(v, str))

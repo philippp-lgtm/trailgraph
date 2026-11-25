@@ -1325,6 +1325,109 @@
     {
       "path": [
         "describe",
+        "tools"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "List the functions, actions and views you may use as tools with JSON Schemas.",
+      "args": [],
+      "options": [
+        {
+          "name": "--tool",
+          "type": "string",
+          "required": false,
+          "repeatable": true,
+          "summary": "Only this tool (run_NAME, do_NAME or view_NAME); repeat for several."
+        },
+        {
+          "name": "--kind",
+          "type": "choice",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only the tools of this kind of entry.",
+          "choices": [
+            "function",
+            "action",
+            "view"
+          ]
+        },
+        {
+          "name": "--module",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only the terms of this module (id or prefix); see describe modules."
+        },
+        {
+          "name": "--featured",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only featured functions and actions (views stay)."
+        },
+        {
+          "name": "--exclude-deprecated",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Leave out the tools of deprecated entries."
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe tools --json",
+          "summary": "Every tool you may use, with its schemas."
+        },
+        {
+          "command": "graph describe tools --tool run_<function> --tool do_<action> --json",
+          "summary": "Only the tools a harness allows."
+        },
+        {
+          "command": "graph describe tools --kind function --featured --json",
+          "summary": "The featured functions."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "term.unknown",
+        "tool.not_found",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "describe",
         "type"
       ],
       "kind": "read",
@@ -4920,6 +5023,11 @@
     },
     {
       "code": "term.unknown",
+      "category": "not_found",
+      "exit": 1
+    },
+    {
+      "code": "tool.not_found",
       "category": "not_found",
       "exit": 1
     },

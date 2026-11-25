@@ -415,8 +415,9 @@ class TestStructure:
         # `graph describe view` and `graph describe views` (234: generated); the clause on
         # published views in the read step (235); the row of `graph start` in the command table
         # (236: generated); `graph start` as the first step of the workflow, the sentence on
-        # entries you may see but not use, and the refresh rule of the ground rules (239)
-        assert len(files["SKILL.md"].splitlines()) <= 239
+        # entries you may see but not use, and the refresh rule of the ground rules (239); the row
+        # of `graph describe tools` in the command table (240: generated, no prose names it)
+        assert len(files["SKILL.md"].splitlines()) <= 240
         for name, text in files.items():
             if name.startswith("references/"):
                 # commands.md was at 40 KiB; the two describe action commands add about 1.6 KiB;
