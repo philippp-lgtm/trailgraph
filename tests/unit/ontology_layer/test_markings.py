@@ -208,6 +208,7 @@ def reader_022(document: JsonObject) -> None:
         )
 
 
+@pytest.mark.doc_claim("security_model.markings")
 def test_a_022_reader_refuses_a_model_with_markings() -> None:
     document = compiled_model("personnel").to_json()
     with pytest.raises(GraphCliError) as info:

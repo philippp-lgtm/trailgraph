@@ -406,6 +406,7 @@ GRANTS: list[tuple[ActorContext, str, str, str]] = [
 
 
 @pytest.mark.parametrize(("who", "action", "resource", "expected"), GRANTS)
+@pytest.mark.doc_claim("security_model.write_allow_lists")
 def test_a_writes_grant_decides_terms(
     who: ActorContext, action: str, resource: str, expected: str
 ) -> None:
@@ -465,6 +466,7 @@ DENIES: list[tuple[ActorContext, str, str, str, str]] = [
 
 
 @pytest.mark.parametrize(("who", "action", "resource", "layer", "expected"), DENIES)
+@pytest.mark.doc_claim("security_model.write_allow_lists")
 def test_graph_layer_rules_narrow_terms(
     who: ActorContext, action: str, resource: str, layer: str, expected: str
 ) -> None:

@@ -66,6 +66,7 @@ def test_mirrors_decide_with_the_graph_layer(
     assert codes(run_cli) == []
 
 
+@pytest.mark.doc_claim("security_model.policy_edits_detected")
 def test_hand_edited_installation_policy(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
     apply(run_cli, write_policy(tmp_path, "i.yaml", INSTALLATION))
     widen(root / "policy" / "installation.json")
@@ -88,6 +89,7 @@ def test_a_later_apply_does_not_hide_a_hand_edit(
     assert len(hashes) == 2 and len(findings) == 3
 
 
+@pytest.mark.doc_claim("security_model.policy_edits_detected")
 def test_hand_placed_and_deleted_policies(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
     graph = root / "graphs"
     graph_id = next(p.name for p in graph.iterdir() if (p / "manifest.toml").exists())
@@ -165,6 +167,7 @@ def is_mirror(document: dict[str, Any]) -> bool:
     return "installation_policy" in (document.get("change") or {})
 
 
+@pytest.mark.doc_claim("security_model.policy_edits_detected")
 def test_a_write_without_the_installed_policy(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:

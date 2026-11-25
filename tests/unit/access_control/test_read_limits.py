@@ -521,6 +521,7 @@ def test_an_allow_list_decides_the_visibility_of_types(
     assert decide(who, "read.get", resource) == expected
 
 
+@pytest.mark.doc_claim("security_model.read_limits")
 def test_the_graph_is_decided_on_the_graph_resource_only() -> None:
     """Every read but the visibility of a type is decided on ``graph:<id>``: an allow list
     grant still covers all of them."""
@@ -555,6 +556,7 @@ def test_a_graph_deny_wins_over_every_allow() -> None:
     assert decide(AUDITOR, "read.find", GRAPH, area) == "allow:grant.2"
 
 
+@pytest.mark.doc_claim("security_model.read_limits")
 def test_none_hides_a_type_from_the_app_and_the_server_but_not_from_maintainers() -> None:
     layer = GRAPH_LAYER
     for who in (AUDITOR, BOTH, token("auditor", entrypoint=Entrypoint.APP)):
@@ -578,6 +580,7 @@ def test_none_also_stops_writes_of_the_type() -> None:
     assert authorize(maint_actor(), "write.create", SCAN, CTX, layered).effect == "allow"
 
 
+@pytest.mark.doc_claim("security_model.read_limits")
 def test_a_project_admin_reads_a_hidden_type_through_its_maintain_scope() -> None:
     source = INSTALLATION.replace(
         "frozen_project: {example_graph: none}", "ops: {example_graph: maintain}"

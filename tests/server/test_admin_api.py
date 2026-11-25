@@ -76,6 +76,7 @@ def audit_events(root: Path) -> list[dict[str, Any]]:
     return found
 
 
+@pytest.mark.doc_claim("security_model.token_scopes")
 def test_the_admin_api_is_off_unless_plugged_in(
     installation: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -129,6 +130,7 @@ def test_graph_admin_is_compared_with_the_servers_graph_admin(
     assert compatible.status == 200
 
 
+@pytest.mark.doc_claim("security_model.token_scopes")
 def test_token_scopes_keep_the_surfaces_apart(installation: dict[str, Any], tmp_path: Path) -> None:
     app = served(installation, tmp_path)
     tokens = installation["tokens"]
@@ -213,6 +215,7 @@ def test_admin_commands_take_no_idempotency_key_and_answer_problems(
     assert problem.json["code"] == "usage.invalid_argument"
 
 
+@pytest.mark.doc_claim("security_model.token_scopes")
 def test_a_request_acts_as_its_token_through_maint(
     installation: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -241,6 +244,7 @@ def test_a_request_acts_as_its_token_through_maint(
     assert verified.status == 200, verified.json
 
 
+@pytest.mark.doc_claim("security_model.token_scopes")
 def test_the_maintainers_decide(
     run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -324,6 +328,7 @@ def project_args(app: ServerApp, token: str, spec_path: tuple[str, ...], graph: 
     }[spec_path]
 
 
+@pytest.mark.doc_claim("security_model.project_admin_ceiling")
 def test_a_project_admin_reaches_its_graphs_and_nothing_else(
     project_admins: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -386,6 +391,7 @@ def test_a_project_admin_without_graphs_reaches_nothing(
         assert (reply.status, reply.error["code"]) == (403, "access.ceiling"), path
 
 
+@pytest.mark.doc_claim("security_model.project_admin_ceiling")
 def test_a_project_admin_reads_data_only_where_reads_are_not_denied(
     run_cli: CliRunner, project_admins: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -454,6 +460,7 @@ def test_policy_explain_names_what_a_token_gets(
     assert mistaken.code == 2 and secret not in json.dumps(mistaken.envelope)
 
 
+@pytest.mark.doc_claim("security_model.roles_verified")
 def test_roles_are_assigned_through_the_admin_api(
     run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
 ) -> None:

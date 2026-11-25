@@ -154,6 +154,16 @@ Rules:
   is compared with that set in `tests/test_doc_sets.py`, or replaced by a
   link to the generated reference that holds it, or said without the list
   ("every read command"). A partial list says so ("such as").
+- **Guarantees carry a claim marker.** A sentence or list item of
+  `docs/security_model.md` that promises behavior (what is refused, hidden,
+  detected or never written) ends with
+  `<!-- claim: security_model.<name> -->`, and the tests that check it carry
+  `@pytest.mark.doc_claim("security_model.<name>")`. A failing marked test
+  names the sentence in its report: change the behavior and the sentence
+  together. Other documents may mark claims the same way (the prefix is the
+  document's stem). A new guarantee gets its marker and a test; a marker says
+  which test is responsible, so the test checks the sentence, not only its
+  area.
 - **Examples stay generic** (see `CLAUDE.md`): placeholders such as
   `<graph>` or `example_graph`, or the toy fixtures.
 
@@ -178,6 +188,7 @@ Update the documentation in the same change as the code:
 | a way to run graph_cli, a core concept or a foundational design decision | `docs/deployment_options.md`, `docs/overview.md` or `docs/design_decisions.md` |
 | a value of a closed set (a status, kind, verb or parameter type), an answer key, a migration step, a module, a phase or an access-log key, the commands of a project admin, the parts push uploads | the list that names the set (checked by `tests/test_doc_sets.py`, which names the place) |
 | a limit, default, size or time a document states | the document and its fact in `tests/test_doc_facts.py` (a changed constant fails there until both follow) |
+| a guarantee of `docs/security_model.md` (what is refused, hidden, detected or never written) | the sentence and its claim marker, and the `doc_claim` marker of the tests that check it (checked by `tests/test_doc_claims.py`) |
 | install steps or the quickstart | `README.md`; `tests/cli/test_readme_quickstart.py` runs the quickstart's blocks on a throwaway data root and knows only the commands it uses (`uv run graph-admin`, `graph`, `mkdir -p`, a pointer file) |
 
 `uv run pytest tests/test_docs.py` checks that every link and anchor
@@ -210,6 +221,10 @@ module tables of the internals documents, the extractor table of
 answer keys a document lists against the command's output schema, the
 migration steps, the phases and keys of the access log, the commands of a
 project admin, the meta commands and the parts push uploads.
+`uv run pytest tests/test_doc_claims.py` checks that every claim marker of
+a document in `docs/` has a test that names it, that every claim a test
+names is written once, in the document its prefix names, and that the
+`doc_claim` marker sits only on tests.
 
 ## Generated files
 

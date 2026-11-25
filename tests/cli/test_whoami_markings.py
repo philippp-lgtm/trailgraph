@@ -130,6 +130,7 @@ def lacks(held: list[str]) -> set[str]:
 # ---- whoami ---------------------------------------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.whoami_tells_marked")
 def test_whoami_lists_the_markings_the_caller_holds(run_cli: CliRunner, world: World) -> None:
     for policy, held in ((READER, []), (PERSONAL_ONLY, ["stf:personal"])):
         install(run_cli, world.work, policy)

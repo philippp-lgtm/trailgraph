@@ -28,6 +28,7 @@ def token(run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path) -> s
     return new_token(run_cli, "ci")
 
 
+@pytest.mark.doc_claim("security_model.transport")
 def test_serves_until_terminated(isolated_env: dict[str, str], tmp_path: Path, token: str) -> None:
     with graph_server(isolated_env, tmp_path) as server:
         assert server.request("GET", "/v1/health")[0] == 200
@@ -42,6 +43,7 @@ def test_serves_until_terminated(isolated_env: dict[str, str], tmp_path: Path, t
     assert "stopped" in log
 
 
+@pytest.mark.doc_claim("security_model.transport")
 def test_plain_http_beyond_loopback_needs_the_flag(
     isolated_env: dict[str, str], tmp_path: Path
 ) -> None:

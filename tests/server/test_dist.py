@@ -96,6 +96,7 @@ def test_the_manifest_names_each_wheel_without_a_token(
     assert app.dist_problems == []
 
 
+@pytest.mark.doc_claim("security_model.self_update")
 def test_the_graph_wheel_is_public_the_admin_wheel_needs_an_admin_token(
     installation: dict[str, Any], tmp_path: Path
 ) -> None:

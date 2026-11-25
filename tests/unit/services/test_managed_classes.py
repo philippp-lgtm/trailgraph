@@ -105,6 +105,7 @@ def test_an_extractor_writes_its_own_record(world: World) -> None:
     assert retracted.seq is not None
 
 
+@pytest.mark.doc_claim("security_model.records_by_extraction_only")
 def test_a_plain_create_is_refused(world: World) -> None:
     ops = world.create_ops("pdf", "other")
     ops[0]["attrs"]["key"] = f"pdf/{world.file}x"
@@ -147,12 +148,14 @@ def test_supersede_names_both_sides(world: World) -> None:
     assert sorted(f["target"]["id"] for f in found) == sorted([other_id, str(world.record_id)])
 
 
+@pytest.mark.doc_claim("security_model.records_by_extraction_only")
 def test_a_source_without_the_extractor_kind_is_refused(world: World) -> None:
     ops = [{"op": "update", "id": str(world.record_id), "set": {"extractor_version": 2}}]
     found = world.findings(world.refused(ops, SourceRef("pdf", "1")))
     assert [f["code"] for f in found] == [CODE]
 
 
+@pytest.mark.doc_claim("security_model.records_by_extraction_only")
 def test_an_extractor_never_writes_another_extractors_record(world: World) -> None:
     ops = [{"op": "update", "id": str(world.record_id), "set": {"extractor_version": 2}}]
     error = world.refused(ops, SourceRef("sqlite", "1", None, "extractor"))
@@ -165,6 +168,7 @@ def test_an_extractor_cannot_create_under_another_name(world: World) -> None:
     assert [f["code"] for f in world.findings(error)] == [CODE]
 
 
+@pytest.mark.doc_claim("security_model.records_by_extraction_only")
 def test_a_name_that_only_starts_like_the_extractor_does_not_own(world: World) -> None:
     """``pdf`` owns ``pdf/...``, not ``pdfx/...``."""
     ops = world.create_ops("pdfx", "alien")
@@ -279,6 +283,7 @@ def test_a_new_record_must_carry_its_extractors_name(world: World) -> None:
     assert world.extract(ops).seq is not None
 
 
+@pytest.mark.doc_claim("security_model.records_by_extraction_only")
 def test_the_source_the_tx_records_decides_not_the_one_of_the_change_set(world: World) -> None:
     """``request.source`` is what the audit keeps; a change set that claims the kind does not
     make a request an extraction run."""
@@ -355,6 +360,7 @@ class Fixed:
         pass
 
 
+@pytest.mark.doc_claim("security_model.records_by_extraction_only")
 def test_a_caller_that_does_not_see_every_type_gets_the_same_refusal(world: World) -> None:
     graph = {"example_graph": world.env.entry.id}
     base = compile_policy(LIMITED.encode(), file="installation.yaml", graphs=graph).document

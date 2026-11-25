@@ -751,6 +751,7 @@ def test_a_document_without_source_or_reconcile_keeps_its_bytes() -> None:
     assert document_to_json(cs) == changeset_to_json(cs)
 
 
+@pytest.mark.doc_claim("security_model.source_refusals_audited")
 def test_a_source_with_plain_ops_is_in_the_document_form_only() -> None:
     cs = parse_changeset(
         {"source": {"name": "inventory"}, "ops": [{"op": "create", "type": "ex:T"}]}

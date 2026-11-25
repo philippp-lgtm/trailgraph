@@ -126,6 +126,7 @@ def test_guards_that_name_a_removed_relation_are_dropped_from_the_transition() -
     assert len(transitions) == len(COMPANY.lifecycles["org:PositionLifecycle"].transitions)
 
 
+@pytest.mark.doc_claim("security_model.field_visibility_complete")
 def test_unused_enums_lifecycles_and_datatypes_are_dropped() -> None:
     model = seeing(NAS, "nas:Note")
     assert "nas:NoteKind" not in model.enums

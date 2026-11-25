@@ -169,6 +169,7 @@ def test_the_incomplete_state_is_a_warning_not_an_error(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("code", sorted(SCENES))
+@pytest.mark.doc_claim("security_model.migration_verified")
 def test_tamper_scenario_triggers_only_its_code(tmp_path: Path, code: str) -> None:
     flags, edit = SCENES[code]
     scene = scene_after(tmp_path, **flags)
@@ -182,6 +183,7 @@ def test_a_changed_record_status_is_the_same_finding(tmp_path: Path) -> None:
     assert scene.audit_codes() == [audit_codes.MIGRATION_CHANGED_IDENTITY]
 
 
+@pytest.mark.doc_claim("security_model.migration_verified")
 def test_each_part_of_the_version_check(tmp_path: Path) -> None:
     scene = scene_after(tmp_path / "pin")
     scene.rewrite_last_tx(change_tx_pin)

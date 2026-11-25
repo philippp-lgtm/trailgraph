@@ -175,6 +175,7 @@ def world(tmp_path: Path) -> World:
 # ---- one tx, no tx -------------------------------------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.source_is_a_claim")
 def test_create_update_and_retire_are_one_tx_that_names_its_source(world: World) -> None:
     first = run(world, doc(scope(complete=True, items=rows("curl", "jq", "zlib"))))
     assert (first.seq, first.reconcile is not None) == (1, True)
@@ -374,6 +375,7 @@ def test_two_concurrent_runs_the_second_sees_the_first(world: World) -> None:
 # ---- guards are audited refusals -----------------------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.source_refusals_audited")
 def test_a_guard_refusal_is_audited_with_its_decisions_and_source(world: World) -> None:
     names = [f"p{n:02d}" for n in range(20)]
     run(world, doc(scope(items=rows(*names))))
@@ -428,6 +430,7 @@ def test_a_guard_refusal_is_audited_with_its_decisions_and_source(world: World) 
         ),
     ],
 )
+@pytest.mark.doc_claim("security_model.source_refusals_audited")
 def test_every_guard_is_an_audited_invalid_refusal(
     world: World, document: dict[str, Any], code: str
 ) -> None:
@@ -485,6 +488,7 @@ def test_an_expansion_above_the_op_limit_is_refused_unaudited(world: World) -> N
 # ---- declared needs, before anything is planned --------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.source_is_a_claim")
 def test_a_token_without_the_retract_right_is_denied_on_its_first_run(world: World) -> None:
     service = caller(world, ("installation", NO_RETRACT))
     partial = doc(scope(items=rows("curl")))
@@ -525,6 +529,7 @@ def test_declared_attributes_are_decided_on_the_terms_of_a_type_with_term_rules(
 # ---- type read limits ----------------------------------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.source_declared_needs")
 def test_a_scope_type_the_caller_cannot_see_is_an_unknown_type(world: World) -> None:
     service = caller(world, ("installation", EDITOR), ("graph", HIDE_TOOLS))
     hidden = doc({"type": "ex:Tool", "key": "source_key", "items": [{"key": "a/x"}]})
@@ -542,6 +547,7 @@ def test_a_scope_type_the_caller_cannot_see_is_an_unknown_type(world: World) -> 
     assert run(world, visible, service).seq == 1
 
 
+@pytest.mark.doc_claim("security_model.source_plan_as_seen")
 def test_a_key_held_by_a_hidden_subtype_fails_the_unique_check_with_the_finding_concealed(
     world: World,
 ) -> None:
@@ -569,6 +575,7 @@ def test_a_key_held_by_a_hidden_subtype_fails_the_unique_check_with_the_finding_
 # ---- markings ------------------------------------------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.source_declared_needs")
 def test_a_marked_field_is_refused_like_an_unknown_attribute(world: World) -> None:
     editor = caller(world, ("installation", EDITOR))
     asked = doc(scope(fields=["package", "owner"], items=[]))  # no item names the field
@@ -595,6 +602,7 @@ def test_a_marked_field_is_refused_like_an_unknown_attribute(world: World) -> No
     )
 
 
+@pytest.mark.doc_claim("security_model.source_declared_needs")
 def test_a_marked_attribute_outside_the_fields_is_untouched(world: World) -> None:
     holder = caller(world, ("installation", HOLDER))
     items = [{"key": "a/x", "attrs": {"package": "x", "owner": "ada"}}]

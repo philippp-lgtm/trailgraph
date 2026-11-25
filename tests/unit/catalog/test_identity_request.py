@@ -93,6 +93,7 @@ def test_shape_errors_are_usage_errors(asserted: Any) -> None:
     assert info.value.code == "usage.invalid_input"
 
 
+@pytest.mark.doc_claim("security_model.roles_verified")
 def test_the_actor_holds_the_roles_of_its_token() -> None:
     """B6.7: roles come from the token record only; a client cannot assert them."""
     held = TokenRecord("ci", "sha256:" + "0" * 64, roles=("importer", "reader"))

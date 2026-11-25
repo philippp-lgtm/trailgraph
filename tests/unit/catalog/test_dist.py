@@ -234,6 +234,7 @@ def test_graph_admin_brings_the_graph_wheel_it_needs(package: Path, tmp_path: Pa
     ]
 
 
+@pytest.mark.doc_claim("security_model.self_update")
 def test_a_wheel_with_another_hash_is_not_installed(package: Path) -> None:
     fake = client(**{"graph_cli-0.1.0.dev0-py3-none-any.whl": b"tampered"})
     found = installer(package)
@@ -284,6 +285,7 @@ def test_a_server_that_hands_out_nothing(package: Path) -> None:
         assert caught.value.code == "update.unavailable"
 
 
+@pytest.mark.doc_claim("security_model.self_update")
 def test_nothing_is_installed_over_plain_http_beyond_loopback(package: Path) -> None:
     fake, found = client(), installer(package)
     fake.endpoint = parse_endpoint("http://graphs.example.org")

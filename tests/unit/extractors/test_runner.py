@@ -41,6 +41,7 @@ def _run(name: str, path: Path, limits: ExtractLimits = FAST) -> ExtractionResul
     return run_extractor(name, path, "text/plain", limits, command=CHILD)
 
 
+@pytest.mark.doc_claim("security_model.extraction_in_a_child")
 def test_the_real_child_runs_the_format_extractor() -> None:
     result = run_extractor("format", CORPUS / "notes.txt", "text/plain")
     assert isinstance(result, ExtractionResult)
@@ -58,6 +59,7 @@ def test_the_child_sees_the_recorded_type_and_the_bytes(sample: Path) -> None:
     assert result == ExtractionResult(status="ok", values={"size": 6, "recorded": "text/plain"})
 
 
+@pytest.mark.doc_claim("security_model.extraction_in_a_child")
 def test_the_child_gets_no_environment(sample: Path) -> None:
     """Nothing of the writer's process environment reaches the parser (the interpreter itself
     may set ``LC_CTYPE`` when it coerces the C locale)."""
@@ -73,6 +75,7 @@ def test_a_busy_extractor_hits_the_time_limit(sample: Path) -> None:
     assert time.monotonic() - started < 10
 
 
+@pytest.mark.doc_claim("security_model.extraction_in_a_child")
 def test_the_cpu_limit_fires_before_the_wall_clock(
     sample: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -96,12 +99,14 @@ def test_a_cpu_limit_signal_is_a_time_limit_and_a_kill_is_not() -> None:
     assert isinstance(runner._killed(signal.SIGKILL), Transient)
 
 
+@pytest.mark.doc_claim("security_model.extraction_in_a_child")
 def test_a_sleeping_extractor_hits_the_wall_clock(sample: Path) -> None:
     result = _run("sleep", sample, ExtractLimits(timeout_seconds=1, max_memory_mib=256))
     assert result == ExtractionResult.failed("limit.time")
 
 
 @pytest.mark.skipif(sys.platform == "darwin", reason="macOS ignores RLIMIT_AS")
+@pytest.mark.doc_claim("security_model.extraction_in_a_child")
 def test_a_greedy_extractor_hits_the_memory_limit(sample: Path) -> None:
     result = _run("eat", sample, ExtractLimits(timeout_seconds=10, max_memory_mib=256))
     assert result == ExtractionResult.failed("limit.memory")
@@ -117,10 +122,12 @@ def test_an_oserror_from_the_extractor_on_a_readable_file_is_failed(sample: Path
     assert _run("oserror", sample) == ExtractionResult.failed("extractor.error")
 
 
+@pytest.mark.doc_claim("security_model.extraction_in_a_child")
 def test_a_crash_is_a_failed_result(sample: Path) -> None:
     assert _run("segv", sample) == ExtractionResult.failed("extractor.crashed")
 
 
+@pytest.mark.doc_claim("security_model.extraction_in_a_child")
 def test_a_kill_from_outside_is_transient(sample: Path) -> None:
     result = _run("kill", sample)
     assert isinstance(result, Transient)
@@ -154,6 +161,7 @@ def test_a_command_that_does_not_start_is_transient(sample: Path) -> None:
     assert isinstance(result, Transient)
 
 
+@pytest.mark.doc_claim("security_model.extraction_in_a_child")
 def test_materialized_writes_a_private_file_and_removes_it() -> None:
     with materialized(iter([b"abc", b"def"])) as path:
         assert path.read_bytes() == b"abcdef"

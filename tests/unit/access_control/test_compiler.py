@@ -192,6 +192,7 @@ def token_of(project: str | None, entrypoint: Entrypoint) -> ActorContext:
     )
 
 
+@pytest.mark.doc_claim("security_model.project_admin_ceiling")
 def test_maintain_lets_a_project_admin_maintain_named_graphs_only() -> None:
     """Plan origin_lifecycle E8-E10: one allow rule for the project's admin tokens."""
     compiled = compile_policy(PROJECTS, file="i.yaml", graphs=GRAPHS)
@@ -226,6 +227,7 @@ def test_maintain_lets_a_project_admin_maintain_named_graphs_only() -> None:
     assert (decision.effect, decision.rule_id) == ("deny", "default.deny")
 
 
+@pytest.mark.doc_claim("security_model.project_bound_tokens")
 def test_a_maintain_rule_needs_a_verified_project() -> None:
     policy = policy_set(compile_policy(PROJECTS, file="i.yaml", graphs=GRAPHS).document)
     asserted = dataclasses.replace(maint_actor(), project=who("another_project").project)
@@ -254,6 +256,7 @@ def test_a_maintain_rule_needs_a_verified_project() -> None:
     assert authorize(asserted, "maint.reindex", f"graph:{OTHER}", CTX, policy).effect == "allow"
 
 
+@pytest.mark.doc_claim("security_model.project_bound_tokens")
 def test_a_grant_to_a_project_matches_its_tokens_only() -> None:
     """E11: every token bound to the project, never an asserted project."""
     compiled = compile_policy(PROJECTS, file="i.yaml", graphs=GRAPHS)

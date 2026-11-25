@@ -215,6 +215,7 @@ def literals(detail: dict[str, Any]) -> list[str]:
         ("view", "org_catalog", NO_FIND),
     ],
 )
+@pytest.mark.doc_claim("security_model.not_allowed_named")
 def test_a_not_allowed_entry_is_shown_for_what_it_is_for_and_how_it_is_called_only(
     env: ServiceEnv, kind: str, name: str, policy: Policy
 ) -> None:
@@ -457,6 +458,7 @@ def names_of(seen: Seen) -> dict[str, set[str]]:
     }
 
 
+@pytest.mark.doc_claim("security_model.not_allowed_named")
 def test_a_hidden_name_is_in_no_describe_output_over_the_policy_matrix(env: ServiceEnv) -> None:
     """For every read limit and every kind of missing right: whatever the read view hides is in
     none of the lists, counts, module pages and searches, marked or not."""

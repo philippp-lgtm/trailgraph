@@ -114,6 +114,7 @@ GUESSES = [
 
 @pytest.mark.parametrize("dry_run", [False, True], ids=["real", "dry_run"])
 @pytest.mark.parametrize("caller", LIMITED)
+@pytest.mark.doc_claim("security_model.field_visibility_complete")
 def test_a_write_naming_a_hidden_attribute_answers_as_a_name_the_type_lacks(
     pair: Pair, caller: str, dry_run: bool
 ) -> None:
@@ -143,6 +144,7 @@ def test_hidden_and_undeclared_names_together_name_both(pair: Pair, caller: str)
     assert names == ["attrs.email", "attrs.favourite", "attrs.hours"]
 
 
+@pytest.mark.doc_claim("security_model.whoami_tells_marked")
 def test_an_undeclared_name_is_refused_early_for_a_caller_with_an_attribute_view(
     pair: Pair,
 ) -> None:
@@ -277,6 +279,7 @@ def test_a_required_hidden_attribute_with_a_default_is_filled_in(pair: Pair, cal
 
 
 @pytest.mark.parametrize("caller", ("writer", "editor"))
+@pytest.mark.doc_claim("security_model.marked_integrity_refusals")
 def test_a_required_hidden_attribute_without_a_default_blocks_the_create(
     pair: Pair, caller: str
 ) -> None:
@@ -295,6 +298,7 @@ def test_a_required_hidden_attribute_without_a_default_blocks_the_create(
     assert findings(full)[0]["target"]["path"] == "attrs.holder"
 
 
+@pytest.mark.doc_claim("security_model.marked_integrity_refusals")
 def test_a_unique_hidden_attribute_set_by_a_default_is_concealed(pair: Pair) -> None:
     first, _ = pair.ask("editor", {"op": "create", "type": "ex:Token", "local": "a", "attrs": {}})
     assert first.ok
@@ -317,6 +321,7 @@ def test_a_unique_hidden_attribute_set_by_a_default_is_concealed(pair: Pair) -> 
     assert found["target"]["path"] == "attrs.serial" and "already used" in found["message"]
 
 
+@pytest.mark.doc_claim("security_model.marked_integrity_refusals")
 def test_a_deprecated_hidden_attribute_set_by_a_default_warns_concealed(pair: Pair) -> None:
     marked, twin = pair.ask(
         "editor", {"op": "create", "type": "ex:Ticket", "local": "k", "attrs": {"number": 1}}
@@ -344,6 +349,7 @@ def release(pair: Pair, source: str, version: str) -> None:
     env.set_entry(pin=pin_of(model))
 
 
+@pytest.mark.doc_claim("security_model.marked_integrity_refusals")
 def test_findings_on_hidden_values_kept_from_the_raw_state_are_concealed(pair: Pair) -> None:
     """After a release that drops ``mid`` from the grades and makes ``hours`` required, an update
     of a visible attribute meets the old hidden values: the findings keep their code and
@@ -376,6 +382,7 @@ def test_findings_on_hidden_values_kept_from_the_raw_state_are_concealed(pair: P
         assert shown["message"] != CONCEALED
 
 
+@pytest.mark.doc_claim("security_model.marked_rules_are_a_channel")
 def test_a_rule_over_a_hidden_attribute_is_concealed(pair: Pair) -> None:
     """``contact`` reads the hidden e-mail: its refusal is concealed (an accepted residual: the
     twin has no such rule, so the same write passes there)."""
@@ -411,6 +418,7 @@ def test_an_aggregate_over_a_hidden_attribute_is_concealed_without_its_values(
     assert findings(full)[0]["actual"][0]["value"] == 70
 
 
+@pytest.mark.doc_claim("security_model.marked_rules_are_a_channel")
 def test_a_guard_over_a_hidden_attribute_is_concealed(pair: Pair) -> None:
     move = {"op": "transition", "id": "@p2", "to": "done"}
     marked, twin = pair.ask("editor", move)
@@ -441,6 +449,7 @@ def test_a_rule_and_an_enum_the_view_keeps_answer_in_full(pair: Pair) -> None:
     )
 
 
+@pytest.mark.doc_claim("security_model.marked_smaller_points")
 def test_a_possible_duplicate_compares_only_the_names_the_caller_sees(pair: Pair) -> None:
     hidden = {"op": "create", "type": "ex:Tag", "local": "h", "attrs": {"title": "Zed"}}
     answer = pair.same("editor", hidden)
@@ -559,6 +568,7 @@ def test_successful_and_invalid_events_carry_no_marking_decision(pair: Pair) -> 
     assert pair.marked.verify().findings == ()
 
 
+@pytest.mark.doc_claim("security_model.marked_rules_are_a_channel")
 def test_dry_runs_are_not_audited(pair: Pair) -> None:
     before = len(pair.marked.installation_events()) + len(pair.marked.graph_events())
     for caller in LIMITED:

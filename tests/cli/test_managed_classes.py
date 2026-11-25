@@ -169,6 +169,7 @@ def test_nothing_was_written_by_the_refusals(run_cli: CliRunner, scene: Scene) -
     assert verified.code == 0 and verified.data["counts"]["error"] == 0
 
 
+@pytest.mark.doc_claim("security_model.records_by_extraction_only")
 def test_an_edge_from_an_ordinary_entity_to_a_record_is_allowed(
     run_cli: CliRunner, scene: Scene
 ) -> None:
@@ -201,6 +202,7 @@ def test_a_reconcile_of_a_record_type_by_a_plain_source_is_refused_before_planni
     assert last_event(scene.root)["result"]["status"] == "invalid"
 
 
+@pytest.mark.doc_claim("security_model.records_by_extraction_only")
 def test_a_document_cannot_name_the_reserved_source_kind(run_cli: CliRunner, scene: Scene) -> None:
     document = {
         "source": {"name": "pdf", "kind": "extractor"},
@@ -213,6 +215,7 @@ def test_a_document_cannot_name_the_reserved_source_kind(run_cli: CliRunner, sce
     assert outcome.error["details"]["path"] == "source.kind"
 
 
+@pytest.mark.doc_claim("security_model.records_by_extraction_only")
 def test_an_action_that_writes_a_record_is_refused_at_run_time(
     run_cli: CliRunner, scene: Scene, tmp_path: Path
 ) -> None:

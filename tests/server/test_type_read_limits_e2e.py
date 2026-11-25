@@ -551,6 +551,7 @@ def read_everything(world: World, who: str) -> dict[str, Reply]:
     return {name: world.ask(who, path, **args) for name, (path, args) in asked.items()}
 
 
+@pytest.mark.doc_claim("security_model.read_limits", "security_model.type_limits_complete")
 def test_type_read_limits_end_to_end(
     run_cli: CliRunner, world: World, installation: dict[str, Any]
 ) -> None:

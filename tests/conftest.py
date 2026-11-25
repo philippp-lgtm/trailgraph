@@ -16,7 +16,7 @@ import pytest
 from harness import BIN_DIR, CliRunner
 from support import launcher
 
-pytest_plugins = ["support.output_schemas"]
+pytest_plugins = ["support.output_schemas", "support.doc_claims"]
 
 
 def pytest_sessionfinish(session: pytest.Session) -> None:

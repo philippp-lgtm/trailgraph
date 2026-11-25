@@ -101,6 +101,7 @@ def test_no_extract_over_the_api_stores_the_file_alone(world: dict[str, Any]) ->
     assert added.status == 200 and added.json["data"]["metadata"] == []
 
 
+@pytest.mark.doc_claim("security_model.extraction_rights_are_the_callers")
 def test_files_extract_is_an_admin_route_an_app_token_cannot_reach(world: dict[str, Any]) -> None:
     refused = admin_command(
         world["app"],

@@ -113,6 +113,7 @@ def test_write_intent_summarizes_the_change(world: World) -> None:
     assert created["actor"] == first.actor.to_json()  # B2.9: same serialization as the tx
 
 
+@pytest.mark.doc_claim("security_model.audit_events_carry_no_values")
 def test_events_never_carry_attribute_values(world: World) -> None:
     """B5.8: marker strings seeded into attributes appear in no event."""
     first, second, before = world.create_and_update()

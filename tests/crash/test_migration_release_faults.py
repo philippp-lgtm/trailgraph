@@ -383,6 +383,7 @@ def test_writers_behind_the_lock_re_authorize_under_the_new_model(scene: Scene) 
     scene.errors()
 
 
+@pytest.mark.doc_claim("security_model.project_admin_ceiling")
 def test_a_project_admin_may_not_migrate(scene: Scene) -> None:
     """``maint.migrate`` stays out of the project admin's maintain level (plan M4): a release
     that migrates is refused before the lock with the ceiling."""

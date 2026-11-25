@@ -229,6 +229,7 @@ def family_model(tmp_path: Path, text: str) -> CompiledModel:
     return outcome.model
 
 
+@pytest.mark.doc_claim("security_model.marked_rules_are_a_channel")
 def test_a_precondition_on_a_class_reads_what_every_subclass_shows(tmp_path: Path) -> None:
     """The compile check over the model view is enough for preconditions (no read of
     ``expr_attributes.reads`` is added): a subclass cannot declare an inherited attribute

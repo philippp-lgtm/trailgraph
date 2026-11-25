@@ -180,6 +180,7 @@ def test_get_answers_as_over_the_twin(world: World) -> None:
         world.refused("term.unknown", "get", E1, "--fields", name)
 
 
+@pytest.mark.doc_claim("security_model.marked_rules_are_a_channel")
 def test_affordances_list_a_transition_whose_guard_reads_a_hidden_attribute(world: World) -> None:
     # Bo has no badge code: the guard refuses the transition on the whole graph, the view has
     # no guard (field visibility plan F5, accepted residual), the twin has none either
@@ -229,6 +230,7 @@ def test_find_filters_sorts_and_shows_as_over_the_twin(world: World) -> None:
 # ---- lookup and search -------------------------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.marked_smaller_points")
 def test_lookup_does_not_match_a_hidden_label(world: World) -> None:
     for args in (
         ("lookup", "Ada"),
@@ -369,6 +371,7 @@ def test_run_reads_stripped_nodes_and_hides_a_function_that_reads_a_hidden_field
 # ---- history and earlier states ----------------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.marked_activity_shows")
 def test_history_and_as_of_answer_as_over_the_twin(world: World) -> None:
     for ref in EVERY:
         world.ok("history", ref)
@@ -407,6 +410,7 @@ def same_feed(world: World, *args: str) -> Outcome:
     return marked
 
 
+@pytest.mark.doc_claim("security_model.marked_activity_shows")
 def test_changes_answer_as_over_the_twin(world: World) -> None:
     every = same_feed(world, "changes", "--since", "tx:0", "--limit", "500")
     assert every.data["more"] is False
@@ -453,6 +457,7 @@ def _names(changed: dict[str, Any] | None) -> set[str]:
 # ---- describe ------------------------------------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.marking_declarations_hidden")
 def test_describe_shows_the_model_of_the_view(world: World) -> None:
     for args in (
         ("describe", "types"),
@@ -510,6 +515,7 @@ def test_a_holder_reads_every_attribute_and_a_partial_holder_what_it_holds(
 # ---- files ---------------------------------------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.file_attributes_visible")
 def test_file_path_of_a_file_subclass_with_a_marked_attribute(world: World) -> None:
     install(world.run_cli, world.work, HOLDER)
     pdf = write_pdf(world.work.parent / "files" / "contract.pdf", "contract")

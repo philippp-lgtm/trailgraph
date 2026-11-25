@@ -89,6 +89,7 @@ def endpoint(server: Running) -> str:
     return f"http://127.0.0.1:{server.port}"
 
 
+@pytest.mark.doc_claim("security_model.enrollment_codes")
 def test_a_code_sets_up_a_machine_and_a_folder(
     run_cli: CliRunner, server: Running, isolated_env: dict[str, str], tmp_path: Path
 ) -> None:
@@ -131,6 +132,7 @@ def test_a_code_sets_up_a_machine_and_a_folder(
     assert admin(run_cli, "audit", "verify").code == 0
 
 
+@pytest.mark.doc_claim("security_model.enrollment_codes")
 def test_whatever_stands_in_the_way_is_refused_before_the_code_is_spent(
     run_cli: CliRunner, server: Running, isolated_env: dict[str, str], tmp_path: Path
 ) -> None:

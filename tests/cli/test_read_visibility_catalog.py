@@ -345,6 +345,7 @@ def marker_source(project: Path) -> dict[str, Any]:
     return source
 
 
+@pytest.mark.doc_claim("security_model.generated_blocks_per_reader")
 def test_the_skill_of_a_limited_caller_names_no_hidden_term(
     run_cli: CliRunner, world: dict[str, str], tmp_path: Path
 ) -> None:
