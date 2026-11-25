@@ -741,7 +741,8 @@ Every published function, action and view is, for one caller, in one of three st
 - **Allowed.** The caller sees everything the entry names and holds the rights it needs.
 - **Not allowed.** The caller sees everything the entry names but lacks a right. Only such an entry
   is named as unusable, so nothing hidden can leak through it. The rights are `read.function` on the
-  graph (a function, and a view with a `rows` section), `read.find` (a set view) and, for an action,
+  graph (a function, and a view with a `rows` section), `read.get` on the graph (every view),
+  `read.find` (a set view) and, for an action,
   per unmet need the first denied write decision: the write action on the type, or on the attribute
   or relation where a write allow list or a term rule decides one. An obligation (`require_reason`,
   `max_batch`) never makes an entry not allowed: an action that needs `--reason` is allowed. An

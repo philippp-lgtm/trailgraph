@@ -199,7 +199,7 @@ every problem together (`admin.actions_invalid`, `admin.views_invalid`); the pus
 above publishes, an empty folder unpublishes all of its kind, `graph-admin graph actions
 show <graph>` and `graph-admin graph views show <graph>` list them. Functions and actions share one namespace per graph; views have
 their own. An action needs no policy: a caller lacking a write right of its ops, or
-`read.find` or `read.function` for a view, finds it marked `allowed: false`
+`read.get`, `read.find` or `read.function` for a view, finds it marked `allowed: false`
 (`access.denied` when it calls it); what names a hidden term does not exist for it. A
 function a view runs cannot be removed or changed incompatibly alone
 (`admin.views_broken`): push both.

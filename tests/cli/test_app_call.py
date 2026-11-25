@@ -630,6 +630,18 @@ def test_a_view_tool_needs_read_get_like_the_view_command(
     assert [v["missing"][0]["action"] for v in listed.data["views"]] == ["read.get"] * 3
     plain = app(run_cli, "view", shelf, "--name", "location_overview", env=EXPLORE)
     assert plain.error["code"] == "access.denied"
+    # the other listings follow: search marks them, the counts call them not allowed
+    found = ok(run_cli, "describe", "search", "location", "--kind", "view", env=EXPLORE)
+    assert (
+        [(h["allowed"], h["missing"][0]["action"]) for h in found.data["items"]]
+        == [(False, "read.get")] * len(found.data["items"])
+        != []
+    )
+    modules = ok(run_cli, "describe", "modules", env=EXPLORE).data["modules"]
+    (inventory,) = [m for m in modules if m["id"] == "inventory"]
+    assert (inventory["views"], inventory["not_allowed"]) == (0, {"views": 3})
+    (counted,) = ok(run_cli, "start", env=EXPLORE).data["graphs"]
+    assert (counted["counts"]["views"], counted["not_allowed"]) == (0, {"views": 3})
     # another caller of the same graph has them
     assert "view_location_overview" in manifest(run_cli)
     assert call(run_cli, "view_location_overview", "--input", f"_entity={j(shelf)}").code == 0
