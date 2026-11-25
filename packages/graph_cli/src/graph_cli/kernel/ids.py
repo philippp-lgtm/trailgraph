@@ -34,6 +34,15 @@ ABBREV_RE: Final = re.compile(r"^[0-9a-f]{8,32}$")
 _UUID_TEXT_RE: Final = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _URN_PREFIX: Final = "urn:uuid:"
 
+# What a machine-readable schema says a reference to an entity looks like: a full id (RFC 4122
+# variant, as ``parse_id`` requires), with or without ``urn:uuid:``, an alias, or 8 to 32 trailing
+# hex digits of the id. Stricter than ``parse_entity_ref(..., allow_abbrev=True)`` (lower-case
+# ``urn:uuid:``, no surrounding blanks): every text that matches parses.
+ENTITY_REF_PATTERN: Final = (
+    r"^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}"
+    r"-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$"
+)
+
 _COUNTER_MAX: Final = 0xFFF
 
 

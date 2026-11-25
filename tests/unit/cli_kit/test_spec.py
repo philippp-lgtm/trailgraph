@@ -216,3 +216,14 @@ def test_unregistered_codes_are_refused() -> None:
     bad = CommandSpec(("x",), "meta", "meta", None, "x", (), (), ("no.such_code",), echo)
     with pytest.raises(ValueError):
         build_inventory([bad], program="p", version="0", surface="app")
+
+
+def test_the_inventory_marks_a_command_left_out_of_the_skill_table_and_only_that_one() -> None:
+    from dataclasses import replace
+
+    quiet = replace(SPECS[0], skill_table=False)
+    inventory = build_inventory((quiet, SPECS[1]), program="prog", version="0.1.0", surface="app")
+    commands = inventory["commands"]
+    assert isinstance(commands, list)
+    assert commands[0].get("skill_table") is False  # type: ignore[union-attr]
+    assert "skill_table" not in commands[1]  # type: ignore[operator]

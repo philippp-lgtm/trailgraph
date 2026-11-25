@@ -147,9 +147,19 @@ class TestDocsVsCode:
     def test_commands_table(self) -> None:
         inventory = golden_inventory()
         _, rows = table_with(committed_files()["SKILL.md"], "Command")
-        assert rows == [
-            [command_line(c), c["kind"], c["summary"]] for c in sorted_commands(inventory)
-        ]
+        listed = [c for c in sorted_commands(inventory) if c.get("skill_table", True)]
+        assert rows == [[command_line(c), c["kind"], c["summary"]] for c in listed]
+
+    def test_a_command_for_programs_is_in_the_reference_but_not_in_the_table(self) -> None:
+        files = committed_files()
+        flagged = [c for c in golden_inventory()["commands"] if c.get("skill_table") is False]
+        assert [tuple(c["path"]) for c in flagged] == [("describe", "tools")]
+        for command in flagged:
+            line = command_line(command)
+            assert line not in files["SKILL.md"] and command["summary"] not in files["SKILL.md"]
+            assert f"## {line}" in files["references/commands.md"]
+        every = {command_line(c) for c in sorted_commands(golden_inventory())}
+        assert every >= {command_line(c) for c in flagged}
 
     def test_global_options_table(self) -> None:
         _, rows = table_with(committed_files()["SKILL.md"], "Option")
@@ -415,7 +425,8 @@ class TestStructure:
         # `graph describe view` and `graph describe views` (234: generated); the clause on
         # published views in the read step (235); the row of `graph start` in the command table
         # (236: generated); `graph start` as the first step of the workflow, the sentence on
-        # entries you may see but not use, and the refresh rule of the ground rules (239)
+        # entries you may see but not use, and the refresh rule of the ground rules (239); the
+        # commands for programs (`graph describe tools`) are not in the command table
         assert len(files["SKILL.md"].splitlines()) <= 239
         for name, text in files.items():
             if name.startswith("references/"):

@@ -85,6 +85,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `describe function NAME` | one function completely: summary, `use_when`, parameters, the result columns, examples, the types and relations its query touches, the normalized query text (copy it as the start of an ad-hoc query) and its hash; an unknown name is `function.not_found` with `did_you_mean`; a function you may not run is shown marked `allowed: false` with `missing`, without its query, examples, touched terms and hash (see [Entries you may not use](#entries-you-may-not-use)) |
 | `describe views [--module M] [--include-deprecated] [--include-not-allowed]` | the published views of the graph you can call (`graph_cli.model/1`), one item per view: `name`, `module`, `summary`, `takes` (the class an entity view shows; left out for a set view), `default` (only when true), `signature` and `status`; deprecated views only with `--include-deprecated`. A view you cannot see in full (it names a type, attribute, relation or function that is hidden from you) does not exist for you; one you see in full but that needs `read.find` or `read.function` that you lack is counted in `not_allowed` (`--include-not-allowed` lists it) |
 | `describe view NAME` | one view completely: summary, `use_when`, `takes`, `default`, parameters, every section with the types, relations, fields and function it reads, examples, `touches` (types, relations, attributes, functions), `hash` and `call`, the command that calls it; `replaced_by` names a view only when you see it; an unknown or hidden name is `view.not_found` with `did_you_mean` over the names you see and a hint to search the views by words; a view you may not use is shown marked `allowed: false` with `missing`, without its sections, examples, touched terms, hash and call command |
+| `describe tools [--tool NAME] [--kind K] [--module M] [--featured] [--exclude-deprecated]` | the tool manifest of the graph for an agent harness (`graph_cli.model/1`): one tool per function, action and view you may use, each with a JSON Schema for its input and its answer, and the error codes it may return with what to do about each; made for programs, not for agents that work in a shell. See [Tools for agent harnesses](#tools-for-agent-harnesses) |
 | `describe schema` | the ontology as `graph query` sees it: labels with their properties, one relationship pattern per relation (`(:A)-[:rel]->(:B)`), names written as a query needs them (see [Cypher queries](#cypher-queries)); `--compact` leaves out the properties; `--module M` limits it to the module's relations and labels plus the labels at the other end of its links |
 | `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them; `--rev N` shows an earlier revision; `--fields` keeps only named parts and `--full` adds the system fields (see [Fewer fields](#fewer-fields)); `--affordances` adds what applies next (see [What an entity can do next](#what-an-entity-can-do-next)) |
 | `view [REF]` | what is known about one entity in one answer, at most 6 KiB: key fields, relations with counts and the first neighbours, files with pages, what applies next; what is cut is counted and named in a hint; `--as-of` reads an earlier state (see [An entity at a glance](#an-entity-at-a-glance)). A graph can publish views: `--name NAME` picks one (`--name card` is always the generated card), an entity view takes the REF of an entity of its class, and without `--name` the default view of the entity's class answers instead of the card; a set view takes no REF and lists entities and function rows in pages of `--page-bytes` bytes, `--cursor` continues a page (`view.cursor_stale` once the graph changed; `--as-of tx:<seq>` pages the state you started with); `--param name=value` gives a view parameter. A set view needs `read.find` as well as `read.get`, one that runs functions `read.function`; a view that names what the caller may not see is `view.not_found`, and one that needs a right the caller lacks is `access.denied`, recorded. Not `graph-admin view`, the live view |
@@ -1111,3 +1112,118 @@ are described once, in the format reference of the `authoring-graph-actions`
 admin skill ([`references/format.md`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-actions/references/format.md)); the
 [generated graph skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-skills/SKILL.md#the-template) lists the featured actions you may
 run.
+
+## Tools for agent harnesses
+
+An agent harness (programmatic tool calling, an agent SDK, a CI job) builds the tools of a graph from
+one document instead of rebuilding schemas from `describe` entry by entry. `describe tools` answers
+it, over the server API like every `describe` command. Agents that work in a shell need none of this:
+they keep `describe`, `run`, `do` and `view`.
+
+**The manifest** is a `graph_cli.model/1` document with these keys, in this order: `tools_format`
+(the shape of a tool, see the compatibility policy below), `version` (a hash of everything listed:
+it changes when any tool or error entry listed changes), `tools` and `errors`. The options narrow
+the list: `--tool NAME` (repeatable) keeps the named tools, `--kind` one kind of entry, `--module M`
+one module, `--featured` the featured functions and actions (a view has no such flag and stays),
+`--exclude-deprecated` leaves out the tools of deprecated entries, which are listed by default with
+their `status` and `replaced_by` so that a tool a harness allows does not vanish when its entry is
+deprecated. A `--tool` that names no tool you may use is `tool.not_found` (exit 1) with the close
+names in `did_you_mean` and every unknown name in `missing`. Tools come functions first, then
+actions, then views, each by name.
+
+**Rendered for you.** The manifest is built per request from the entries you may use and the model
+you see. An entry you may not use is absent (the other `describe` commands can mark such an entry, the
+manifest leaves it out), an entry that names something hidden from you does not exist for you, and the enum values and classes
+in the schemas are those of your model, so a caller with type read limits or markings gets no tool,
+value or class that names what it may not see
+([Entries you may not use](#entries-you-may-not-use)).
+
+Each tool has these keys, in this order:
+
+| Tool key | Holds |
+| --- | --- |
+| `name` | the tool name, see below |
+| `kind` | `function`, `action` or `view` (`lookup` is reserved for a later tool) |
+| `entry` | the name of the function, action or view |
+| `description` | the summary, a deprecation line, `use_when` and the examples of the entry: a function's and a view's with the arguments they give in the form of the input (an example never gives a reference, the line says to supply it), an action's request |
+| `input_schema` | the JSON Schema (2020-12) of the arguments, closed |
+| `output_schema` | the JSON Schema of the answer (`data`), open |
+| `annotations` | `read_only`; `dry_run` (the tool has `_dry_run`); `reason` (`required` or `optional` for an action, else null); `paging` (`offset` for a function, `cursor` for a set view, else null) |
+| `status`, `replaced_by`, `featured`, `module` | as `describe function`, `action` and `view` show them; `replaced_by` names the replacing tool, only when you may use it |
+| `hash` | the hash of the name, description, both schemas and annotations: it changes when an ontology release changes an enum's values although the entry's `hash` does not |
+| `entry_hash` | the `hash` of the entry, the one `run`, `do` and `view` record in the audit |
+| `errors` | the codes the tool may return, sorted |
+
+**Names.** A tool is named by the kind of its entry and the entry's name: `run_NAME` for a function,
+`do_NAME` for an action, `view_NAME` for a view. Functions and actions share one namespace and views
+have their own, so a view may be named like the function it runs: the prefix keeps the tools apart,
+and a name stays when other entries are published. A name is a valid identifier and short enough for
+the model APIs that limit tool names; a longer entry name keeps its first characters and ends in `_`
+and eight hex digits of the hash of the name. A harness may rename a tool (it knows `kind` and
+`entry`).
+
+**Input.** `input_schema` is a closed object (`additionalProperties: false`) with one property per
+parameter, in declaration order. A parameter with a default or an optional one is not required; a
+property that is not required and has no default also accepts `null`, which means "not given". A
+`many` parameter is an array of at least one value. The type decides the schema:
+
+| Parameter type | Schema of one value |
+| --- | --- |
+| `string` | a string |
+| `integer` | an integer within the safe range |
+| `decimal` | a string with the grammar of a decimal, so that no precision is lost |
+| `boolean` | a boolean |
+| `date`, `datetime` | a string with `format` `date` or `date-time` and a `pattern` (a timestamp needs an offset) |
+| `enum` | a string, `enum` the values of the enum as you see them; the summaries the ontology gives are in `description` |
+| `ref` | a string with the grammar of a reference (a full id, an alias or trailing hex digits, never a name) and `x-graph-cli: {class}`, the class; `description` says so |
+
+A `pattern` is stricter than the parser it describes: every text it accepts binds. The properties
+that start with an underscore are the **controls**, the arguments that are not parameters of the
+entry (a parameter name cannot start with one, so they never clash with authored names). They map to
+the options of the commands:
+
+| Control | Tool | Meaning |
+| --- | --- | --- |
+| `_limit`, `_offset` | function | `run --limit` and `--offset`: the rows of a page and where it starts |
+| `_reason` | action | `do --reason`; required when the action demands a reason or a `require_reason` obligation of your policy applies to the writes it makes |
+| `_dry_run` | action | `do --dry-run` |
+| `_entity` | entity view | the reference of the entity to show (required), of the class the view takes |
+| `_cursor`, `_page_bytes` | set view | `view --cursor` and `--page-bytes`: the next page and the page size |
+
+A harness that calls the commands maps a tool call to them: the parameters become `--param`
+options, the controls the options and the reference above.
+
+**Answers.** `output_schema` describes `data`, and the schemas stay open like every output schema of
+`describe commands`: a consumer ignores keys it does not know, so an answer can grow without
+breaking one that validates. A function answers what `run` answers and `page`, the paging of the
+rows: `function`, `columns`, `items` and `page`, with one property per column of the function in a
+row, each untyped for now (any JSON value, marked `x-graph-cli: {typed: false}`). An action answers
+the write result of `do`, as a dry run does. A view answers the view model, its sections as loose
+objects with a `kind`. Every schema is self-contained: no `$ref`, an object at its root.
+
+**Compatibility policy.** The manifest shape (`tools_format`), the tool names, the controls and the
+open output schemas are a contract that a harness's allow list and stubs depend on. Within a
+format a change is additive: new tools, keys, error codes and optional arguments. A change a
+consumer can break on raises `tools_format`: removing or renaming a key, a tool name or a control,
+tightening an input schema, or changing what an `on_error` value means. A harness sends only what
+`input_schema` lists, and ignores what it does not know of an answer.
+
+**Errors.** `errors` maps every code any listed tool may return to its registry facts
+(`category`, `retryable`, `summary`) and `on_error`, the one move a harness makes next:
+
+| `on_error` | Meaning |
+| --- | --- |
+| `retry` | the same call again, later: the code is retryable |
+| `fix_input` | the arguments are wrong or name something that does not fit: correct them and call again |
+| `check_state` | the arguments are fine and the graph's state decides (`action.precondition_failed`, `action.nothing_to_do`): read the details, do not repeat the call unchanged |
+| `restart` | start again from the first page (`view.cursor_stale`: a write landed between two pages) |
+| `refresh` | the tool definitions are out of date: fetch the manifest again (`tool.not_found` for a tool that has gone since, `tool.hash_mismatch`) |
+| `stop` | nothing the harness can change helps: report it (`access.denied`, a stale entry, a graph that is archived) |
+
+A precondition failure is `action.precondition_failed`, and `error.details.failed` lists each failing
+precondition with its `precondition`, `parameter`, `entity`, `summary` and, for a count, `actual`.
+A dry run raises the same errors as the real run and writes and audits nothing. Each
+tool lists the codes of its command (`run`, `do` or `view`), `tool.not_found`, `tool.hash_mismatch`
+and the codes of the transport. A large manifest goes to a file on the command line like any large
+answer ([Large answers go to a file](#large-answers-go-to-a-file)); a harness fetches it over the
+server API.

@@ -161,6 +161,22 @@ GET_OUTPUT: Final = obj(
 
 
 VIEW_OUTPUT: Final = ref("view_model")  # kinetic.card.ViewModel.to_json
+VIEW_ERRORS: Final = (
+    *REF_ERRORS,
+    "usage.missing_argument",
+    "usage.invalid_argument",
+    "view.not_found",
+    "view.takes_entity",
+    "view.takes_no_entity",
+    "view.class_mismatch",
+    "view.stale",
+    "view.parameter_missing",
+    "view.parameter_unknown",
+    "view.parameter_invalid",
+    "view.parameter_type",
+    "view.cursor_invalid",
+    "view.cursor_stale",
+)
 
 
 SPECS: Final = (
@@ -249,22 +265,7 @@ SPECS: Final = (
                 "graph view --name <name> --cursor <value>", "The next page, from a page's next."
             ),
         ),
-        errors=(
-            *REF_ERRORS,
-            "usage.missing_argument",
-            "usage.invalid_argument",
-            "view.not_found",
-            "view.takes_entity",
-            "view.takes_no_entity",
-            "view.class_mismatch",
-            "view.stale",
-            "view.parameter_missing",
-            "view.parameter_unknown",
-            "view.parameter_invalid",
-            "view.parameter_type",
-            "view.cursor_invalid",
-            "view.cursor_stale",
-        ),
+        errors=VIEW_ERRORS,
         handler=view,
         output=VIEW_OUTPUT,
     ),

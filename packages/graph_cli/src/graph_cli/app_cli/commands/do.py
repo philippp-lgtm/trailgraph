@@ -51,6 +51,7 @@ def do(
 DO_OUTPUT: Final = obj({**WRITE_RESULT, "action": obj({"name": STRING, "hash": STRING})})
 DO_ERRORS: Final = (
     *WRITE_ERRORS,
+    "access.batch_too_large",
     "action.not_found",
     "action.parameter_missing",
     "action.parameter_unknown",

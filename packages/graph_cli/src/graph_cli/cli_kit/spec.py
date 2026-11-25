@@ -122,6 +122,10 @@ class CommandSpec:
     remote: Remote = "server"
     # B9.3: the JSON Schema (2020-12) of the answer's ``data``, ``$ref``s into shared ``$defs``
     output: Mapping[str, JsonValue] | None = None
+    # False: the command is for programs (an agent harness), not for agents that work in a shell, so
+    # the command table of skill 1's SKILL.md leaves it out; the generated reference, the
+    # inventory and the OpenAPI document keep it
+    skill_table: bool = True
 
 
 def _click_type(param: ParamSpec) -> click.ParamType[Any]:

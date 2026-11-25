@@ -13,7 +13,8 @@ authoring ontologies and graph skills and for rolling them out.
 `skills/graph-cli/` is the agent skill for `graph`. It is generated, never
 edited by hand: it is rendered from the app inventory (`graph describe
 commands --json`, `graph_cli.inventory/1`) into `SKILL.md` (workflow, habits,
-envelope, command overview, exit codes),
+envelope, command overview, exit codes; the overview leaves out a command declared for programs
+only, such as `graph describe tools`, which the reference lists),
 `references/commands.md` (arguments, options with their choices and
 defaults, limits and examples per command), `references/errors.md` (every
 error code and what to do per category), `references/query.md` (when and

@@ -869,6 +869,13 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         False,
         "The storage backend cannot read an earlier state.",
     ),
+    ErrorSpec("tool.not_found", _C.NOT_FOUND, False, "The graph has no such tool for this caller."),
+    ErrorSpec(
+        "tool.hash_mismatch",
+        _C.CONFLICT,
+        False,
+        "The tool is not the one the caller built its definition from.",
+    ),
     ErrorSpec("conflict.version_mismatch", _C.CONFLICT, True, "The entity has changed."),
     ErrorSpec("conflict.seq_mismatch", _C.CONFLICT, True, "The graph changed in the meantime."),
     ErrorSpec("conflict.idempotency_key_reuse", _C.CONFLICT, False, "Key reused, content differs."),

@@ -360,6 +360,29 @@ Usage: `graph describe search TEXT [OPTIONS]`
 | `graph describe search <value> --kind action` | Only the actions that fit the words. |
 | `graph describe search <value> --kind view` | Only the published views that fit the words. |
 
+## graph describe tools
+
+List the functions, actions and views you may use as tools with JSON Schemas.
+
+Kind: read. Surface: model. Action: `read.describe`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph describe tools [OPTIONS]`
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--tool` | string | no | yes | Only this tool (run_NAME, do_NAME or view_NAME); repeat for several. |
+| `--kind` | choice | no | no | Only the tools of this kind of entry. One of `function`, `action`, `view`. |
+| `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
+| `--featured` | flag | no | no | Only featured functions and actions (views stay). |
+| `--exclude-deprecated` | flag | no | no | Leave out the tools of deprecated entries. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Example | Summary |
+|---|---|
+| `graph describe tools --json` | Every tool you may use, with its schemas. |
+| `graph describe tools --tool run_<function> --tool do_<action> --json` | Only the tools a harness allows. |
+| `graph describe tools --kind function --featured --json` | The featured functions. |
+
 ## graph describe type
 
 Describe one type: fields, lifecycles, relations and rules.

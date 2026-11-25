@@ -127,6 +127,7 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `term.no_labels` | refused | 1 |
 | `term.no_text_fields` | refused | 1 |
 | `term.unknown` | not_found | 1 |
+| `tool.not_found` | not_found | 1 |
 | `update.available` | invalid | 1 |
 | `update.install_failed` | unavailable | 5 |
 | `update.unavailable` | unavailable | 5 |
