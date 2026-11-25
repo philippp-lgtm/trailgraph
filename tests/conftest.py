@@ -4,7 +4,8 @@ CLIs are tested as processes, the way a user or console AI runs them (forked fro
 preloaded launcher per program, ``support.launcher``, for speed). Every
 run gets a throwaway home and XDG directories, so tests never read or write the
 real user config, data or state. Every envelope a test sees is checked against the
-declared output schemas (``support.output_schemas``).
+declared output schemas (``support.output_schemas``) and every function and view answer of the
+test process against the schema of its tool (``support.tool_answers``).
 """
 
 import os
@@ -16,7 +17,7 @@ import pytest
 from harness import BIN_DIR, CliRunner
 from support import launcher
 
-pytest_plugins = ["support.output_schemas", "support.doc_claims"]
+pytest_plugins = ["support.output_schemas", "support.tool_answers", "support.doc_claims"]
 
 
 def pytest_sessionfinish(session: pytest.Session) -> None:
@@ -52,7 +53,8 @@ def isolated_env(tmp_path: Path) -> dict[str, str]:
 @pytest.fixture
 def run_cli(isolated_env: dict[str, str], tmp_path: Path) -> CliRunner:
     """Run an installed console script (``graph``, ``graph-admin``) in the isolated env."""
-    from support.output_schemas import check_text  # the plugin, loaded after this file
+    from support.output_schemas import check_text  # the plugins, loaded after this file
+    from support.tool_answers import check_process
 
     def run(
         program: str,
@@ -78,6 +80,7 @@ def run_cli(isolated_env: dict[str, str], tmp_path: Path) -> CliRunner:
             timeout=60,
         )
         check_text(program, completed.stdout, short=program == "graph")
+        check_process(program, completed.stdout, run_env, cwd or tmp_path)
         return completed
 
     return run
