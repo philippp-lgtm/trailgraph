@@ -27,8 +27,8 @@ from graph_cli.ontology_layer.values import DECIMAL_RE
 EXTENSION: Final = "x-graph-cli"
 NULL: Final[JsonObject] = {"type": "null"}
 _SIMPLE: Final = {"string": "string", "integer": "integer", "boolean": "boolean"}
-# A decimal cell is plain notation (``values.decimal_text``); an exponent shows only beyond its bound,
-# so the grammar of a decimal takes an optional one here (not as a parameter).
+# A decimal cell is plain notation (``values.decimal_text``); an exponent shows only beyond its
+# bound, so the grammar of a decimal takes an optional one here (not as a parameter).
 _DECIMAL_CELL: Final = DECIMAL_RE.pattern.removesuffix("$") + "([eE][+-]?[0-9]+)?$"
 _ENTITY_REQUIRED: Final = ("id", "alias", "type", "rev", "record_status", "attrs", "edges")
 
