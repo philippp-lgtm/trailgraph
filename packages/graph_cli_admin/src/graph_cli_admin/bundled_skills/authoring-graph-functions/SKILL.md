@@ -96,8 +96,9 @@ when the graph has one module).
    column a type an agent harness can rely on: most are inferred from the query
    (a node, an attribute, `count`, `collect`, a literal), so only declare what
    the query leaves open (`sum`, `coalesce`, `CASE`, `size`, a value through
-   `WITH ... AS`) with `type:` (and `many`, `enum`, `class`; `references/format.md`,
-   result columns). Return the properties callers need as columns of their own
+   `WITH ... AS`) with `type:` (and `many`, `enum`, `class`); publishing warns
+   about every column that has neither (`references/format.md`, result
+   columns). Return the properties callers need as columns of their own
    (`v.id` is a `ref` an agent can pass on), not whole nodes, unless the entity
    is the answer.
 7. **`examples`**: at least one question a user would ask, in plain words.
@@ -188,6 +189,7 @@ the graph is pinned to. So:
 | --- | --- |
 | `function.returns_mismatch` | make `returns` list exactly the query's columns, in order (alias every expression) |
 | `function.returns_type_mismatch` | a column's declared `type` differs from what its query makes certain (`details.inferred`): declare that type, or drop `type` |
+| `admin.function_untyped_columns` (a warning, nothing is refused) | an active function has a column that is neither inferred nor declared: add `type:` to it (`references/format.md`, result columns) |
 | `function.parameter_undeclared`, `function.parameter_unused` | declare every `$name` the query uses, and drop parameters it does not use |
 | `function.pattern_impossible` | the relation does not connect those types; `details.connecting` and `graph describe schema` show what does |
 | `function.type_mismatch` | the parameter type does not fit the field it is compared with (`references/format.md`, type fit) |

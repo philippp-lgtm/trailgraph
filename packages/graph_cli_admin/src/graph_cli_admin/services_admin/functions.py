@@ -30,6 +30,11 @@ active functions whose single-value ``ref`` is only compared with ``=``: a ``man
 ``IN`` would answer several entities per run. Functions that a published view runs are exempt (a
 view hands them one entity). The warning also covers ``graph push`` (``single_ref_warnings``).
 
+It also warns, never refuses, with ``admin.function_untyped_columns`` (one record per publish) about
+active functions with a result column that no type describes: the query does not make its type
+certain (``graph_cli.kinetic.return_types``) and the author declared none. Agents then get that
+column as any JSON value in the tool manifest. Also in ``graph push`` (``untyped_warnings``).
+
 ``show`` is read-only for the data root, like ``graph show``: no lock, no
 event, authorized ``maint.graph_configure``.
 """
@@ -43,7 +48,7 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot
 from graph_cli.kernel.ports.storage import MaintenanceSession
-from graph_cli.kinetic.compile import compile_catalog, single_refs
+from graph_cli.kinetic.compile import column_types, compile_catalog, single_refs
 from graph_cli.kinetic.entries import load_entries
 from graph_cli.kinetic.format import FILE_SUFFIX, Problem
 from graph_cli.kinetic.view_entries import load_view_entries
@@ -69,6 +74,7 @@ __all__ = [
     "show",
     "single_ref_warnings",
     "slot_of",
+    "untyped_warnings",
     "write",
 ]
 
@@ -174,6 +180,39 @@ def single_ref_warnings(
     )
 
 
+def untyped_warnings(
+    entry: GraphEntry, model: CompiledModel, slot: KineticSlot
+) -> tuple[WarningRecord, ...]:
+    """``admin.function_untyped_columns`` for the function catalog ``slot`` judged against
+    ``model``: one record naming up to ``MAX_LISTED`` of the active functions with their untyped
+    columns and how many more functions there are."""
+    found: list[tuple[str, list[str]]] = []
+    for function in load_entries(slot.compiled):
+        if function.deprecated:
+            continue
+        types = column_types(function.defn, function.query, model)
+        columns = [r.column for r, t in zip(function.defn.returns, types, strict=True) if t is None]
+        if columns:
+            found.append((function.name, columns))
+    if not found:
+        return ()
+    listed: list[JsonValue] = [
+        {"function": name, "columns": list[JsonValue](columns)}
+        for name, columns in found[:MAX_LISTED]
+    ]
+    first = ", ".join(f"{name}.{columns[0]}" for name, columns in found[:3])
+    more = " and more" if len(found) > 3 else ""
+    return (
+        WarningRecord(
+            "admin.function_untyped_columns",
+            f"{len(found)} active function(s) of graph {entry.name} have a result column with no "
+            f"type: {first}{more}. Agents get such a column as any JSON value; declare `type` "
+            "(and `many`, `enum`, `class`) on the column where the query does not make it certain",
+            {"graph": entry.name, "functions": listed, "more": max(len(found) - MAX_LISTED, 0)},
+        ),
+    )
+
+
 def publish(
     ctx: AdminContext, *, graph_ref: str, source: Path, reason: str | None, dry_run: bool
 ) -> Published:
@@ -194,8 +233,9 @@ def publish(
         source=source,
         reason=reason,
         dry_run=dry_run,
-        warn=lambda entry, model, slot: single_ref_warnings(
-            entry, model, slot, published_views(ctx, entry)
+        warn=lambda entry, model, slot: (
+            *single_ref_warnings(entry, model, slot, published_views(ctx, entry)),
+            *untyped_warnings(entry, model, slot),
         ),
     )
 

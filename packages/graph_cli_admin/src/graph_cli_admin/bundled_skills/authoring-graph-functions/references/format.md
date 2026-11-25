@@ -174,6 +174,11 @@ push) and reports all problems together as `admin.functions_invalid`. The
 | the namespace | `function.name_taken` (the name is a published action of the graph; functions and actions share one namespace) |
 | size | `function.query_too_long` (2,000 characters), `function.too_many_functions` (1,000 per graph) |
 
+Warned, not refused: `admin.function_untyped_columns`, one record per publish (also on a dry run and
+in a push that publishes functions). It lists, up to 20, the active functions with a column that is
+neither inferred nor declared (`details.functions`: `function`, `columns`; `details.more` counts the
+rest). Agents get such a column as any JSON value; declare its `type`.
+
 Warned, not refused: `admin.function_single_ref`, one record per publish (also on a dry run, when
 nothing changes and in a push that publishes functions). It lists, up to 20, the active functions
 (`details.functions`: `function`, `parameter`, `class`; `details.more` counts the rest) with a
