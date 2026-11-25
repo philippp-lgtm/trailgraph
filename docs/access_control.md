@@ -498,13 +498,13 @@ graph admin gives them to tokens:
 `scopes.<project>.<graph>: maintain` lets an admin token bound to the
 project (`graph-admin token create NAME --scope admin --project P`) run
 the graph-level maintenance of that graph: `ontology release` (release
-and pin), `graph-admin graph skill publish`, `graph-admin graph functions publish`, `graph-admin graph actions publish`
-and `graph-admin graph push` (`graph_configure`),
+and pin), `graph-admin graph skill publish`, `graph-admin graph functions publish`, `graph-admin graph actions publish`,
+`graph-admin graph views publish` and `graph-admin graph push` (`graph_configure`),
 `graph-admin graph check` and `files verify` (`audit_verify`) and `graph-admin graph reindex` (`files extract` is
 decided as `maint.reindex` too, but the admin API serves it to maintainers only);
 reads that show the graph's configuration (`graph-admin graph show`, `graph-admin graph pull`,
-`graph-admin graph skill render`, `graph-admin graph functions show`, `graph-admin graph actions show`, `ontology
-diff --graph`) need `graph_configure` too. Check and release findings quote the
+`graph-admin graph skill render`, `graph-admin graph functions show`, `graph-admin graph actions show`,
+`graph-admin graph views show`, `ontology diff --graph`) need `graph_configure` too. Check and release findings quote the
 graph's data, so `maintain`
 includes `read.get` on the graph, and `graph-admin graph check`, `ontology release`
 and a `graph-admin graph push` that releases also authorize it for a project admin: a

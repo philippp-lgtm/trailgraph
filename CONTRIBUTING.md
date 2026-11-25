@@ -149,6 +149,11 @@ Rules:
   limit worth stating that the code holds as a bare literal gets a named
   constant first. Exit codes need no entry: they are compared with the error
   code next to them.
+- **Lists that mirror a code set are checked, linked or removed.** A list of
+  values, statuses, kinds, modules or commands that the code also enumerates
+  is compared with that set in `tests/test_doc_sets.py`, or replaced by a
+  link to the generated reference that holds it, or said without the list
+  ("every read command"). A partial list says so ("such as").
 - **Examples stay generic** (see `CLAUDE.md`): placeholders such as
   `<graph>` or `example_graph`, or the toy fixtures.
 
@@ -171,6 +176,7 @@ Update the documentation in the same change as the code:
 | an error code, finding code or policy action renamed or removed | every document that names it (checked) |
 | an example graph's files or setup | `examples/<name>/README.md`; `tests/cli/test_company_example.py` keeps the example buildable |
 | a way to run graph_cli, a core concept or a foundational design decision | `docs/deployment_options.md`, `docs/overview.md` or `docs/design_decisions.md` |
+| a value of a closed set (a status, kind, verb or parameter type), a module, a phase or an access-log key, the commands of a project admin, the parts push uploads | the list that names the set (checked by `tests/test_doc_sets.py`, which names the place) |
 | a limit, default, size or time a document states | the document and its fact in `tests/test_doc_facts.py` (a changed constant fails there until both follow) |
 | install steps or the quickstart | `README.md`; `tests/cli/test_readme_quickstart.py` runs the quickstart's blocks on a throwaway data root and knows only the commands it uses (`uv run graph-admin`, `graph`, `mkdir -p`, a pointer file) |
 
@@ -197,6 +203,11 @@ admin skills).
 prose of `README.md` and `docs/` is a fact that matches the code or a listed
 exemption, that every exit code a document gives is the exit code of the
 error code next to it, and that every format number names a real format.
+`uv run pytest tests/test_doc_sets.py` checks that the lists of the documents
+that mirror a code set name exactly that set: value sets and statuses, the
+module tables of the internals documents, the extractor table of
+`docs/files.md`, the phases and keys of the access log, the commands of a
+project admin, the meta commands and the parts push uploads.
 
 ## Generated files
 
@@ -271,7 +282,7 @@ headers and envelope keys per level and fails until the change is judged.
 | docker | `tests/docker/` | opt-in (`GRAPH_CLI_DOCKER_TESTS=1`): the container killed mid-write recovers, `audit verify` in it stays clean |
 | integration | `tests/integration/` | opt-in (`GRAPH_CLI_TEST_S3_ENDPOINT` and the other variables the module names): stored files in a real S3-compatible store through both programs, local and remote mode (add, read, download, verify, gc, move both ways, quota, store check, wrong settings); `tests/integration/run_garage.sh` starts the pinned Garage image, creates a bucket, a key and a quota, and runs it |
 | architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
-| docs | `tests/test_docs.py` | documentation links and anchors resolve (also inside the example's README and the admin skills), the docs index lists every document, the command overviews of `graph` and `graph-admin` match their inventories; `tests/test_doc_facts.py`: the numbers of the documents match the code |
+| docs | `tests/test_docs.py` | documentation links and anchors resolve (also inside the example's README and the admin skills), the docs index lists every document, the command overviews of `graph` and `graph-admin` match their inventories; `tests/test_doc_facts.py`: the numbers of the documents match the code; `tests/test_doc_sets.py`: lists that mirror a code set match it |
 
 The admin skill tests are `tests/skills/test_ontology_skill.py` (YAML examples
 of `ontology-best-practices` compile; its format reference names every key the

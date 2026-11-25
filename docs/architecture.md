@@ -135,7 +135,8 @@ with `graph_cli.skills.install`, whose scan sees only one owner's skills
 (`Owner`: marker kinds and names). `graph_cli.skills.graph_skill` renders a
 graph skill and is a package: `render` (template to files), `budget` (size
 checks), `model` (reads the model documents), `pieces` (the Markdown pieces
-the blocks share) and one module per section of the generated skill (`start`,
+the blocks share), `description` (the sentence of the description that sends an
+agent to `graph start`) and one module per section of the generated skill (`start`,
 `type_blocks`, `relations`, `naming`, `catalogs`, `reference`, `modules`).
 Query planning (`graph_cli.query.plan`) turns `find` and `neighbors` flags
 into the query AST, `graph_cli.query.lookup` plans,
@@ -289,6 +290,7 @@ kinds share the parameter grammar and binding (`kinetic.params`).
 | `kinetic.view_compile` | `compile_views` checks the view files of a graph against a compiled ontology and the function catalog the graph will have (terms, relation ends, `where` and `order` planned with the `find` planner, parameter and argument types, one default view per class) and writes the catalog document `graph_cli.view_catalog/1` with the normalized definition, the authored source, `touches` and the hash; `check_views` runs the same checks over a published catalog against another model and function catalog; `deprecated_function_uses` lists the warnings |
 | `kinetic.view_entries` | the entries of a published view catalog as the app shows them: the summary and detail documents, `find_view` |
 | `kinetic.cover` | which published functions cover an ad-hoc query, for the hint and the access log of `query`: structural signatures of query and function, compared (pure, no ranking model) |
+| `kinetic.recipes` | judging a `graph query` recipe written into a graph skill: the published functions that cover it, a parse or resolve error, or a generic example with placeholders (the recipe lint of `graph-admin graph skill publish`) |
 | `kinetic.expand` | over a `Snapshot`: `check_preconditions` evaluates the preconditions on the current state (every failure in one refusal), `expand` turns bound parameters into a `ChangeSet` and replaces `all: true` by one exact unlink per current edge |
 
 The checks use the query engine without data: `query.cypher.parameters` lists the

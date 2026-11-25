@@ -425,12 +425,15 @@ An admin token bound to a project (`token create NAME --scope admin
 --project P`) is a [project admin](access_control.md#project-admins): it
 needs no `maintainers` entry, and passes instead when its project's scope
 says `maintain` for at least one graph (`token create` warns otherwise).
-It runs only the commands on one graph (`graph-admin graph show`, `check`,
-`pull`, `push` and `reindex`, `graph-admin graph skill publish` and `render`,
-`graph-admin graph functions publish` and `show`, `graph-admin graph actions
-publish` and `show`, `graph-admin ontology release` and `diff`,
-`graph-admin files verify`) and `graph-admin graph list`, and sees only the
-graphs it maintains; every other command is refused with `access.ceiling`.
+It runs only the commands on one graph (`graph-admin graph show`,
+`graph-admin graph check`, `graph-admin graph pull`, `graph-admin graph push`,
+`graph-admin graph reindex`, `graph-admin graph skill publish`,
+`graph-admin graph skill render`, `graph-admin graph functions publish`,
+`graph-admin graph functions show`, `graph-admin graph actions publish`,
+`graph-admin graph actions show`, `graph-admin graph views publish`,
+`graph-admin graph views show`, `graph-admin ontology release`,
+`graph-admin ontology diff`, `graph-admin files verify`) and
+`graph-admin graph list`, and sees only the graphs it maintains; every other command is refused with `access.ceiling`.
 
 Answers, errors and problem details follow the [app API](#api). No
 `graph-admin` command takes an idempotency key, so `Idempotency-Key` is
@@ -493,13 +496,14 @@ with the admin token from `GRAPH_CLI_ADMIN_TOKEN`, the project's stored
 parses the command line itself and prints the server's answer as its own,
 as `graph` does.
 
-- Ontology, skill and function directories and policy files are read here and
-  uploaded: every regular file below a directory; a symlink or another
+- Ontology, skill, function, action and view directories and policy files are
+  read here and uploaded: every regular file below a directory; a symlink or another
   file kind is refused.
 - `graph-admin graph skill render` checks `--out` here and writes the preview into it.
 - `graph-admin graph pull` writes the files the server answers into `DIR`, with the
-  checks it makes locally; `graph-admin graph push` uploads only the base file,
-  `ontology/` and `skill/` of `DIR` and writes the new base into it.
+  checks it makes locally; `graph-admin graph push` uploads only what push reads of `DIR` (the base
+  file, `ontology/`, `skill/`, `functions/`, `actions/` and `views/`) and writes
+  the new base into it.
 - `graph-admin describe commands`, `graph-admin ontology validate`,
   `graph-admin skills install` and `graph-admin skills check` run here; `workspace sync` runs here and reaches the graphs through
   `graph-admin graph list` and `graph-admin graph pull`; `init`, `view` and `--data-root` are refused

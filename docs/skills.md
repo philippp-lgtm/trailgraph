@@ -324,8 +324,9 @@ may carry any digest or none.
   copies and names `graph self update` (two steps: the update installs the build and renders
   the copies again).
 - A read runs and warns `skills.stale`, naming the same command.
-- Meta commands (`whoami`, `describe commands`, `start`, `skills ...`) are never
-  checked: they are how a stale copy is found and refreshed. `graph start` refreshes the
+- Meta commands (`graph whoami`, `graph describe commands`, `graph start`,
+  `graph connect`, `graph self update`, `graph skills check`, `graph skills emit`,
+  `graph skills install`) are never checked: they are how a stale copy is found and refreshed. `graph start` refreshes the
   stale copies of the scopes that have a skill of this program (as `graph self update`,
   without replacing the program) and reports each; `graph start --check` only reports.
 - Without an installed skill nothing is checked (a person at a shell).

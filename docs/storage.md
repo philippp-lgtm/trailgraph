@@ -22,7 +22,7 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.files.s3_blobs` | `S3Blobs`: stored files in an S3-compatible object store ([Stored files in an object store](#stored-files-in-an-object-store)) |
 | `storage.files.blob_move` | the copy pass of `files move`: both locations listed once, every blob the move covers copied to the location the manifest does not name, each verified ([Stored files in an object store](#stored-files-in-an-object-store)) |
 | `storage.files.store_marker` | the object store's marker `graph_cli_store.json`: creating it, reading it, and the per-process cache of the identity check |
-| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, migration tx and marker, skill publish, function and action catalog publish, policy install, `verify`, `verify_blobs`, `misplaced_blobs`, `remove_blobs`, `copy_blobs` (the copy passes of `files move`), `recover`, `reindex` (admin only); the object store client for `files store check` |
+| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, migration tx and marker, skill publish, function, action and view catalog publish, policy install, `verify`, `verify_blobs`, `misplaced_blobs`, `remove_blobs`, `copy_blobs` (the copy passes of `files move`), `recover`, `reindex` (admin only); the object store client for `files store check` |
 | `storage.s3` | a small S3 client on the standard library: SigV4 signing, put, streamed and hash-verified get, head, delete, paged listing, retries and error mapping by S3 code; imports only `kernel` (`storage.files.s3_blobs` and `storage.files.store_marker` use it) |
 
 ## FileStore
@@ -287,10 +287,10 @@ in the graph directory.
 - Maintenance effects are published with one rename each: a new graph
   directory (staged as `graphs/.tmp-<id>`), an ontology release directory,
   the manifest, the graph skill's `source.json` (its files are written once
-  under their hash before), the function and action catalogs' `slot.json` (their sources
+  under their hash before), the function, action and view catalogs' `slot.json` (their sources
   and compiled documents likewise), an installed policy. A failure before the rename leaves only the
   staging state, which readers ignore.
-- Three published slots sit in a graph directory beside the manifest, each
+- The published slots sit in a graph directory beside the manifest, each
   switched by one rename of its pointer file, with the content written once
   under its hash before and never changed:
   `skill/source.json` (`kind`, tree `hash`, `published_against`) with
