@@ -157,6 +157,12 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
         "Functions take one reference per run where a list would serve.",
     ),
     ErrorSpec(
+        "admin.function_untyped_columns",
+        _C.WARNING,
+        False,
+        "Functions have result columns that no type describes.",
+    ),
+    ErrorSpec(
         "admin.policy_renamed_term",
         _C.REFUSED,
         False,

@@ -35,6 +35,7 @@ from graph_cli.kinetic.params import (
     Problem,
     is_null,
 )
+from graph_cli.kinetic.return_types import CLASS_KINDS, COLUMN_KINDS, ENUM_KINDS, ColumnType
 
 # The parameter grammar and ``Problem`` live in ``params`` (shared with actions); importers
 # of this module keep using these names.
@@ -68,10 +69,49 @@ _TOP_KEYS: Final = (
 )
 
 
+_RETURN_KEYS: Final = ("column", "summary", "type", "class", "enum", "many")
+
+
 @dataclass(frozen=True, slots=True)
 class ReturnDef:
+    """A result column: its name, what it holds and, when the author declared it, its type
+    (``type`` one of ``return_types.COLUMN_KINDS``, with ``of_class``, ``enum`` and ``many``)."""
+
     column: str
     summary: str
+    type: str | None = None
+    of_class: str | None = None
+    enum: str | None = None
+    many: bool = False
+
+    @property
+    def declared(self) -> ColumnType | None:
+        """The declared type, ``None`` for a column that declares none (a declaration does not
+        say whether the value may be null: it is nullable until inference knows better)."""
+        if self.type is None:
+            return None
+        return ColumnType(self.type, self.many, self.enum, self.of_class)
+
+    def to_json(self) -> dict[str, JsonValue]:
+        """The column of a catalog entry; the type keys only when declared, so a catalog of
+        columns without one keeps its bytes."""
+        data: dict[str, JsonValue] = {"column": self.column, "summary": self.summary}
+        if self.type is not None:
+            data.update(
+                {"type": self.type, "class": self.of_class, "enum": self.enum, "many": self.many}
+            )
+        return data
+
+    @classmethod
+    def from_json(cls, data: JsonObject, path: str) -> ReturnDef:
+        return cls(
+            column=req_str(data, "column", path),
+            summary=req_str(data, "summary", path),
+            type=opt_str(data, "type", path),
+            of_class=opt_str(data, "class", path),
+            enum=opt_str(data, "enum", path),
+            many=req_bool(data, "many", path) if "many" in data else False,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,7 +145,7 @@ class FunctionDef:
             "replaced_by": self.replaced_by,
             "featured": self.featured,
             "params": [p.to_json() for p in self.params],
-            "returns": [{"column": r.column, "summary": r.summary} for r in self.returns],
+            "returns": [r.to_json() for r in self.returns],
             "examples": [{"question": e.question, "params": dict(e.params)} for e in self.examples],
         }
 
@@ -124,7 +164,7 @@ class FunctionDef:
             ),
             query=query,
             returns=tuple(
-                ReturnDef(req_str(o, "column", path), req_str(o, "summary", path))
+                ReturnDef.from_json(o, f"{path}returns.")
                 for o in (as_object(r, f"{path}returns") for r in req_list(data, "returns", path))
             ),
             examples=tuple(
@@ -230,16 +270,51 @@ class _Parse(Parser):
         result: list[ReturnDef] = []
         for index, item in enumerate(items):
             path = f"returns[{index}]"
-            body = self.mapping(item, path, ("column", "summary"))
+            body = self.mapping(item, path, _RETURN_KEYS)
             if body is None:
                 continue
             self.require(body, "column", path, item.line)
             self.require(body, "summary", path, item.line)
             column = self.text(body.get("column"), f"{path}.column", limit=MAX_DETAIL)
             summary = self.text(body.get("summary"), f"{path}.summary", limit=MAX_DETAIL)
-            if column is not None and summary is not None:
-                result.append(ReturnDef(column, summary))
+            declared = self.column_type(body, path, item.line)
+            if column is not None and summary is not None and declared is not None:
+                result.append(ReturnDef(column, summary, *declared))
         return tuple(result)
+
+    def column_type(
+        self, body: dict[str, YamlNode], path: str, line: int
+    ) -> tuple[str | None, str | None, str | None, bool] | None:
+        """``(type, class, enum, many)`` of a column; ``None`` when a key is wrong. A column
+        without ``type`` has none of the other three."""
+        before = len(self.problems)
+        kind = (
+            self.choice(body.get("type"), f"{path}.type", COLUMN_KINDS) if "type" in body else None
+        )
+        of_class = enum = None
+        if "class" in body:
+            of_class = self.text(body["class"], f"{path}.class")
+        if "enum" in body:
+            enum = self.text(body["enum"], f"{path}.enum")
+        many = self.boolean(body["many"], f"{path}.many") if "many" in body else False
+        if "type" not in body:
+            for key in ("class", "enum", "many"):
+                if key in body:
+                    self.add(
+                        self.code("missing_key"),
+                        f"{path}.type",
+                        f"a column that declares {key!r} needs a type",
+                        line=line,
+                    )
+        if kind in ENUM_KINDS and "enum" not in body:
+            self.add(self.code("missing_key"), f"{path}.enum", "an enum needs enum:", line=line)
+        if kind is not None and kind not in CLASS_KINDS and "class" in body:
+            self.invalid(f"{path}.class", "only a ref or an entity has a class", body["class"])
+        if kind is not None and kind not in ENUM_KINDS and "enum" in body:
+            self.invalid(f"{path}.enum", "only an enum has enum:", body["enum"])
+        if len(self.problems) > before or many is None:
+            return None
+        return kind, of_class, enum, many
 
     def examples(self, node: YamlNode) -> tuple[ExampleDef, ...] | None:
         return parse_examples(self, node)

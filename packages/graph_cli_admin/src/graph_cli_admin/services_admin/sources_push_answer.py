@@ -172,6 +172,7 @@ def push_warnings(
         warnings += functions.single_ref_warnings(
             after, locked.model(), catalogs.functions, final_slots(locked, catalogs, None).views
         )
+        warnings += functions.untyped_warnings(after, locked.model(), catalogs.functions)
     if (
         catalogs.actions is not None
     ):  # the published catalog was not looked at: judge the pushed one

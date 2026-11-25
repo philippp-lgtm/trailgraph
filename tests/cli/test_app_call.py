@@ -1029,6 +1029,39 @@ def test_every_example_of_the_company_entries_runs_through_call(
     assert ran >= 8
 
 
+def test_a_small_stored_decimal_is_shown_in_plain_notation_and_validates(
+    run_cli: CliRunner, company_root: Path
+) -> None:
+    """A decimal attribute holds ``0.0000001``; the engine reads it as a ``Decimal``, which
+    ``str`` writes as ``1E-7``. The cell is the grammar of a decimal and the column schema accepts
+    it, and the entity object next to it shows the stored text."""
+    shares = app(run_cli, "find", "--type", "leg:Shareholding", env=COMPANY).data["items"]
+    stake = shares[0]
+    updated = app(
+        run_cli,
+        "apply",
+        "-",
+        env=COMPANY,
+        input=json.dumps(
+            {"ops": [{"op": "update", "id": stake["alias"], "set": {"percent": "0.0000001"}}]}
+        ),
+    )
+    assert updated.code == 0, updated.envelope
+    entities = [
+        str(e["alias"])
+        for e in app(run_cli, "find", "--type", "leg:LegalEntity", env=COMPANY).data["items"]
+    ]
+    tool = {t["name"]: t for t in app(run_cli, "describe", "tools", env=COMPANY).data["tools"]}[
+        "run_shareholders_of"
+    ]
+    args = ["--input", f"entity={j(entities)}"]
+    called = call(run_cli, "run_shareholders_of", *args, env=COMPANY)
+    assert called.code == 0, called.envelope
+    percents = [row["percent"] for row in called.data["items"]]
+    assert "0.0000001" in percents and not any("E" in p for p in percents)
+    assert Draft202012Validator(tool["output_schema"]).is_valid(called.data)
+
+
 def test_every_action_of_the_company_runs_as_a_dry_run_with_its_references(
     run_cli: CliRunner, company_root: Path
 ) -> None:

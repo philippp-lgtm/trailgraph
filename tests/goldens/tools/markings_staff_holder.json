@@ -9,7 +9,7 @@
     "version": "1.0.0"
   },
   "tools_format": 1,
-  "version": "sha256:569502d775eb7ad62cade9232d944af6819f93100f49e6ba5a9bffca724c104d",
+  "version": "sha256:d631b0dfb860c4f5acb59b6fa7ffb791fe66628f9ce18f8d8bc1e52e94470340",
   "tools": [
     {
       "name": "run_by_grade",
@@ -76,11 +76,18 @@
               "type": "object",
               "properties": {
                 "name": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Name."
                 },
                 "grade": {
+                  "description": "The grade.",
                   "x-graph-cli": {
                     "typed": false
                   }
@@ -148,7 +155,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "staff",
-      "hash": "sha256:64692043454dc1595d5f22a318dee74965714d12a3e85f4285af9d83988daea6",
+      "hash": "sha256:45cb1708fe6a8a530273e96d1618ef40892228f0d8f8a782e5f021885feded74",
       "entry_hash": "sha256:545dca9081a8842ee06de1bfe3a3ef23eee54d2301877138cbf5544e40af2d7b",
       "errors": [
         "access.denied",
@@ -229,9 +236,15 @@
               "type": "object",
               "properties": {
                 "name": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Name."
                 }
               },
               "required": [
@@ -295,7 +308,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "staff",
-      "hash": "sha256:97aa3f5c8ac44987c0aa52732b40e5b21a2fa57b1f5ea726379d8eaf70df4a62",
+      "hash": "sha256:0bbf0a329d9b38b406df5e326af7a89a3ab1ecbe16d20d01d6aa458a558179a7",
       "entry_hash": "sha256:6c230869db17777690d2494133a9aa2d02204165641cbf3675ad0b74b8b5e8ff",
       "errors": [
         "access.denied",
@@ -376,9 +389,15 @@
               "type": "object",
               "properties": {
                 "name": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Name."
                 }
               },
               "required": [
@@ -442,7 +461,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "staff",
-      "hash": "sha256:b4c1522bf39e4d0a3037b5e8b525b5ab60089e577d86c794d43b1640f625b1ec",
+      "hash": "sha256:f663800b081052219bd51dfb250ad8fa73000dda5e97b8257298f063d1e24e4b",
       "entry_hash": "sha256:ede128fcd374e859158c9f0521d390c65828a5cbb66042d7d547c692099d60ee",
       "errors": [
         "access.denied",

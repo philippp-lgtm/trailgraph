@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from harness import CliRunner
 from support.admin import Outcome, admin, init
-from support.app import create_graph
+from support.app import app, create_graph
 from support.fixtures import FIXTURES, ONTOLOGIES
 from support.trees import tree_hash
 
@@ -166,6 +166,114 @@ def test_a_list_ref_and_a_deprecated_function_do_not_warn(
     assert publish(run_cli, target, "--dry-run").warnings == []
     path.write_text(text.replace("featured: true", "featured: true\nstatus: deprecated"))
     assert publish(run_cli, target, "--dry-run").warnings == []
+
+
+STOCK = """\
+schema: graph_cli.function/1
+name: stock_by_condition
+summary: Units in stock per condition.
+use_when: How many units there are of each condition.
+query: |
+  MATCH (i:Item)
+  RETURN i.condition AS condition, sum(i.quantity) AS units, count(i) AS items
+  ORDER BY condition
+returns:
+  - column: condition
+    summary: The condition.
+  - column: units
+    summary: Units in stock.
+{declared}  - column: items
+    summary: Distinct items.
+examples:
+  - question: How many units are in each condition?
+"""
+
+
+def stock(tmp_path: Path, declared: str = "") -> Path:
+    target = folder(tmp_path, "items_by_condition.yaml", name="stock")
+    (target / "stock_by_condition.yaml").write_text(STOCK.format(declared=declared))
+    return target
+
+
+def test_a_column_that_nothing_types_warns_with_the_function_and_the_column(
+    run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
+) -> None:
+    target = stock(tmp_path)
+    dry = publish(run_cli, target, "--dry-run")
+    assert dry.code == 0 and dry.warning_codes == ["admin.function_untyped_columns"]  # also dry
+    outcome = publish(run_cli, target)
+    assert outcome.code == 0 and outcome.data["published"] is True
+    [warning] = outcome.warnings
+    assert warning["code"] == "admin.function_untyped_columns"
+    assert warning["details"] == {
+        "graph": "example_graph",
+        "functions": [{"function": "stock_by_condition", "columns": ["units"]}],
+        "more": 0,
+    }
+    assert (
+        "stock_by_condition.units" in warning["message"] and "declare `type`" in warning["message"]
+    )
+    same = publish(run_cli, target)
+    assert same.data["published"] is False
+    assert same.warning_codes == ["admin.function_untyped_columns"]  # a state, also when unchanged
+
+
+def test_a_declared_type_ends_the_warning_and_the_entry_shows_every_type(
+    run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
+) -> None:
+    declared = "    type: integer\n"
+    outcome = publish(run_cli, stock(tmp_path, declared))
+    assert outcome.code == 0 and outcome.warnings == []
+    shown = app_describe(run_cli, "stock_by_condition")
+    types = {c["column"]: (c["type"], c["enum"], c["nullable"]) for c in shown["returns"]}
+    assert types == {
+        "condition": ("enum", "inv:Condition", True),  # inferred
+        "units": ("integer", None, True),  # declared
+        "items": ("integer", None, False),  # inferred, never null
+    }
+
+
+def test_a_deprecated_function_with_an_untyped_column_does_not_warn(
+    run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
+) -> None:
+    target = stock(tmp_path)
+    path = target / "stock_by_condition.yaml"
+    path.write_text(path.read_text().replace("use_when:", "status: deprecated\nuse_when:"))
+    assert publish(run_cli, target, "--dry-run").warnings == []
+
+
+def test_a_declared_type_that_contradicts_the_query_is_refused(
+    run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
+) -> None:
+    target = stock(tmp_path, "    type: integer\n")
+    path = target / "stock_by_condition.yaml"
+    path.write_text(
+        path.read_text().replace(
+            "    summary: Distinct items.", "    summary: Items.\n    type: string"
+        )
+    )
+    before = tree_hash(root)
+    outcome = publish(run_cli, target)
+    assert outcome.code == 1 and outcome.error["code"] == "admin.functions_invalid"
+    [problem] = outcome.error["details"]["problems"]
+    assert (problem["function"], problem["code"], problem["path"]) == (
+        "stock_by_condition",
+        "function.returns_type_mismatch",
+        "returns[2].type",
+    )
+    assert (
+        problem["details"]["declared"] == "string" and problem["details"]["inferred"] == "integer"
+    )
+    assert tree_hash(root) == before
+
+
+def app_describe(run_cli: CliRunner, function: str) -> dict[str, Any]:
+    """``describe function`` of the example graph, as the app answers it."""
+    outcome = app(
+        run_cli, "describe", "function", function, env={"GRAPH_CLI_GRAPH": "example_graph"}
+    )
+    assert outcome.code == 0, outcome.envelope
+    return dict(outcome.data["function"])
 
 
 def test_republishing_changed_files_names_both_hashes(

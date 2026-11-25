@@ -28,6 +28,7 @@ from graph_cli.kernel.json_access import as_list, as_object
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kinetic.action_entries import ActionEntry, find_action
 from graph_cli.kinetic.entries import FunctionEntry, find_entry, seen_replacement
+from graph_cli.kinetic.return_types import ColumnType
 from graph_cli.kinetic.view_entries import ViewEntry, find_view
 from graph_cli.ontology_layer.model import (
     AttributeDef,
@@ -543,6 +544,14 @@ def describe_functions(
     return _filtered(entry, model, wanted, functions=found.pop("items"), **found)
 
 
+def column_types_of(entry: FunctionEntry, model: CompiledModel) -> tuple[ColumnType | None, ...]:
+    """The types of the columns of a function against ``model``: what its query makes certain
+    and what the author declared (``None``: untyped)."""
+    from graph_cli.kinetic.compile import column_types  # compiles queries: Cypher engine
+
+    return column_types(entry.defn, entry.query, model)
+
+
 def describe_function(
     entry: GraphEntry,
     model: CompiledModel,
@@ -558,9 +567,9 @@ def describe_function(
     ``did_you_mean``; ``replaced_by`` names only a replacement the caller may use."""
     seen = [*(functions or ()), *(c.entry for c in denied)]
     found = find_entry(seen, name)
-    detail = found.detail_json()
-    detail["replaced_by"] = seen_replacement(found.defn.replaced_by, functions)
     blocked = next((c for c in denied if c.entry is found), None)
+    detail = found.detail_json(None if blocked is not None else column_types_of(found, model))
+    detail["replaced_by"] = seen_replacement(found.defn.replaced_by, functions)
     if blocked is not None:
         detail = {**restricted_detail(detail), **blocked.access_json()}
     return model_envelope(entry, model, function=detail)

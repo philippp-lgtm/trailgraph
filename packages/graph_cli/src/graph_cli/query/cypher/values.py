@@ -31,6 +31,11 @@ from graph_cli.kernel.records import EdgeRecord, Revision
 
 MIN_INTEGER: Final = -(2**63)
 MAX_INTEGER: Final = 2**63 - 1
+# A decimal is shown in plain notation (the grammar of a decimal attribute and parameter) while that
+# text stays this long; one that would be longer (``1e999999999`` is a valid literal) keeps the
+# exponent notation instead of becoming a text of that many digits. Every stored decimal is far
+# below the bound, so what an attribute holds always comes back in plain notation.
+MAX_PLAIN_CHARS: Final = 4000
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,10 +102,22 @@ def is_number_text(text: str) -> bool:
     return as_number(loaded) is not None
 
 
+def decimal_text(value: Decimal) -> str:
+    """A decimal as text in plain notation, ``0.0000001`` and ``1000``, which is what a decimal
+    attribute holds and a decimal parameter takes (``str`` gives ``1E-7`` and ``1E+3``); only a
+    value whose plain text would pass ``MAX_PLAIN_CHARS`` keeps the exponent notation."""
+    _, digits, exponent = value.as_tuple()
+    if isinstance(exponent, int):
+        width = len(digits) + exponent if exponent >= 0 else max(len(digits), -exponent)
+        if width + 2 <= MAX_PLAIN_CHARS:  # a sign and a point
+            return format(value, "f")
+    return str(value)
+
+
 def plain_json(value: Value) -> JsonValue:
-    """A value without nodes or relationships as JSON: decimals as strings."""
+    """A value without nodes or relationships as JSON: decimals as strings in plain notation."""
     if isinstance(value, Decimal):
-        return str(value)
+        return decimal_text(value)
     if isinstance(value, list):
         return [plain_json(v) for v in value]
     if isinstance(value, dict):

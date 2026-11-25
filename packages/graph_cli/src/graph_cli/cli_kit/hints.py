@@ -321,6 +321,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "function.query_too_long": None,
     "function.replaced_by_invalid": None,
     "function.returns_mismatch": None,
+    "function.returns_type_mismatch": None,
     "function.returns_star": None,
     "function.round_trip_failed": None,
     "function.stale": None,

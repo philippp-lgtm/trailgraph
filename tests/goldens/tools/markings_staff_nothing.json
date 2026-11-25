@@ -9,7 +9,7 @@
     "version": "1.0.0"
   },
   "tools_format": 1,
-  "version": "sha256:f24f857d8363d074c4f014ff6ba5c5d77d7be6a9b35d6a176e19282840991a0a",
+  "version": "sha256:df89f2f741aacaaabb2d0a0d99b8c69755522c16a27e1b3d6a7f60f024659985",
   "tools": [
     {
       "name": "run_colleague_names",
@@ -66,9 +66,15 @@
               "type": "object",
               "properties": {
                 "name": {
-                  "x-graph-cli": {
-                    "typed": false
-                  }
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Name."
                 }
               },
               "required": [
@@ -132,7 +138,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "staff",
-      "hash": "sha256:97aa3f5c8ac44987c0aa52732b40e5b21a2fa57b1f5ea726379d8eaf70df4a62",
+      "hash": "sha256:0bbf0a329d9b38b406df5e326af7a89a3ab1ecbe16d20d01d6aa458a558179a7",
       "entry_hash": "sha256:6c230869db17777690d2494133a9aa2d02204165641cbf3675ad0b74b8b5e8ff",
       "errors": [
         "access.denied",

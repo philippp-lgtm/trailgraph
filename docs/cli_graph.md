@@ -84,7 +84,7 @@ agent harnesses](#tools-for-agent-harnesses)).
 | `describe functions [--module M] [--include-deprecated] [--include-not-allowed]` | the named functions of the graph you may run (`graph_cli.model/1`), one item per function: `name`, `module`, `summary`, `signature` (`unit: ref org:OrgUnit, include_vacant?: boolean`; `?` marks an optional parameter) and `status`; deprecated functions only with `--include-deprecated`; `not_allowed` counts the ones you see but may not run, `--include-not-allowed` lists them too. See [Functions](#functions) |
 | `describe actions [--module M] [--include-deprecated] [--include-not-allowed]` | the actions of the graph that you may run (`graph_cli.model/1`), one item per action: `name`, `module`, `summary`, `signature` and `status`; deprecated actions only with `--include-deprecated`; `not_allowed` counts the actions whose write rights you lack (`--include-not-allowed` lists them too). See [Actions](#actions) |
 | `describe action NAME` | one action completely: summary, `use_when`, `reason`, parameters, preconditions, the compiled operations, the types and relations it touches, the write rights it needs (`needs`), examples and its hash; an unknown or hidden name is `action.not_found` with `did_you_mean`; an action you may not run is shown marked `allowed: false` with `missing`, without its operations, conditions, examples, needs and hash. See [Actions](#actions) |
-| `describe function NAME` | one function completely: summary, `use_when`, parameters, the result columns, examples, the types and relations its query touches, the normalized query text (copy it as the start of an ad-hoc query) and its hash; an unknown name is `function.not_found` with `did_you_mean`; a function you may not run is shown marked `allowed: false` with `missing`, without its query, examples, touched terms and hash (see [Entries you may not use](#entries-you-may-not-use)) |
+| `describe function NAME` | one function completely: summary, `use_when`, parameters, the result columns with their types, examples, the types and relations its query touches, the normalized query text (copy it as the start of an ad-hoc query) and its hash; an unknown name is `function.not_found` with `did_you_mean`; a function you may not run is shown marked `allowed: false` with `missing`, without its query, examples, touched terms and hash (see [Entries you may not use](#entries-you-may-not-use)) |
 | `describe views [--module M] [--include-deprecated] [--include-not-allowed]` | the published views of the graph you can call (`graph_cli.model/1`), one item per view: `name`, `module`, `summary`, `takes` (the class an entity view shows; left out for a set view), `default` (only when true), `signature` and `status`; deprecated views only with `--include-deprecated`. A view you cannot see in full (it names a type, attribute, relation or function that is hidden from you) does not exist for you; one you see in full but that needs `read.get`, `read.find` or `read.function` that you lack is counted in `not_allowed` (`--include-not-allowed` lists it) |
 | `describe view NAME` | one view completely: summary, `use_when`, `takes`, `default`, parameters, every section with the types, relations, fields and function it reads, examples, `touches` (types, relations, attributes, functions), `hash` and `call`, the command that calls it; `replaced_by` names a view only when you see it; an unknown or hidden name is `view.not_found` with `did_you_mean` over the names you see and a hint to search the views by words; a view you may not use is shown marked `allowed: false` with `missing`, without its sections, examples, touched terms, hash and call command |
 | `describe tools [--tool NAME] [--kind K] [--module M] [--featured] [--exclude-deprecated]` | the tool manifest of the graph for an agent harness (`graph_cli.model/1`): one tool per function, action and view you may use, each with a JSON Schema for its input and its answer, and the error codes it may return with what to do about each; made for programs, not for agents that work in a shell. See [Tools for agent harnesses](#tools-for-agent-harnesses) |
@@ -1249,9 +1249,34 @@ same. What differs:
 `describe commands`: a consumer ignores keys it does not know, so an answer can grow without
 breaking one that validates. A function answers what `run` answers and `page`, the paging of the
 rows: `function`, `columns`, `items` and `page`, with one property per column of the function in a
-row, each untyped for now (any JSON value, marked `x-graph-cli: {typed: false}`). An action answers
-the write result of `do`, as a dry run does. A view answers the view model, its sections as loose
-objects with a `kind`. Every schema is self-contained: no `$ref`, an object at its root.
+row, each typed where its type is known (below) and else any JSON value marked
+`x-graph-cli: {typed: false}`. An action answers the write result of `do`, as a dry run does. A
+view answers the view model, its sections as loose objects with a `kind`. Every schema is
+self-contained: no `$ref`, an object at its root.
+
+**Typed columns.** A column of a function has a type when the query makes it certain (a node, an
+attribute, a count, a list of values, a literal) or the maintainer declared one
+([result columns](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md#result-columns)).
+The property of the column in a row carries its `description` (the column's summary) and the schema
+of the cells; a column whose values can be null accepts `null` as well, and a list is an array.
+`describe function` lists the same type per column (`type` is null for an untyped column). The cells
+are what `run` shows:
+
+| Column type | Schema of one cell |
+| --- | --- |
+| `string` | a string |
+| `integer`, `boolean` | an integer, a boolean |
+| `decimal` | a string in plain notation (`0.0000001`, `1000`: the grammar of a decimal parameter, so the cell can be passed back); every value an attribute can hold is shown this way, and only a computed value whose plain text would run to thousands of characters keeps the exponent notation, which the schema also accepts |
+| `date`, `datetime` | a string with `format` `date` or `date-time` |
+| `enum` | a string, `enum` the values of the enum as you see them |
+| `ref` | a string with the grammar of a reference, the class in `x-graph-cli: {class}` when the column has one; it can go into a `ref` parameter |
+| `entity` | the entity object `get` shows, `attrs` typed by the attributes of the class that you see (an entity of a subclass may carry more) |
+| `lang` | `{"lang", "value"}`, a language-tagged text |
+| `any` | any JSON value |
+
+Like the enum values, the attributes of an entity column are those of your model: what a type limit
+or a marking hides is not in the schema, and a function whose result names a hidden class or enum
+does not exist for you, like one that takes it as a parameter.
 
 **Compatibility policy.** The manifest shape (`tools_format`), the tool names, the controls and the
 open output schemas are a contract that a harness's allow list and stubs depend on. Within a
@@ -1259,6 +1284,13 @@ format a change is additive: new tools, keys, error codes and optional arguments
 consumer can break on raises `tools_format`: removing or renaming a key, a tool name or a control,
 tightening an input schema, or changing what an `on_error` value means. A harness sends only what
 `input_schema` lists, and ignores what it does not know of an answer.
+
+The output schema of a function tool may become more precise within a format: a column that was
+untyped gets a type, or a type becomes exact, because the types of the columns are worked out from
+the stored query by the program that serves the manifest and not stored with the published
+function. The tool `hash` follows such a change, so it can change on a server upgrade without any
+publish; a harness that passes `--expect-hash` then gets `tool.hash_mismatch` and fetches the
+manifest again, as for any other change of the tool.
 
 **Errors.** `errors` maps every code any listed tool may return to its registry facts
 (`category`, `retryable`, `summary`) and `on_error`, the one move a harness makes next:

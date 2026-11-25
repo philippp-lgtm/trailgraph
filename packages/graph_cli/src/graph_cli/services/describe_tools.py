@@ -35,12 +35,14 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kinetic.action_entries import ActionEntry
 from graph_cli.kinetic.entries import FunctionEntry, Named, seen_replacement
 from graph_cli.kinetic.params import ParamDef
+from graph_cli.kinetic.return_types import ColumnType
 from graph_cli.kinetic.tool_types import ParamType, input_value, param_types, ref_type
 from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.kinetic.view_format import MIN_BYTES, PAGE_BYTES_MAX
 from graph_cli.kinetic.view_page import PAGE_BYTES
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT
+from graph_cli.services.describe import column_types_of
 
 FUNCTION: Final = "function"
 ACTION: Final = "action"
@@ -75,6 +77,16 @@ def tool_name(kind: str, entry_name: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class ToolColumn:
+    """A result column of a function as the manifest renders it: its name, what it holds and its
+    type (``None``: nothing makes it certain, the column is untyped)."""
+
+    name: str
+    summary: str
+    type: ColumnType | None
+
+
+@dataclass(frozen=True, slots=True)
 class ToolHead:
     """A tool without its answer: everything of the manifest that follows from the entry, the
     model the caller sees and the caller's obligations. ``columns`` are the result columns of a
@@ -91,7 +103,7 @@ class ToolHead:
     featured: bool
     module: str | None
     entry_hash: str
-    columns: tuple[str, ...] = ()
+    columns: tuple[ToolColumn, ...] = ()
 
 
 def enum_values(
@@ -326,6 +338,14 @@ def _replacement(kind: str, replaced_by: str | None, visible: Sequence[Named]) -
     return None if found is None else tool_name(kind, found)
 
 
+def function_columns(entry: FunctionEntry, model: CompiledModel) -> tuple[ToolColumn, ...]:
+    """The columns of a function with their types against ``model`` (the caller's model)."""
+    types = column_types_of(entry, model)
+    return tuple(
+        ToolColumn(r.column, r.summary, t) for r, t in zip(entry.defn.returns, types, strict=True)
+    )
+
+
 def function_head(
     entry: FunctionEntry, model: CompiledModel, visible: Sequence[FunctionEntry]
 ) -> ToolHead:
@@ -346,7 +366,7 @@ def function_head(
         featured=defn.featured,
         module=entry.module,
         entry_hash=entry.hash,
-        columns=tuple(r.column for r in defn.returns),
+        columns=function_columns(entry, model),
     )
 
 

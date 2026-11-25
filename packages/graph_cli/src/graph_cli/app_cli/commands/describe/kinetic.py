@@ -39,6 +39,7 @@ from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.json_access import as_list, as_object, req_list, req_str
+from graph_cli.kinetic.return_types import COLUMN_KINDS
 from graph_cli.services import describe
 
 _FUNCTION_ITEM: Final = {
@@ -62,6 +63,20 @@ _PARAM: Final = obj(
     },
     {"default": ANY, "optional": BOOLEAN, "required": BOOLEAN},
 )
+# A result column of a function: its type against the caller's model (``type`` null: nothing makes
+# it certain), the class of a ``ref`` or an ``entity``, the enum of an ``enum``, a list or not and
+# whether a value may be null.
+_COLUMN: Final = obj(
+    {
+        "column": STRING,
+        "summary": STRING,
+        "type": nullable(enum(*COLUMN_KINDS)),
+        "class": NULLABLE_STRING,
+        "enum": NULLABLE_STRING,
+        "many": BOOLEAN,
+        "nullable": BOOLEAN,
+    }
+)
 # What the definition of an entry that may not be used leaves out (it is optional here, and always
 # there for an entry that may be used).
 _FUNCTION: Final = model_document(
@@ -75,7 +90,7 @@ _FUNCTION: Final = model_document(
             },
             {
                 "featured": BOOLEAN,
-                "returns": array(obj({"column": STRING, "summary": STRING})),
+                "returns": array(_COLUMN),
                 "examples": array(obj({"question": STRING, "params": obj(extra=ANY)})),
                 "touches": obj({"types": _TOUCHED, "relations": _TOUCHED}),
                 "query": STRING,
@@ -208,6 +223,18 @@ def _param_lines(item: JsonObject) -> list[str]:
     return lines or ["  -"]
 
 
+def _column_head(column: JsonObject) -> str:
+    """``name`` of an untyped column, ``name: type`` of a typed one (``list of date``), with
+    ``(not null)`` where a value is never null."""
+    kind = column.get("type")
+    if kind is None:
+        return req_str(column, "column")
+    named = {"ref": column.get("class"), "entity": column.get("class"), "enum": column.get("enum")}
+    text = f"{kind} {named[str(kind)]}" if named.get(str(kind)) else str(kind)
+    text = f"list of {text}" if column.get("many") else text
+    return f"{req_str(column, 'column')}: {text}{'' if column.get('nullable') else ' (not null)'}"
+
+
 def _function_text(data: JsonObject) -> str:
     """The definition in reading order: head, parameters, columns, touched terms, query."""
     f = as_object(data["function"], "function")
@@ -224,7 +251,7 @@ def _function_text(data: JsonObject) -> str:
     lines.append("Returns:")
     for value in req_list(f, "returns"):
         r = as_object(value, "column")
-        lines.append(f"  {req_str(r, 'column')}  {req_str(r, 'summary')}")
+        lines.append(f"  {_column_head(r)}  {req_str(r, 'summary')}")
     lines.append("Examples:")
     for value in req_list(f, "examples"):
         lines.append(f"  {req_str(as_object(value, 'example'), 'question')}")

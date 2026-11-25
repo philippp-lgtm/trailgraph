@@ -22,7 +22,7 @@ from graph_cli.cli_kit.output_schemas import obj, ref
 from graph_cli.kernel.canonical import hash_value
 from graph_cli.kernel.error_codes import ERROR_CODES
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.services.describe_tools import KINDS
+from graph_cli.services.describe_tools import KINDS, ToolColumn
 
 COMPANY = tools.company()
 INVENTORY = tools.inventory()
@@ -139,6 +139,31 @@ def test_a_tool_hash_covers_what_a_harness_builds_its_tool_from() -> None:
     assert tool["hash"] == hash_value(covered)
 
 
+def test_heads_of_one_tool_resolve_only_that_function(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A call that checks the hash of one tool must not type the columns of every function."""
+    from graph_cli.services import describe_tools
+
+    scene = COMPANY.scene()
+    asked: list[str] = []
+    original = describe_tools.column_types_of
+
+    def spy(entry: Any, model: Any) -> Any:
+        asked.append(entry.name)
+        return original(entry, model)
+
+    monkeypatch.setattr(describe_tools, "column_types_of", spy)
+    args = (scene.model, scene.functions, scene.actions, scene.views, NO_OBLIGATIONS)
+    (head,) = tm.heads(*args, only="run_members_of_unit")
+    assert asked == ["members_of_unit"]
+    every = {h.name: h for h in tm.heads(*args)}
+    assert len(asked) == 1 + len(scene.functions)
+    assert tm.tool_hash(head, scene.model) == tm.tool_hash(
+        every["run_members_of_unit"], scene.model
+    )
+    assert tm.heads(*args, only="do_assign_position")[0].kind == "action"
+    assert tm.heads(*args, only="run_nothing") == ()
+
+
 def test_an_enum_change_changes_the_tool_hash_but_not_the_entry_hash() -> None:
     scene = INVENTORY.scene()
     shorter = replace(
@@ -206,7 +231,7 @@ def test_input_schemas_are_closed_and_output_schemas_stay_open() -> None:
         assert "additionalProperties" not in tool["output_schema"]
 
 
-def test_a_function_answers_the_run_answer_with_its_page_and_untyped_columns() -> None:
+def test_a_function_answers_the_run_answer_with_its_page_and_typed_columns() -> None:
     tool = by_name(manifest(COMPANY.scene()))["run_members_of_unit"]
     schema = tool["output_schema"]
     assert list(schema["properties"]) == ["function", "columns", "items", "page"]
@@ -215,8 +240,11 @@ def test_a_function_answers_the_run_answer_with_its_page_and_untyped_columns() -
     entry = next(f for f in COMPANY.functions if f.name == "members_of_unit")
     columns = [r.column for r in entry.defn.returns]
     assert list(row["properties"]) == columns and row["required"] == columns
-    for column in columns:
-        assert row["properties"][column] == {"x-graph-cli": {"typed": False}}
+    for r in entry.defn.returns:
+        assert row["properties"][r.column] == {
+            "anyOf": [{"type": "string"}, {"type": "null"}],
+            "description": r.summary,
+        }
     assert schema["properties"]["page"]["required"] == [
         "total",
         "shown",
@@ -230,7 +258,7 @@ def test_a_function_answers_the_run_answer_with_its_page_and_untyped_columns() -
 def test_the_function_answer_is_the_run_output_but_for_items_and_page() -> None:
     """``function_output`` rebuilds ``RUN_OUTPUT``: it must not drift from it."""
     base = tm.standalone(RUN_OUTPUT)
-    built = tm.function_output(["a"])
+    built = tm.function_output([ToolColumn("a", "A.", None)], COMPANY.model)
     assert set(base["properties"]) | {"page"} == set(built["properties"])
     for key in set(base["properties"]) - {"items"}:
         assert built["properties"][key] == base["properties"][key]

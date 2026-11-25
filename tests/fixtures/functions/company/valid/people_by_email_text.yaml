@@ -18,6 +18,7 @@ returns:
     summary: Name of the person.
   - column: email
     summary: Work email address.
+    type: string
 examples:
   - question: Who has a mail address at the example domain?
     params:

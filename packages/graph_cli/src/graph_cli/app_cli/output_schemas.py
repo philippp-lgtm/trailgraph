@@ -7,6 +7,7 @@ parameters depend on the graph's ontology or the query, so they stay any JSON va
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Final
 
 from graph_cli.cli_kit import output_schemas as kit
@@ -22,6 +23,7 @@ from graph_cli.cli_kit.output_schemas import (
     obj,
     ref,
 )
+from graph_cli.kernel.canonical import JsonObject, JsonValue
 
 NULLABLE_STRING: Final = nullable(STRING)
 # ``request.source`` as ``history`` and ``changes`` show it (kernel.records.SourceRef)
@@ -292,3 +294,25 @@ def model_document(
 ) -> Schema:
     """A ``graph_cli.model/1`` document (B11.5) with its own keys."""
     return obj({**_model_header(), **required}, optional)
+
+
+def standalone(schema: Schema, defs: Mapping[str, Schema] = DEFS) -> JsonObject:
+    """``schema`` with every ``$ref`` into ``defs`` replaced by the definition it names, so that it
+    stands alone. A definition that refers to itself is a bug (``ValueError``)."""
+
+    def inline(node: JsonValue, active: tuple[str, ...]) -> JsonValue:
+        if isinstance(node, list):
+            return [inline(item, active) for item in node]
+        if not isinstance(node, Mapping):
+            return node
+        target = node.get("$ref")
+        if isinstance(target, str):
+            name = target.removeprefix("#/$defs/")
+            if name in active:
+                raise ValueError(f"output schema definition {name!r} refers to itself")
+            return inline(defs[name], (*active, name))
+        return {key: inline(value, active) for key, value in node.items()}
+
+    found = inline(schema, ())
+    assert isinstance(found, dict)
+    return found

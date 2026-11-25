@@ -180,13 +180,13 @@ graph-admin graph push <graph> <folder> --reason "<why>"
 graph-admin graph functions show <graph>
 ```
 
-The dry run reports every problem of every file together
-(`admin.functions_invalid`); a missing or empty `functions/` folder unpublishes all
-functions. Agents run functions only with `read.function` (without it they are marked
-`allowed: false`; an older policy needs `policy apply` again,
-[give_an_app_a_role.md](references/give_an_app_a_role.md)). A publish of a function,
-action or view needs nothing from agents; only `featured` changes make installed graph
-skills stale (`graph start` refreshes them).
+The dry run reports every problem of every file together (`admin.functions_invalid`); a missing
+or empty `functions/` folder unpublishes all functions. A result column that no type describes
+only warns (`admin.function_untyped_columns`): add `type:`. Agents run functions only with
+`read.function` (without it they are marked `allowed: false`; an older policy needs `policy apply`
+again, [give_an_app_a_role.md](references/give_an_app_a_role.md)). A publish of a function, action
+or view needs nothing from agents; only `featured` changes make installed graph skills stale
+(`graph start` refreshes them).
 
 ## Publish or change actions and views
 

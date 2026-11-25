@@ -195,6 +195,7 @@ EXPECTED = {
     "pattern_impossible": "function.pattern_impossible",
     "returns_star": "function.returns_star",
     "returns_mismatch": "function.returns_mismatch",
+    "returns_type_mismatch": "function.returns_type_mismatch",
 }
 
 

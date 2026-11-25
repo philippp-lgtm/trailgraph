@@ -225,6 +225,12 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         "A function's returns do not list the result columns in order.",
     ),
     ErrorSpec(
+        "function.returns_type_mismatch",
+        _C.INVALID,
+        False,
+        "A column's declared type contradicts the type its query makes certain.",
+    ),
+    ErrorSpec(
         "function.returns_star",
         _C.INVALID,
         False,

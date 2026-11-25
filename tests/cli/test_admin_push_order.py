@@ -408,6 +408,36 @@ def test_a_push_warns_about_pushed_functions_with_a_one_value_ref_unless_a_pushe
     assert with_view.warning_codes == []
 
 
+def test_a_push_warns_about_pushed_functions_with_a_column_nothing_types(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create_graph(run_cli, "example_graph", version="1.0.0")
+    source = pull(run_cli, tmp_path / "work")
+    put(source, "functions", FUNCTIONS / "valid", "items_by_condition.yaml")
+    (source / "functions" / "stock.yaml").write_text(
+        "schema: graph_cli.function/1\nname: stock\nsummary: Units in stock.\n"
+        "use_when: How many units there are.\n"
+        "query: |\n  MATCH (i:Item) RETURN sum(i.quantity) AS units\n"
+        "returns:\n  - {column: units, summary: Units.}\n"
+        "examples:\n  - question: How many units are there?\n"
+    )
+    first = push(run_cli, source, "--dry-run")
+    assert first.code == 0, first.envelope
+    assert first.warning_codes == ["admin.function_untyped_columns"]
+    [warning] = first.warnings
+    assert warning["details"]["functions"] == [{"function": "stock", "columns": ["units"]}]
+    done = push(run_cli, source)
+    assert done.code == 0, done.envelope
+    assert done.warning_codes == ["admin.function_untyped_columns"]
+    typed = (
+        (source / "functions" / "stock.yaml")
+        .read_text()
+        .replace("summary: Units.}", "summary: Units., type: integer}")
+    )
+    (source / "functions" / "stock.yaml").write_text(typed)
+    assert push(run_cli, source, "--dry-run").warning_codes == []
+
+
 def test_a_push_of_functions_alone_leaves_out_those_a_published_view_runs(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:
