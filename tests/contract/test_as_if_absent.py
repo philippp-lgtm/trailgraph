@@ -344,6 +344,7 @@ def check_feed(seed: int, view: Snapshot, raw: Snapshot, ref: Snapshot) -> None:
 
 
 @pytest.mark.parametrize("seed", range(CASES))
+@pytest.mark.doc_claim("security_model.read_limits")
 def test_every_answer_over_the_view_is_the_answer_over_the_visible_part(
     backend: str, ontology: str, tmp_path: Path, seed: int
 ) -> None:
@@ -425,6 +426,7 @@ def attribute_queries(rng: random.Random, sides: Sides, concrete: Sequence[str])
 
 
 @pytest.mark.parametrize("seed", range(CASES // 2))
+@pytest.mark.doc_claim("security_model.markings")
 def test_every_answer_over_an_attribute_view_is_the_answer_over_the_store_without_them(
     backend: str, ontology: str, tmp_path: Path, seed: int
 ) -> None:

@@ -158,6 +158,7 @@ def test_clean_graph_verifies_clean(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("code", sorted(SCENARIOS))
+@pytest.mark.doc_claim("security_model.derived_files_rebuilt")
 def test_tamper_scenario_triggers_only_its_code(tmp_path: Path, code: str) -> None:
     env, store, maintenance = setup(tmp_path)
     SCENARIOS[code](store)
@@ -180,6 +181,7 @@ def test_more_head_inconsistencies(tmp_path: Path) -> None:
     assert verify(maintenance, env.graph_id) == [finding_codes.HEAD_INCONSISTENT]
 
 
+@pytest.mark.doc_claim("security_model.writers_check_the_index")
 def test_more_index_inconsistencies(tmp_path: Path) -> None:
     """The writer-side meta of format 2: the log digest and the last full replay."""
     env, store, maintenance = setup(tmp_path)
@@ -244,6 +246,7 @@ def _index_seq(store: FileStore) -> int | None:
     return reader.meta.seq
 
 
+@pytest.mark.doc_claim("security_model.derived_files_rebuilt")
 def test_reindex_rebuilds_an_identical_tree(tmp_path: Path) -> None:
     """C, B4.1: delete entities/ and head.json, rebuild from the log."""
     env, store, maintenance = setup(tmp_path)

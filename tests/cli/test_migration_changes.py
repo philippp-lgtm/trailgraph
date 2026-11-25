@@ -175,6 +175,7 @@ types:
 """
 
 
+@pytest.mark.doc_claim("security_model.change_feed_activity")
 def test_a_retype_into_a_hidden_type_leaves_the_entity_out_and_keeps_the_migration_entry(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:
@@ -232,6 +233,7 @@ steps:
 """
 
 
+@pytest.mark.doc_claim("security_model.revision_gaps")
 def test_a_retype_out_of_a_hidden_type_leaves_its_earlier_revisions_absent(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:

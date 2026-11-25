@@ -207,6 +207,7 @@ TABLE: list[tuple[ActorContext, str, str, str]] = [
 
 
 @pytest.mark.parametrize(("who", "action", "resource", "expected"), TABLE)
+@pytest.mark.doc_claim("security_model.roles_verified")
 def test_role_decisions(who: ActorContext, action: str, resource: str, expected: str) -> None:
     assert decide(who, action, resource) == expected
 

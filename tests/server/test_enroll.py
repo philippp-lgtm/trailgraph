@@ -75,6 +75,7 @@ def installation_events(root: Path) -> list[dict[str, Any]]:
     return found
 
 
+@pytest.mark.doc_claim("security_model.enrollment_codes")
 def test_a_code_is_checked_then_exchanged_once(
     run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -160,6 +161,7 @@ def test_the_openapi_document_describes_enrollment(
         assert not [e.message for e in validator.iter_errors(reply.json)], reply.json
 
 
+@pytest.mark.doc_claim("security_model.enrollment_codes")
 def test_wrong_used_revoked_and_expired_codes_get_one_answer(
     run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -180,6 +182,7 @@ def test_wrong_used_revoked_and_expired_codes_get_one_answer(
     assert not tokens_path(root).exists()
 
 
+@pytest.mark.doc_claim("security_model.enrollment_codes")
 def test_the_client_picks_only_a_label_and_a_taken_name_leaves_the_code_unused(
     run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -198,6 +201,7 @@ def test_the_client_picks_only_a_label_and_a_taken_name_leaves_the_code_unused(
     assert admin(run_cli, "audit", "verify").code == 0
 
 
+@pytest.mark.doc_claim("security_model.enrollment_codes")
 def test_a_code_used_before_but_still_listed_is_refused(
     run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -214,6 +218,7 @@ def test_a_code_used_before_but_still_listed_is_refused(
     assert [t["name"] for t in admin(run_cli, "token", "list").data["tokens"]] == ["p1.a"]
 
 
+@pytest.mark.doc_claim("security_model.enrollment_codes")
 def test_an_admin_code_makes_a_project_admin(
     run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -277,6 +282,7 @@ def test_enroll_create_refuses_and_warns(run_cli: CliRunner, installation: dict[
     assert pasted.code == 2 and idle.data["code"] not in json.dumps(pasted.envelope)
 
 
+@pytest.mark.doc_claim("security_model.enrollment_codes")
 def test_the_exchange_gives_the_new_token_the_roles_of_its_code(
     run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -337,3 +343,36 @@ def test_a_code_without_roles_gives_a_token_without_roles(
         app, "POST", "/v1/commands/whoami", token=exchanged.json["data"]["token"], body={}
     )
     assert "roles" not in whoami.json["data"]["actor"]
+
+
+@pytest.mark.doc_claim("security_model.enrollment_codes")
+def test_a_code_is_always_bound_to_a_project(
+    run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """A code never yields an unbound token, which would be a maintainer's."""
+    refused = admin(run_cli, "enroll", "create")
+    assert refused.code == 2, refused.envelope
+    app, _ = served(installation, tmp_path)
+    root = admin(run_cli, "token", "create", "root", "--scope", "admin").data["token"]
+    reply = call(app, "POST", "/v1/admin/commands/enroll/create", token=root, body={"args": {}})
+    assert reply.status == 400, reply.json
+    assert admin(run_cli, "enroll", "list").data["enrollments"] == []
+
+
+@pytest.mark.doc_claim("security_model.enrollment_codes")
+def test_revoking_the_token_that_created_a_code_leaves_the_code_valid(
+    run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
+) -> None:
+    app, _ = served(installation, tmp_path)
+    root = admin(run_cli, "token", "create", "root", "--scope", "admin").data["token"]
+    body = {"args": {"project": "p1"}}
+    created = call(app, "POST", "/v1/admin/commands/enroll/create", token=root, body=body)
+    assert created.status == 200, created.json
+    assert admin(run_cli, "token", "revoke", "root").code == 0
+    assert [e["id"] for e in admin(run_cli, "enroll", "list").data["enrollments"]] == [
+        created.json["data"]["id"]
+    ]
+    secret = created.json["data"]["code"]
+    exchanged = call(app, "POST", "/v1/enroll", body={"code": secret, "label": "laptop"})
+    assert exchanged.status == 200, exchanged.json
+    assert exchanged.json["data"]["name"] == "p1.laptop"

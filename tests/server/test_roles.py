@@ -98,6 +98,7 @@ def tx_records(root: Path) -> list[dict[str, Any]]:
     return found
 
 
+@pytest.mark.doc_claim("security_model.roles_verified")
 def test_roles_decide_what_each_app_of_a_project_may_do(
     run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
 ) -> None:

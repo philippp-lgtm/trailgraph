@@ -301,6 +301,7 @@ def test_an_attribute_masked_on_one_subclass_only_is_absent_there_as_for_get(
 # ---- hidden by a type limit -------------------------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.view_is_read_get")
 def test_a_type_limit_hides_the_views_that_name_a_hidden_class_or_relation(
     run_cli: CliRunner, world: Path
 ) -> None:
@@ -344,6 +345,7 @@ def test_a_view_that_runs_functions_needs_read_function(run_cli: CliRunner, worl
     assert control.error["code"] == "access.denied"
 
 
+@pytest.mark.doc_claim("security_model.view_is_read_get")
 def test_a_set_view_needs_read_find_and_an_entity_view_does_not(
     run_cli: CliRunner, world: Path
 ) -> None:

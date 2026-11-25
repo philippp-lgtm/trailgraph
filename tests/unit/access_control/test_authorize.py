@@ -66,6 +66,7 @@ def test_decision_table(
     assert decision.policy_hash == BUILTIN_POLICY_HASH
 
 
+@pytest.mark.doc_claim("security_model.token_scopes")
 def test_no_maint_action_is_reachable_from_the_app() -> None:
     """B6.5 for the whole taxonomy, even under a policy that allows everything; the server
     has the same ceiling (B14)."""
@@ -78,6 +79,7 @@ def test_no_maint_action_is_reachable_from_the_app() -> None:
     assert authorize(SERVER, "read.get", GRAPH, CTX, allow_all).effect == "allow"
 
 
+@pytest.mark.doc_claim("security_model.roles_verified")
 def test_a_role_change_is_maintenance_only() -> None:
     """B6.5, B14.11: ``maint.token_update`` is in the taxonomy, and the ceilings of the app
     and the server hold for it under the built-in policy and under one that allows all; the

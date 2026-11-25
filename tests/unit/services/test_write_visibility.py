@@ -243,6 +243,7 @@ def hidden_names(world: World, error: GraphCliError) -> list[str]:
 # ---- a unique value held by a hidden entity ----------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.integrity_refusals_concealed")
 def test_a_unique_value_held_by_a_hidden_entity_is_refused_without_naming_it(
     world: World,
 ) -> None:
@@ -266,6 +267,7 @@ def test_a_unique_value_held_by_a_visible_entity_is_named_as_before(world: World
 # ---- an alias owned by a hidden entity ---------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.integrity_refusals_concealed")
 def test_an_alias_owned_by_a_hidden_entity_is_refused_without_naming_it(world: World) -> None:
     alias = world.raw("s1").alias
     assert alias is not None
@@ -287,6 +289,7 @@ def test_an_alias_owned_by_a_hidden_entity_is_refused_without_naming_it(world: W
 # ---- counts that include hidden edges ----------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.integrity_refusals_concealed")
 def test_a_count_that_includes_hidden_edges_is_not_shown(world: World) -> None:
     world.make(link("d1", "ex:mentions", "s1"), link("d1", "ex:mentions", "s2"))
     # d1 mentions two hidden records: a third mention is one too many
@@ -307,6 +310,7 @@ def test_a_count_that_includes_hidden_edges_is_not_shown(world: World) -> None:
 # ---- a retract blocked by a hidden referrer ----------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.integrity_refusals_concealed")
 def test_a_retract_blocked_by_a_hidden_referrer_is_refused_without_naming_it(
     world: World,
 ) -> None:
@@ -331,6 +335,7 @@ def test_a_retract_blocked_by_a_hidden_referrer_is_refused_without_naming_it(
 # ---- a cycle through hidden entities -----------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.integrity_refusals_concealed")
 def test_a_cycle_through_hidden_entities_is_refused_without_naming_them(world: World) -> None:
     world.make(link("d1", "ex:mentions", "s1"), link("s1", "ex:mentions", "d2"))
     op = link("d2", "ex:mentions", "d1")  # d2 -> d1 -> s1 -> d2
@@ -349,6 +354,7 @@ def test_a_cycle_through_hidden_entities_is_refused_without_naming_them(world: W
 # ---- a rule that counts hidden entities --------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.integrity_refusals_concealed")
 def test_the_values_of_a_rule_that_counts_hidden_entities_are_dropped(world: World) -> None:
     world.make(link("s1", "ex:mentions", "d1"))  # one mention of d1 the reader cannot see
     op = link("d2", "ex:mentions", "d1")  # the second mention: the rule says at most one
@@ -564,6 +570,7 @@ def decisions_of(event: Mapping[str, Any]) -> list[tuple[str, str, str, str]]:
     ]
 
 
+@pytest.mark.doc_claim("security_model.writes_only_visible_types")
 def test_a_writes_only_caller_is_denied_a_hidden_type_as_it_is_an_unknown_one(
     world: World,
 ) -> None:

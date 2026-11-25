@@ -92,6 +92,7 @@ WITHHELD = {"query", "returns", "ops", "preconditions", "sections", "examples", 
 WITHHELD |= {"hash", "call", "featured", "max_bytes", "page_bytes"}
 
 
+@pytest.mark.doc_claim("security_model.not_allowed_named")
 def test_the_definition_of_a_not_allowed_entry_stays_withheld_through_the_server(
     served: Any,
 ) -> None:

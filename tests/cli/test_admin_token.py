@@ -43,6 +43,7 @@ def installation_events(root: Path) -> list[dict]:  # type: ignore[type-arg]
     return lines
 
 
+@pytest.mark.doc_claim("security_model.transport")
 def test_create_list_revoke(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
     created = admin(
         run_cli, "token", "create", "ci", "--project", "example_project", "--reason", "for ci"

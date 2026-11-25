@@ -99,6 +99,7 @@ def test_a_reconcile_of_a_record_type_by_a_plain_source_is_refused(
     assert finding_codes(apply(world, document)) == [MANAGED_CODE]
 
 
+@pytest.mark.doc_claim("security_model.records_by_extraction_only")
 def test_a_document_cannot_name_the_reserved_source_kind(
     world: tuple[ServerApp, str, Scene],
 ) -> None:

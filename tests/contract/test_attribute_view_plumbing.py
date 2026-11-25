@@ -115,6 +115,7 @@ def test_a_caller_without_the_marking_reads_through_the_attribute_mask(svc: Serv
     assert ada.content_hash == revision_content_hash(ada)
 
 
+@pytest.mark.doc_claim("security_model.markings")
 def test_a_holder_of_every_marking_reads_the_raw_graph(svc: ServiceEnv) -> None:
     view = open_view(svc, holder(svc))
     assert view.read_view == UNLIMITED

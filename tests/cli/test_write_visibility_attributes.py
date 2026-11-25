@@ -102,6 +102,7 @@ def world(run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path) -> W
     return World(run_cli, root, tmp_path / "policies", ids)
 
 
+@pytest.mark.doc_claim("security_model.field_visibility_complete")
 def test_a_write_naming_a_hidden_attribute_answers_as_over_the_twin(world: World) -> None:
     before = world.raw(E1)
     for args in (

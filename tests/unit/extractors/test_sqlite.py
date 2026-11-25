@@ -5,6 +5,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from graph_cli.extractors import sqlite as extractor
 from graph_cli.extractors.model import ExtractionResult, RunInput
 
@@ -53,6 +55,7 @@ def test_counts_exclude_internal_objects_and_parts_are_tables_and_views(tmp_path
     ]
 
 
+@pytest.mark.doc_claim("security_model.sqlite_read_only")
 def test_no_row_is_read_and_nothing_is_written(tmp_path: Path) -> None:
     path = make(tmp_path, "CREATE TABLE secrets (value TEXT); INSERT INTO secrets VALUES ('x');")
     before = sorted(p.name for p in tmp_path.iterdir())
@@ -114,6 +117,7 @@ def test_a_file_that_is_not_a_database_is_failed(tmp_path: Path) -> None:
     assert run(path) == ExtractionResult.failed("sqlite.unreadable")
 
 
+@pytest.mark.doc_claim("security_model.sqlite_read_only")
 def test_a_schema_with_a_function_is_not_trusted(tmp_path: Path) -> None:
     """``trusted_schema=OFF``: a view that calls an application function is not evaluated to
     name its columns, and no extension is loaded."""

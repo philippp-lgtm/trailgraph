@@ -147,6 +147,7 @@ def _intent_with_source(event: Event, source: JsonValue) -> Event:
     return {**event, "request": {**request, "source": source}}
 
 
+@pytest.mark.doc_claim("security_model.source_refusals_audited")
 def test_the_source_of_a_request_must_be_the_same_in_the_intent_and_the_tx() -> None:
     graph = Graph()
     graph.random(3)

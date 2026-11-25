@@ -201,6 +201,7 @@ def decided(event: dict[str, Any]) -> set[tuple[str, str, str]]:
     return {(d["action"], d["resource"], d["effect"]) for d in event["authz"]["decisions"]}
 
 
+@pytest.mark.doc_claim("security_model.write_allow_lists")
 def test_write_allow_lists_decide_what_each_token_may_write(
     run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
 ) -> None:

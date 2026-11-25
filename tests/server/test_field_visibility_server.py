@@ -85,6 +85,7 @@ def command(server: ServerApp, path: str, token: str, **args: Any) -> Any:
     return call(server, "POST", f"/v1/commands/{path}", token=token, body={"args": args})
 
 
+@pytest.mark.doc_claim("security_model.file_attributes_visible")
 def test_the_download_and_file_path_answer_a_reader_without_the_marking_as_a_holder(
     served: ServerApp, installation: dict[str, Any]
 ) -> None:

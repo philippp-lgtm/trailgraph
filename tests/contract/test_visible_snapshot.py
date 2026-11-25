@@ -131,6 +131,7 @@ def test_get_revision_and_history_are_stripped_and_hashes_match(world: World) ->
     assert view.history(world.ids["A3"]) == raw.history(world.ids["A3"])
 
 
+@pytest.mark.doc_claim("security_model.past_edges_judged_now")
 def test_a_past_revision_is_judged_by_the_current_type_of_its_entity(world: World) -> None:
     other = VisibleSnapshot(world.raw(), ReadView(frozenset({world.b})))
     # B2 is retracted but of a visible type for ``other``: still visible, edges to A* stripped
@@ -276,6 +277,7 @@ def test_an_earlier_state_does_not_show_an_entity_stored_under_a_hidden_class(
     assert [m.rev for m in after.history(b2)] == [3]
 
 
+@pytest.mark.doc_claim("security_model.dropped_class_judges_nothing")
 def test_a_class_the_pinned_model_no_longer_has_judges_nothing(world: World) -> None:
     """F1b: when the class a revision was stored under is gone from the pinned model, only the
     mapped type counts, so the revision shows as the class it was moved to."""
@@ -331,6 +333,7 @@ def test_tx_shows_metadata_only(world: World) -> None:
     assert shown.reason == "build the graph" and shown.request == stored.request
 
 
+@pytest.mark.doc_claim("security_model.activity_shows")
 def test_seq_and_warnings_pass_through(world: World) -> None:
     raw, view = world.raw(), world.view()
     assert (view.seq, view.warnings) == (raw.seq, raw.warnings)

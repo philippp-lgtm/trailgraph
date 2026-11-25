@@ -63,6 +63,7 @@ def records(run_cli: CliRunner, type_: str) -> list[dict[str, Any]]:
     return list(found.data["items"])
 
 
+@pytest.mark.doc_claim("security_model.extraction_rights_are_the_callers")
 def test_file_add_answers_the_metadata_of_the_file_it_stored(
     run_cli: CliRunner, root: Path
 ) -> None:
@@ -229,6 +230,7 @@ deny:
 """
 
 
+@pytest.mark.doc_claim("security_model.extraction_rights_are_the_callers")
 def test_a_caller_without_the_right_to_write_records_stores_the_file_and_is_warned(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:

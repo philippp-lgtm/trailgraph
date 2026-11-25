@@ -67,6 +67,7 @@ def audit_events(root: Path) -> list[dict[str, Any]]:
     return found
 
 
+@pytest.mark.doc_claim("security_model.transport")
 def test_health_needs_no_token_and_the_rest_does(
     served: tuple[ServerApp, io.StringIO], installation: dict[str, Any]
 ) -> None:
@@ -90,6 +91,7 @@ def test_health_needs_no_token_and_the_rest_does(
     assert len(lines) == 4
 
 
+@pytest.mark.doc_claim("security_model.asserted_facets")
 def test_whoami_is_the_token_with_client_facets(
     served: tuple[ServerApp, io.StringIO], installation: dict[str, Any]
 ) -> None:
@@ -109,6 +111,7 @@ def test_whoami_is_the_token_with_client_facets(
     assert reply.headers["Graph-Cli-Exit-Code"] == "0"
 
 
+@pytest.mark.doc_claim("security_model.transport")
 def test_write_read_and_text_rendering(
     served: tuple[ServerApp, io.StringIO], installation: dict[str, Any]
 ) -> None:
@@ -212,6 +215,7 @@ def test_the_server_never_reads_stdin_and_hides_its_paths(
     assert "\\x0a" in log.getvalue()
 
 
+@pytest.mark.doc_claim("security_model.token_scopes", "security_model.project_bound_tokens")
 def test_denials_are_audited_and_projects_verified(
     served: tuple[ServerApp, io.StringIO], installation: dict[str, Any]
 ) -> None:

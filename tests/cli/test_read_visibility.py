@@ -321,6 +321,7 @@ def test_get_hides_edges_to_hidden_entities_and_keeps_a_matching_hash(limited: W
     assert page["content_hash"] == recomputed(page)
 
 
+@pytest.mark.doc_claim("security_model.activity_shows")
 def test_get_superseded_by_hides_a_hidden_superseder(limited: World) -> None:
     run_cli, ids = limited.run_cli, limited.ids
     hidden_superseder = ok(run_cli, "get", ids["p"])  # superseded by a hidden topic
@@ -680,6 +681,7 @@ def test_view_of_a_hidden_entity_is_view_of_a_missing_one_in_every_ref_form(
         assert ok(run_cli, "view", str(ref)).data["entity"]["id"] == visible
 
 
+@pytest.mark.doc_claim("security_model.view_is_read_get")
 def test_view_counts_and_names_only_what_the_reader_sees(world: World) -> None:
     run_cli, ids = world.run_cli, world.ids
     raw = ok(run_cli, "view", ids["n"])
@@ -709,6 +711,32 @@ def test_view_counts_and_names_only_what_the_reader_sees(world: World) -> None:
     earlier = ok(run_cli, "view", ids["n"], "--as-of", "tx:1")
     assert [g["relation"] for g in card_section(earlier, "relations")["groups"]] == ["nas:cites"]
     assert leaks(earlier, world) == []
+
+
+NO_TRAVERSE = """\
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {entrypoint: app, graphs: [example_graph], level: read}
+no_project: {"*": write}
+deny:
+  - {id: no_traverse, action: ["read.traverse"]}
+"""
+
+
+@pytest.mark.doc_claim("security_model.view_is_read_get")
+def test_view_is_a_read_get_and_shows_the_card_where_traversal_is_denied(world: World) -> None:
+    run_cli, ids = world.run_cli, world.ids
+    install(run_cli, world.work, NO_TRAVERSE)
+    denied = read(run_cli, "neighbors", ids["n"])
+    assert denied.code != 0 and denied.error["code"] == "access.denied", denied.envelope
+    card = ok(run_cli, "view", ids["n"])
+    groups = card_section(card, "relations")["groups"]
+    assert {(g["relation"], g["direction"]) for g in groups} == {
+        ("nas:about", "out"),
+        ("nas:cites", "out"),
+    }
+    assert all(g["items"] for g in groups)
 
 
 def test_view_names_a_hidden_superseder_as_nothing(limited: World) -> None:
@@ -915,6 +943,7 @@ def test_history_of_a_hidden_entity_is_history_of_a_missing_one(limited: World) 
             twin(run_cli, lambda ref: ("history", ref), alias, alias[:-1] + "9")
 
 
+@pytest.mark.doc_claim("security_model.activity_shows")
 def test_a_revision_that_only_changed_a_hidden_edge_shows_no_change(world: World) -> None:
     run_cli, ids = world.run_cli, world.ids
     raw = ok(run_cli, "history", ids["n"])
@@ -1012,6 +1041,7 @@ def items(outcome: Outcome, world: World) -> dict[tuple[str, int], dict[str, Any
     }
 
 
+@pytest.mark.doc_claim("security_model.change_feed_activity")
 def test_changes_list_the_visible_part_of_every_tx(world: World) -> None:
     run_cli = world.run_cli
     everything = feed(run_cli)
@@ -1343,6 +1373,7 @@ SWEEP = [
 ]
 
 
+@pytest.mark.doc_claim("security_model.type_limits_complete")
 def test_nothing_hidden_appears_in_any_answer_about_the_rest(limited: World) -> None:
     """Every visible entity read in every way, and the listings: no hidden id, alias, label, term
     or file name anywhere. (The checks per command above say what each answer holds.)"""

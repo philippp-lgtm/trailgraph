@@ -295,6 +295,7 @@ def traces(name: str, reply: Reply) -> list[str]:
     return leaks(text)
 
 
+@pytest.mark.doc_claim("security_model.markings", "security_model.field_visibility_complete")
 def test_field_visibility_end_to_end(run_cli: CliRunner, world: World) -> None:
     # 1. A reads every command without a trace of a marked attribute
     seen_by_a = read_everything(world, "a")

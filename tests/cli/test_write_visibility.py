@@ -369,6 +369,7 @@ def test_a_write_result_names_only_what_the_caller_may_see(world: World) -> None
 # ---- files -------------------------------------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.integrity_refusals_concealed")
 def test_file_add_of_bytes_a_hidden_file_holds_names_that_file_nowhere(world: World) -> None:
     world.install(WRITER)
     copy = world.scans / "copy.pdf"

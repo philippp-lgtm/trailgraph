@@ -152,6 +152,7 @@ def test_several_commits_in_one_session_extend_the_index(tmp_path: Path) -> None
     assert difference(env) is None
 
 
+@pytest.mark.doc_claim("security_model.writers_check_the_index")
 def test_damage_before_the_index_still_stops_writers(tmp_path: Path) -> None:
     env = files_env(tmp_path)
     env.random(6)
@@ -168,6 +169,7 @@ def test_damage_before_the_index_still_stops_writers(tmp_path: Path) -> None:
     assert replayed(store) == 1  # the full replay found it
 
 
+@pytest.mark.doc_claim("security_model.writers_check_the_index")
 def test_a_wrong_log_digest_rebuilds_the_index(tmp_path: Path) -> None:
     env = files_env(tmp_path)
     env.random(6)
@@ -193,6 +195,7 @@ def _edit_row(env: StoreEnv, entity: EntityId, edit: dict[str, object]) -> None:
         db.execute("UPDATE entity SET body = ? WHERE id = ?", (json.dumps(document), entity.bytes))
 
 
+@pytest.mark.doc_claim("security_model.writers_check_the_index")
 def test_an_edited_row_is_not_copied_into_a_write(tmp_path: Path) -> None:
     env = files_env(tmp_path)
     env.random(6)
@@ -226,6 +229,7 @@ def test_an_edited_rev_is_refused_and_the_index_rebuilt(tmp_path: Path) -> None:
     assert result.warnings == ()
 
 
+@pytest.mark.doc_claim("security_model.writers_check_the_index")
 def test_a_full_replay_at_least_every_n_txs(tmp_path: Path) -> None:
     env = files_env(tmp_path)
     seen = []

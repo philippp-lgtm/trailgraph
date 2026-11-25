@@ -113,6 +113,7 @@ def test_every_key() -> None:
     )
 
 
+@pytest.mark.doc_claim("security_model.transport")
 def test_plain_http_beyond_loopback_needs_the_switch() -> None:
     """B14.10: the token would travel in clear."""
     loopback = (

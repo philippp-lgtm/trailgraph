@@ -90,6 +90,7 @@ EMAIL = """      email:
 """
 
 
+@pytest.mark.doc_claim("security_model.marked_smaller_points")
 def test_marking_removed_in_place_warns(run_cli: CliRunner, graph_id: str) -> None:
     outcome = released(run_cli, PERSONNEL / "1.1.0")
     assert warnings(outcome, "admin.marking_removed") == [
@@ -105,6 +106,7 @@ def test_marking_removed_in_place_warns(run_cli: CliRunner, graph_id: str) -> No
     assert "including history" in outcome.envelope["warnings"][0]["message"]
 
 
+@pytest.mark.doc_claim("security_model.marked_smaller_points")
 def test_drop_then_reuse_is_refused_everywhere(
     run_cli: CliRunner, graph_id: str, tmp_path: Path
 ) -> None:

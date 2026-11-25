@@ -283,6 +283,7 @@ def test_an_adoption_run_keys_the_entities_written_before_there_were_keys(
     assert written(apply(run_cli, adopt)) is None  # the second run has nothing to adopt
 
 
+@pytest.mark.doc_claim("security_model.source_guards_limit_accidents")
 def test_the_mass_retire_refusal_and_its_override(run_cli: CliRunner, root: Path) -> None:
     names = versions("p", 20)
     assert written(apply(run_cli, doc(packages(*names), installs("apt", names)))) == 1

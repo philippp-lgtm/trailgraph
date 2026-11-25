@@ -56,12 +56,14 @@ def create_location(run_cli: CliRunner) -> dict[str, Any]:
     return entity
 
 
+@pytest.mark.doc_claim("security_model.reads_not_audited")
 def test_off_by_default(run_cli: CliRunner, root: Path, isolated_env: dict[str, str]) -> None:
     entity = create_location(run_cli)
     assert app(run_cli, "get", entity["id"], env=ENV).code == 0
     assert not log_path(isolated_env).exists()
 
 
+@pytest.mark.doc_claim("security_model.reads_not_audited")
 def test_every_command_records_what_the_caller_received(
     run_cli: CliRunner, root: Path, isolated_env: dict[str, str]
 ) -> None:
@@ -134,6 +136,7 @@ def test_a_cypher_query_logs_its_phases_not_its_text(
     assert MARKER not in log_path(isolated_env).read_text()
 
 
+@pytest.mark.doc_claim("security_model.reads_not_audited")
 def test_reads_leave_the_data_root_unchanged(
     run_cli: CliRunner, root: Path, isolated_env: dict[str, str]
 ) -> None:

@@ -14,6 +14,7 @@ import pytest
 from harness import BIN_DIR, REPO_ROOT
 
 
+@pytest.mark.doc_claim("security_model.sqlite_read_only")
 def test_import_contracts() -> None:
     lint_imports = BIN_DIR / "lint-imports"
     result = subprocess.run(
