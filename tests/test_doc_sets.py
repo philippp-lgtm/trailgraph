@@ -46,7 +46,9 @@ from graph_cli.extractors.registry import REGISTRY
 from graph_cli.kernel.actions import SCOPE_LEVELS
 from graph_cli.kinetic.params import PARAM_TYPES
 from graph_cli.ontology_layer.migration import STEP_NAMES
+from graph_cli.services import describe_tools
 from graph_cli.services.files import CHECK_STATUSES
+from graph_cli.services.tool_errors import ON_ERROR_VALUES
 from graph_cli.skills.install import STATUSES
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli.storage.files.durable import Durability
@@ -278,6 +280,12 @@ FIELDS: tuple[DocSet, ...] = (
         "- `files:from_file` points from any entity to a file, with the qualifiers",
         "number).",
         frozenset(_relation_qualifiers("files:from_file")),
+    ),
+    doc_set(
+        "cli_graph.md",
+        "document with these keys, in this order:",
+        "The options narrow the list",
+        _answer_keys("graph", "describe tools") - {"schema", "graph", "ontology"},
     ),
     doc_set(
         "cli_graph.md",
@@ -549,6 +557,49 @@ def test_project_admin_commands() -> None:
     )
     named = {span.removeprefix("graph-admin ") for span in _spans(region)}
     assert named == set(PROJECT_COMMANDS)
+
+
+def _first_cell_spans(text: str, header: str) -> set[str]:
+    """Every code span of the first column of the table with ``header``."""
+    for before, rows in _tables(text):
+        if before.endswith(header):
+            return {span for row in rows for span in _spans(row[0])}
+    raise AssertionError(f"no table {header!r}")
+
+
+def test_tool_error_moves_are_the_on_error_values() -> None:
+    documented = _first_column((DOCS / "cli_graph.md").read_text(), "| `on_error` | Meaning |")
+    assert documented == set(ON_ERROR_VALUES)
+
+
+def test_tool_keys_are_the_keys_of_a_tool() -> None:
+    documented = _first_cell_spans((DOCS / "cli_graph.md").read_text(), "| Tool key | Holds |")
+    assert documented == _answer_keys("graph", "describe tools", "tools", "[]")
+
+
+def test_tool_controls_are_the_controls_of_the_tools() -> None:
+    documented = _first_cell_spans(
+        (DOCS / "cli_graph.md").read_text(), "| Control | Tool | Meaning |"
+    )
+    assert documented == {
+        describe_tools.LIMIT,
+        describe_tools.OFFSET,
+        describe_tools.REASON,
+        describe_tools.DRY_RUN,
+        describe_tools.ENTITY,
+        describe_tools.CURSOR,
+        describe_tools.PAGE_BYTES_ARG,
+    }
+
+
+def test_the_tool_kinds_are_named_in_the_tool_table() -> None:
+    row = next(
+        r
+        for _, rows in _tables((DOCS / "cli_graph.md").read_text())
+        for r in rows
+        if r[0] == "`kind`"
+    )
+    assert set(_spans(row[1])) >= set(describe_tools.KINDS)
 
 
 def test_meta_commands_are_never_checked() -> None:

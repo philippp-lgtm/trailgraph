@@ -242,6 +242,7 @@ def listed(run_cli: CliRunner, env: dict[str, str], *args: str) -> dict[str, Any
     return data
 
 
+@pytest.mark.doc_claim("security_model.tool_manifest_per_caller")
 def test_a_caller_with_a_read_limit_gets_a_manifest_without_what_it_may_not_see(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:
@@ -264,6 +265,7 @@ def test_a_caller_with_a_read_limit_gets_a_manifest_without_what_it_may_not_see(
     ]
 
 
+@pytest.mark.doc_claim("security_model.tool_manifest_per_caller")
 def test_an_entry_the_caller_may_not_use_is_no_tool(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:
@@ -290,6 +292,7 @@ def test_an_entry_the_caller_may_not_use_is_no_tool(
     assert len(listed(run_cli, ENV)["tools"]) == len(NAMES)
 
 
+@pytest.mark.doc_claim("security_model.tool_manifest_per_caller")
 def test_a_policy_that_demands_a_reason_makes_the_reason_of_an_action_required(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:

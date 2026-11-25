@@ -485,6 +485,7 @@ def names_of(scene: Scene) -> list[str]:
     return sorted(heads(scene))
 
 
+@pytest.mark.doc_claim("security_model.tool_manifest_per_caller")
 def test_a_reader_of_items_gets_no_tool_that_names_a_hidden_type() -> None:
     full = names_of(INVENTORY.scene())
     limited = names_of(INVENTORY.reader(ITEMS))
@@ -497,6 +498,7 @@ def test_a_reader_of_items_gets_no_tool_that_names_a_hidden_type() -> None:
         assert word not in text and word not in " ".join(limited)
 
 
+@pytest.mark.doc_claim("security_model.tool_manifest_per_caller")
 def test_an_enum_lists_the_values_of_the_model_the_caller_sees() -> None:
     scene = INVENTORY.reader(ITEMS)
     condition = props(heads(scene)["run_items_by_condition"])["condition"]
@@ -515,6 +517,7 @@ def test_an_enum_lists_the_values_of_the_model_the_caller_sees() -> None:
     assert again["enum"] == ["new", "good"]
 
 
+@pytest.mark.doc_claim("security_model.tool_manifest_per_caller")
 def test_a_reader_without_markings_gets_no_tool_over_a_marked_attribute() -> None:
     everything = names_of(STAFF.scene())
     personal = names_of(STAFF.reader(held=PERSONAL))
@@ -527,6 +530,7 @@ def test_a_reader_without_markings_gets_no_tool_over_a_marked_attribute() -> Non
         assert word not in text
 
 
+@pytest.mark.doc_claim("security_model.tool_manifest_per_caller")
 def test_the_enum_of_a_marked_attribute_is_missing_for_a_reader_who_cannot_see_it() -> None:
     """``by_grade`` takes an enum only a marked attribute uses: with the marking it lists the
     values, without it the tool is gone together with the enum."""

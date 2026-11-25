@@ -320,6 +320,7 @@ def test_a_name_that_is_no_tool_is_tool_not_found_with_the_close_names() -> None
     assert "1 more" in error.message
 
 
+@pytest.mark.doc_claim("security_model.tool_manifest_per_caller")
 def test_a_hidden_tool_is_as_unknown_as_a_missing_one_and_is_never_suggested() -> None:
     reader = INVENTORY.reader(ITEMS)
     with pytest.raises(GraphCliError) as info:
@@ -366,6 +367,7 @@ def test_the_filters_combine() -> None:
 # ---- rendered for the caller -------------------------------------------------------------------
 
 
+@pytest.mark.doc_claim("security_model.tool_manifest_per_caller")
 def test_a_reader_of_items_gets_a_manifest_without_what_it_may_not_see() -> None:
     document = manifest(INVENTORY.reader(ITEMS))
     text = json.dumps(document)
@@ -382,6 +384,7 @@ def test_a_reader_of_items_gets_a_manifest_without_what_it_may_not_see() -> None
     assert set(manifest(INVENTORY.scene())["errors"]) >= set(document["errors"])
 
 
+@pytest.mark.doc_claim("security_model.tool_manifest_per_caller")
 def test_a_reader_without_markings_gets_no_tool_over_a_marked_attribute() -> None:
     document = manifest(STAFF.reader(held=NOTHING))
     text = json.dumps(document)
