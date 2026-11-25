@@ -7,7 +7,9 @@ so does a page of the change feed over a thousand txs that write entities of a h
 
 The factor catches an evaluation that reads every edge target of every candidate one by one
 (a read per edge instead of a memoised, batched type lookup); it is no benchmark. A small
-absolute allowance absorbs the noise of a timer on a loaded machine. The memory store answers
+absolute allowance absorbs the noise of a timer on a loaded machine, and the timer counts the
+CPU time of the test process (``time.process_time``), so other workers of a loaded CI runner that
+take the processor away between two measurements do not count. The memory store answers
 the unlimited reader in about a millisecond, while the limited reader also pays for every
 revision it hands out without its hidden edges (a recomputed content hash per returned
 revision, proportional to the answer, not to the graph); so there a larger allowance does most
@@ -46,9 +48,9 @@ REPEATS = 5
 def best_of(operation: Callable[[], object], repeats: int = REPEATS) -> float:
     times = []
     for _ in range(repeats):
-        started = time.perf_counter()
+        started = time.process_time()
         operation()
-        times.append(time.perf_counter() - started)
+        times.append(time.process_time() - started)
     return min(times)
 
 
