@@ -60,7 +60,7 @@ class ReadStart(ReadInstallation, ReadCatalogs):
             "withheld": list(withheld_actions(actor, entry.id, policy)),
         }
         # the model, its skill and its catalogs are read with read.describe
-        if not self._may(actor, entry, "read.describe"):
+        if not self.may(actor, entry, "read.describe"):
             item.update({"skill": None, "counts": None})
             return item
         item["skill"] = (
@@ -102,7 +102,7 @@ class ReadStart(ReadInstallation, ReadCatalogs):
         """The modules of one graph with what the caller may use of each: id, summary and the
         counts of ``describe modules`` (what the caller may not use is counted per kind in
         ``not_allowed``). Empty without ``read.describe`` or when the model cannot be read."""
-        if not self._may(actor, entry, "read.describe"):
+        if not self.may(actor, entry, "read.describe"):
             return []
         try:
             model, _ = self._models.load_for_read(entry)

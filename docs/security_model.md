@@ -164,7 +164,7 @@ protection is complete for data: no entity, id, alias, label, value, edge,
 count or term of a hidden type reaches it through a read command, a file
 download, a function, an action, the generated skill or `whoami`. <!-- claim: security_model.type_limits_complete --> The tool manifest
 ([Tools for agent harnesses](cli_graph.md#tools-for-agent-harnesses)) is rendered the same way: it lists only
-the functions, actions and views the caller may use, and its schemas hold the enum values, classes and entity
+the functions, actions and views the caller may use (and the `lookup` tool only when it may find entities), and its schemas hold the enum values, classes and entity
 attributes of the model the caller sees, so a hidden type, attribute or marking never reaches it, and an entry the caller sees
 but may not use is absent. <!-- claim: security_model.tool_manifest_per_caller --> A call of a
 tool (`graph call`) is no way around that: it finds the tool among the entries the caller sees (one it

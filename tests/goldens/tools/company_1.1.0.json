@@ -9,7 +9,7 @@
     "version": "1.1.0"
   },
   "tools_format": 1,
-  "version": "sha256:a76e2cae591fe3256654914517e05d78c86afcb4f80113da511a390e4a535c59",
+  "version": "sha256:ae51d891dda499c68f7f106e051d948a393fbb617c8ef6797033b9680bc9d8e1",
   "tools": [
     {
       "name": "run_employer_of",
@@ -26,7 +26,7 @@
             "x-graph-cli": {
               "class": "ppl:Employee"
             },
-            "description": "The employee whose employer is asked for. An entity of class ppl:Employee: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "The employee whose employer is asked for. An entity of class ppl:Employee: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'run_employer_of.person')."
           },
           "_limit": {
             "type": "integer",
@@ -184,7 +184,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "legal",
-      "hash": "sha256:b3ba3c526e69828a68f256313f55b471584b5d5ea75fbe39efb1a47e8fbbfb3e",
+      "hash": "sha256:a7a174543c923a453ae3aac1ae59df6c45486b641809656342e004750e406dee",
       "entry_hash": "sha256:8f2a737e47b0c2076c1cdfa05b871e6e0cbc7975b547323c6c1a96056713ff4a",
       "errors": [
         "access.denied",
@@ -225,7 +225,7 @@
             "x-graph-cli": {
               "class": "org:OrgUnit"
             },
-            "description": "The department or team to list; its sub-units are included. An entity of class org:OrgUnit: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "The department or team to list; its sub-units are included. An entity of class org:OrgUnit: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'run_members_of_unit.unit')."
           },
           "_limit": {
             "type": "integer",
@@ -371,7 +371,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "organization",
-      "hash": "sha256:bc3eaa64d48fff27999af213a21a96b201f73a3f348e7294e4bfd6da252fe2b4",
+      "hash": "sha256:a4c72924b4f3c53f10801190fe40fab155fdeb13cae617911bd683c9379e8aa2",
       "entry_hash": "sha256:881b801a4480a9db641bfae24f8cda89045a7275d58a1847038c3031e4c646c2",
       "errors": [
         "access.denied",
@@ -412,7 +412,7 @@
             "x-graph-cli": {
               "class": "org:OrgUnit"
             },
-            "description": "The department or team to check; its sub-units are included. An entity of class org:OrgUnit: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "The department or team to check; its sub-units are included. An entity of class org:OrgUnit: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'run_missing_required_trainings.unit')."
           },
           "_limit": {
             "type": "integer",
@@ -558,7 +558,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "operations",
-      "hash": "sha256:90bd85b104badec7bc5bc2e1351278bed364d4adbc31eb27dc90b8c8ed3b9d02",
+      "hash": "sha256:6034e7e8e5913092f9c6be902c540f5c58aa21a268f8b0ca51d39283d7c5b21a",
       "entry_hash": "sha256:82dc798df7fbe2a05733359772c41081c8e980f172d1f63b599b6467381aaf38",
       "errors": [
         "access.denied",
@@ -599,7 +599,7 @@
             "x-graph-cli": {
               "class": "org:OrgUnit"
             },
-            "description": "The department or team whose policies are listed. An entity of class org:OrgUnit: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "The department or team whose policies are listed. An entity of class org:OrgUnit: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'run_policies_for_unit.unit')."
           },
           "_limit": {
             "type": "integer",
@@ -759,7 +759,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "operations",
-      "hash": "sha256:2af11f1804eff8f9dbcc090f7c93b4197732ca35c47ab02772363a05c2b84865",
+      "hash": "sha256:20478fb57105a5da6a977bbfca4d03f3e52fec5482bbcae0cca327800f8b3d52",
       "entry_hash": "sha256:12e2bc39d34abbc6291d34ae898e92982dc42e96eaebab952f92559f6b7754e7",
       "errors": [
         "access.denied",
@@ -800,7 +800,7 @@
             "x-graph-cli": {
               "class": "org:Position"
             },
-            "description": "The position whose reporting line is walked. An entity of class org:Position: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "The position whose reporting line is walked. An entity of class org:Position: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'run_reporting_chain.position')."
           },
           "_limit": {
             "type": "integer",
@@ -946,7 +946,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "organization",
-      "hash": "sha256:bc30149245336e6cdeb008524b2c7a2298f1e0310e609991ba81620dd1425c9b",
+      "hash": "sha256:ad86b861939bb4f04d89292ac2488b98c67d81dad6a080120789c6217fdd63e2",
       "entry_hash": "sha256:218f8ec49c7ddc5a24076b043f224ccb178bf78e7568c9483d1e40ef6a3e4d38",
       "errors": [
         "access.denied",
@@ -991,7 +991,7 @@
               }
             },
             "minItems": 1,
-            "description": "The people to check; repeat the parameter for several. An entity of class ppl:Person: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "The people to check; repeat the parameter for several. An entity of class ppl:Person: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'run_required_trainings.person')."
           },
           "_limit": {
             "type": "integer",
@@ -1162,7 +1162,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "operations",
-      "hash": "sha256:02ebc60c0215cb93cf22fb4e2224862b17edc1291375f71b649405da3790344a",
+      "hash": "sha256:5767f8fb071423f49419e3579988d8cd412afe8fada7b4fd663ad30944393600",
       "entry_hash": "sha256:a6ec8e54131cb2d45d9119a6648ca2525e3d716dc7b0f7e698dc609a5d07c501",
       "errors": [
         "access.denied",
@@ -1207,7 +1207,7 @@
               }
             },
             "minItems": 1,
-            "description": "The legal entities whose shareholders are asked for; repeat the parameter for several. An entity of class leg:LegalEntity: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "The legal entities whose shareholders are asked for; repeat the parameter for several. An entity of class leg:LegalEntity: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'run_shareholders_of.entity')."
           },
           "_limit": {
             "type": "integer",
@@ -1380,7 +1380,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "legal",
-      "hash": "sha256:c0edfa3fe1f89c7e302f99cc60d9c6ce88fef5078f9b6c70a1d321a1ef9dc33b",
+      "hash": "sha256:802e8904065592596add9434a886ff9e71837d289109b66b97f41c2c2fd88a55",
       "entry_hash": "sha256:48e9019a37c1adb95427b61ff8f9bf176b49aac147db0dedefd41f176988df03",
       "errors": [
         "access.denied",
@@ -1616,7 +1616,7 @@
             "x-graph-cli": {
               "class": "org:OrgUnit"
             },
-            "description": "The department or team to check; its sub-units are included. An entity of class org:OrgUnit: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "The department or team to check; its sub-units are included. An entity of class org:OrgUnit: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'run_vacant_positions.unit')."
           },
           "_limit": {
             "type": "integer",
@@ -1762,7 +1762,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "organization",
-      "hash": "sha256:b80e4961d2f1fec6df9350dbe1248cfc70561ea2dfeb5c0c2812ca5ec4f4cb91",
+      "hash": "sha256:44e24ea03b7a664d886cfe7b186db0327afd94d3b382ec0e180210b5a30fe4ab",
       "entry_hash": "sha256:0ee626e74ed8ab77c6d79f699b1ae231c0da766ec8333ba6790ffeb397007180",
       "errors": [
         "access.denied",
@@ -1803,7 +1803,7 @@
             "x-graph-cli": {
               "class": "ppl:Person"
             },
-            "description": "Who takes over the position. An entity of class ppl:Person: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "Who takes over the position. An entity of class ppl:Person: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'do_assign_position.person')."
           },
           "position": {
             "type": "string",
@@ -1811,7 +1811,7 @@
             "x-graph-cli": {
               "class": "org:Position"
             },
-            "description": "The vacant position. An entity of class org:Position: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "The vacant position. An entity of class org:Position: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'do_assign_position.position')."
           },
           "since": {
             "type": "string",
@@ -2060,7 +2060,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "organization",
-      "hash": "sha256:b07e7353af66da90cf3d7ad1c2255b2929a65d03fcf516580abc115e46178474",
+      "hash": "sha256:e265a154ec4cb82ffff01f85f8135f3364e34858974d40e763f0ceb769a9da54",
       "entry_hash": "sha256:18cc1879fd22e4b8feb6549a20f9eed358462ee733890dc0bdfa6dd27a410a34",
       "errors": [
         "access.batch_too_large",
@@ -2116,7 +2116,7 @@
             "x-graph-cli": {
               "class": "org:Position"
             },
-            "description": "The position that changes hands. An entity of class org:Position: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "The position that changes hands. An entity of class org:Position: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'do_hand_over_position.position')."
           },
           "person": {
             "type": "string",
@@ -2124,7 +2124,7 @@
             "x-graph-cli": {
               "class": "ppl:Person"
             },
-            "description": "The new holder. An entity of class ppl:Person: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "The new holder. An entity of class ppl:Person: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'do_hand_over_position.person')."
           },
           "since": {
             "anyOf": [
@@ -2379,7 +2379,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "organization",
-      "hash": "sha256:05a818aed61dad9191437a014e91a352b7354bb429f28ff13aff2858ef1a1f83",
+      "hash": "sha256:566ffca8af3088b795a2d0abd20d650c2e5bd0b00fd55426ddbf102bb6ddf90f",
       "entry_hash": "sha256:f3d5a5b3c287274b2bc60192bdf7d18c7b335b235ae4b2b459234dd99a1ebbd4",
       "errors": [
         "access.batch_too_large",
@@ -2435,7 +2435,7 @@
             "x-graph-cli": {
               "class": "ppl:Employee"
             },
-            "description": "The employee who leaves. An entity of class ppl:Employee: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "The employee who leaves. An entity of class ppl:Employee: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'do_offboard_employee.employee')."
           },
           "_reason": {
             "type": "string",
@@ -2670,7 +2670,7 @@
       "replaced_by": null,
       "featured": true,
       "module": "people",
-      "hash": "sha256:d15c397604dec0a15db4aa23309f2a43f595d9488d45d6d14d42f79e1005c60a",
+      "hash": "sha256:05a15d4ae1c6414485f0a865f0b3ad357bda15df3183da245b2a02aa34ff0752",
       "entry_hash": "sha256:ebf52a17ea0e793091c1fdfdffb49096d3499a91565e24582e118ff608a7e7f2",
       "errors": [
         "access.batch_too_large",
@@ -2726,7 +2726,7 @@
             "x-graph-cli": {
               "class": "org:Team"
             },
-            "description": "The entity to show. An entity of class org:Team: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "The entity to show. An entity of class org:Team: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'view_legacy_unit_overview._entity')."
           }
         },
         "required": [
@@ -3074,7 +3074,7 @@
       "replaced_by": "view_unit_overview",
       "featured": false,
       "module": "organization",
-      "hash": "sha256:188f80b0db85e57b39bdcdbdad3438982a754a3bb6b3479f7254ec7acdd09c8f",
+      "hash": "sha256:d68c891d1caea3fdf8ef45592614786c00c5e0633cdc8d1e3a37b587321fca2d",
       "entry_hash": "sha256:1f35aed569583a5cda9b2b935eba147ccc03de5787ba9263491f49c3475fd0a7",
       "errors": [
         "access.denied",
@@ -3117,7 +3117,7 @@
             "x-graph-cli": {
               "class": "org:Department"
             },
-            "description": "The department to report on. An entity of class org:Department: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "The department to report on. An entity of class org:Department: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'view_members_report.unit')."
           },
           "_cursor": {
             "anyOf": [
@@ -3375,7 +3375,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "organization",
-      "hash": "sha256:ca5c3fdb35c9d0568868e944876477442e5b1548cd298e38f5a89a3826f403df",
+      "hash": "sha256:1541e3cb51ca2f86538b24069f95bd607e19ca324ed7553e7a2a250f956698d1",
       "entry_hash": "sha256:5ece4734ba575d69e485ba18d056493ff32c518ceeeff081fdc7c4347a67a66d",
       "errors": [
         "access.denied",
@@ -4272,7 +4272,7 @@
             "x-graph-cli": {
               "class": "org:Position"
             },
-            "description": "The entity to show. An entity of class org:Position: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "The entity to show. An entity of class org:Position: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'view_position_overview._entity')."
           }
         },
         "required": [
@@ -5160,7 +5160,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "organization",
-      "hash": "sha256:8d28ba48002e25ae4f521c2cc44655c8d4411ce72f7da771b8ca6886cb81d750",
+      "hash": "sha256:9c205229e2f3363bd8238c460c29540e2b6f3dff2a3acb0402fe74104df46da8",
       "entry_hash": "sha256:2ea811f8ee12daf4780aa50d56776213c95caa194f994a3ed6dd42565ff59f61",
       "errors": [
         "access.denied",
@@ -5524,7 +5524,7 @@
             "x-graph-cli": {
               "class": "org:OrgUnit"
             },
-            "description": "The entity to show. An entity of class org:OrgUnit: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first."
+            "description": "The entity to show. An entity of class org:OrgUnit: its id, its alias or 8 to 32 trailing hex digits of its id; a name has to be looked up first, with the lookup tool (for: 'view_unit_overview._entity')."
           },
           "status": {
             "type": "string",
@@ -6469,7 +6469,7 @@
       "replaced_by": null,
       "featured": false,
       "module": "organization",
-      "hash": "sha256:d5082c6ba6c0e566783fed754e4ad781b3e64596167090e2a7b3f2f8864c7df6",
+      "hash": "sha256:14dee9127a255dda9f69639be798fc606d7b2859a830fe10451769de77b6320f",
       "entry_hash": "sha256:93899e2a71372c70e4e98fe5dc9312adb4fe8f1773580739c404c77823b162d7",
       "errors": [
         "access.denied",
@@ -6495,6 +6495,367 @@
         "view.parameter_type",
         "view.parameter_unknown",
         "view.stale"
+      ]
+    },
+    {
+      "name": "lookup",
+      "kind": "lookup",
+      "entry": null,
+      "description": "Find the entities that go by a name, to fill a reference input of another tool.\n\nUse when: you know the name of an entity where a tool needs a reference. Names are matched whole, ignoring case, against main, alternative and hidden names; each name gets its candidates ranked, best first, and only those of the class that the input in for takes (matches of other classes are counted in texts[].excluded). Pass the id or alias of a candidate as the reference, never a guess: when a name has several candidates, facts tell them apart.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
+                "minItems": 1,
+                "maxItems": 50
+              }
+            ],
+            "description": "A name, or a list of at most 50 names, each looked up on its own."
+          },
+          "for": {
+            "type": "string",
+            "enum": [
+              "run_employer_of.person",
+              "run_members_of_unit.unit",
+              "run_missing_required_trainings.unit",
+              "run_policies_for_unit.unit",
+              "run_reporting_chain.position",
+              "run_required_trainings.person",
+              "run_shareholders_of.entity",
+              "run_vacant_positions.unit",
+              "do_assign_position.person",
+              "do_assign_position.position",
+              "do_hand_over_position.position",
+              "do_hand_over_position.person",
+              "do_offboard_employee.employee",
+              "view_legacy_unit_overview._entity",
+              "view_members_report.unit",
+              "view_position_overview._entity",
+              "view_unit_overview._entity"
+            ],
+            "description": "The input the entity is for, as <tool>.<input> (<tool>._entity for the entity of an entity view): only candidates of the class that input takes are listed."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Candidates per name, at most 500.",
+            "default": 50
+          }
+        },
+        "required": [
+          "text",
+          "for"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "alias": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": {
+                  "type": "string"
+                },
+                "record_status": {
+                  "type": "string"
+                },
+                "label": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "match": {
+                  "type": "object",
+                  "properties": {
+                    "attr": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "label",
+                        "alt_label",
+                        "hidden_label"
+                      ]
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "lang": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "value": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "attr",
+                    "role",
+                    "kind",
+                    "lang",
+                    "value"
+                  ]
+                },
+                "facts": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rel": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "alias": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "label": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "rel",
+                          "id",
+                          "alias",
+                          "label"
+                        ]
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "text",
+                "id",
+                "alias",
+                "type",
+                "record_status",
+                "label",
+                "match",
+                "facts"
+              ]
+            }
+          },
+          "texts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "exact": {
+                  "type": "integer"
+                },
+                "excluded": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "text",
+                "total",
+                "exact",
+                "excluded"
+              ]
+            }
+          },
+          "fit": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "for": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "for_source": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "types": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "for",
+                  "for_source",
+                  "types"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "shown": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "offset": {
+                "type": "integer"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "next_offset": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "total",
+              "shown",
+              "limit",
+              "offset",
+              "truncated",
+              "next_offset"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "texts",
+          "fit",
+          "page"
+        ]
+      },
+      "annotations": {
+        "read_only": true,
+        "dry_run": false,
+        "reason": null,
+        "paging": null
+      },
+      "status": "active",
+      "replaced_by": null,
+      "featured": false,
+      "module": null,
+      "hash": "sha256:8d48d39141e75350f476e78d9bb16b757ee2945d8566878dec8f8f3918796afa",
+      "entry_hash": null,
+      "errors": [
+        "access.denied",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.unauthorized",
+        "tool.hash_mismatch",
+        "tool.not_found",
+        "usage.invalid_argument",
+        "usage.invalid_input",
+        "usage.missing_argument"
       ]
     }
   ],

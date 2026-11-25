@@ -12,7 +12,7 @@ from graph_cli.app_cli.commands.describe.shared import (
     open_view,
 )
 from graph_cli.app_cli.output_schemas import NULLABLE_STRING, STRINGS, model_document
-from graph_cli.app_cli.tool_manifest import TOOL_KINDS, Selection, build_manifest
+from graph_cli.app_cli.tool_manifest import Selection, build_manifest
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.output_schemas import (
     BOOLEAN,
@@ -28,7 +28,7 @@ from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonObject
 from graph_cli.kernel.json_access import as_object, req_list, req_str
-from graph_cli.services.describe_tools import KINDS
+from graph_cli.services.describe_tools import TOOL_KINDS
 from graph_cli.services.tool_errors import ON_ERROR_VALUES
 
 _ANNOTATIONS: Final = obj(
@@ -111,6 +111,7 @@ def describe_tools(
         actions=found.actions or (),
         views=found.views or (),
         obligations=obligations,
+        find=context(state).reader.may(view.actor, view.entry, "read.find"),
         selection=Selection(
             tools=tool,
             kinds=(kind,) if kind else (),
@@ -133,8 +134,10 @@ SPECS: Final = (
             "The tool manifest of the graph for an agent harness, rendered for you: one tool per "
             "function, action and view you may use, each with a JSON Schema (2020-12) of its "
             "input and of its answer, what it reads or writes, and the error codes it may "
-            "return; errors tells what to do about each code. Enum values and classes are the "
-            "ones you see. Deprecated entries are listed (status, replaced_by) unless "
+            "return; errors tells what to do about each code. When a tool takes a reference "
+            "and you may find entities, the lookup tool is listed too: it finds the entity a "
+            "name stands for. Enum values and classes are the ones you see. Deprecated entries "
+            "are listed (status, replaced_by) unless "
             "--exclude-deprecated. --tool names the tools you want and refuses a name that is "
             "none of yours (tool.not_found with did_you_mean). version changes when anything "
             "listed changes; each tool's hash when that tool does."
@@ -143,17 +146,19 @@ SPECS: Final = (
             ParamSpec(
                 "--tool",
                 "string",
-                "Only this tool (run_NAME, do_NAME or view_NAME); repeat for several.",
+                "Only this tool (run_NAME, do_NAME, view_NAME or lookup); repeat for several.",
                 repeatable=True,
             ),
             ParamSpec(
                 "--kind",
                 "choice",
-                "Only the tools of this kind of entry.",
-                choices=KINDS,
+                "Only the tools of this kind: function, action, view or lookup.",
+                choices=TOOL_KINDS,
             ),
             MODULE_OPTION,
-            ParamSpec("--featured", "flag", "Only featured functions and actions (views stay)."),
+            ParamSpec(
+                "--featured", "flag", "Only featured functions and actions (views and lookup stay)."
+            ),
             ParamSpec("--exclude-deprecated", "flag", "Leave out the tools of deprecated entries."),
             GRAPH,
         ),

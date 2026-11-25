@@ -33,8 +33,12 @@ NO_OBLIGATIONS: frozenset[str] = frozenset()
 def manifest(
     scene: Scene,
     obligations: frozenset[str] = NO_OBLIGATIONS,
+    *,
+    find: bool = False,
     **selection: Any,
 ) -> dict[str, Any]:
+    """The manifest of ``scene``; ``find``: the caller holds ``read.find``, which lists the
+    ``lookup`` tool (off here unless a test is about it)."""
     found = tm.build_manifest(
         scene.entry,
         scene.model,
@@ -43,6 +47,7 @@ def manifest(
         views=scene.views,
         obligations=obligations,
         selection=tm.Selection(**selection),
+        find=find,
     )
     return json.loads(json.dumps(found))
 
@@ -502,12 +507,15 @@ def golden(name: str, document: dict[str, Any]) -> None:
 
 
 def test_goldens_of_the_example_graphs() -> None:
-    golden("company_1.1.0", manifest(COMPANY.scene()))
-    golden("inventory_1.1.0", manifest(INVENTORY.scene()))
+    golden("company_1.1.0", manifest(COMPANY.scene(), find=True))
+    golden("inventory_1.1.0", manifest(INVENTORY.scene(), find=True))
 
 
 def test_goldens_of_a_reader_of_items() -> None:
-    golden("limited_inventory_items", manifest(INVENTORY.reader(ITEMS)))
+    golden("limited_inventory_items", manifest(INVENTORY.reader(ITEMS), find=True))
+    # the release in which items have a label: a lookup tool for the one reference it may use
+    named = tools.inventory(version="1.1.0")
+    golden("limited_inventory_1.1.0_items", manifest(named.reader(ITEMS), find=True))
 
 
 @pytest.mark.parametrize(
@@ -515,4 +523,4 @@ def test_goldens_of_a_reader_of_items() -> None:
 )
 def test_goldens_of_readers_with_markings(label: str, held: frozenset[str]) -> None:
     scene = STAFF.scene() if held == tools.EVERYTHING else STAFF.reader(held=held)
-    golden(f"markings_staff_{label}", manifest(scene))
+    golden(f"markings_staff_{label}", manifest(scene, find=True))

@@ -86,6 +86,8 @@ def test_the_manifest_lists_every_tool_with_its_schemas(run_cli: CliRunner, root
     assert manifest["schema"] == "graph_cli.model/1" and manifest["tools_format"] == 1
     assert manifest["graph"]["name"] == "example_graph"
     assert [t["name"] for t in manifest["tools"]] == NAMES
+    # no entity of this ontology release has a name to look up: no lookup tool
+    assert "lookup" not in [t["kind"] for t in manifest["tools"]]
     for tool in manifest["tools"]:
         Draft202012Validator.check_schema(tool["input_schema"])
         Draft202012Validator.check_schema(tool["output_schema"])

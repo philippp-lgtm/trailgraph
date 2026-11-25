@@ -27,6 +27,10 @@ class Reader:
         self.read.append("actions")
         return None
 
+    def may(self, actor: Any, entry: Any, action: str) -> bool:
+        self.read.append(action)
+        return False  # no lookup tool, so no model to read
+
 
 def test_the_prefix_of_a_name_says_which_catalog_it_asks_for() -> None:
     assert call_module._kind_of("run_items") == "function"
@@ -43,7 +47,8 @@ def test_a_call_reads_only_the_catalog_of_its_tool() -> None:
         assert reader.read == [catalog], kind
     reader = Reader()
     call_module._usable_names(reader, None, None)  # type: ignore[arg-type]
-    assert sorted(reader.read) == ["actions", "functions", "views"]  # all of them, on a miss only
+    # all of them, on a miss only, and whether the lookup tool is one of the names
+    assert sorted(reader.read) == ["actions", "functions", "read.find", "views"]
 
 
 def test_a_call_is_a_write_for_an_action_that_is_not_a_dry_run() -> None:

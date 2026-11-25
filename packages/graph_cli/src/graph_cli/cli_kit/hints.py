@@ -136,11 +136,17 @@ def _key_attribute(details: Mapping[str, JsonValue], program: str) -> str | None
 
 
 def _lookup_class(details: Mapping[str, JsonValue], program: str) -> str | None:
-    """A reference of the wrong class: find the entity that fits the parameter by its name."""
+    """A reference of the wrong class: find the entity that fits the parameter by its name. A
+    view is named by its kind (it may share its name with a function), and the entity of an entity
+    view is its ``_entity``."""
     function = details.get("function", details.get("action"))
     parameter = details.get("parameter")
     if isinstance(function, str) and isinstance(parameter, str):
         return f"{program} lookup <text> --for {function}.{parameter}"
+    view = details.get("view")
+    if isinstance(view, str):
+        slot = parameter if isinstance(parameter, str) else "_entity"
+        return f"{program} lookup <text> --for view:{view}.{slot}"
     expected = details.get("expected")
     if isinstance(expected, str):
         return f"{program} lookup <text> --type {expected}"

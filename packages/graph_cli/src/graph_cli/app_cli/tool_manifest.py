@@ -10,7 +10,9 @@ hidden or not-allowed entry, a hidden enum value or a hidden class never appears
 The manifest is a public contract (``TOOLS_FORMAT``): input schemas are closed, output schemas
 stay open like every published output schema (a consumer ignores what it does not know), so an
 answer may grow without breaking a harness that validates; a change that breaks a consumer
-raises ``TOOLS_FORMAT``. The ``lookup`` tool of the format is built in a later step.
+raises ``TOOLS_FORMAT``. The ``lookup`` tool comes last: it is listed when a tool has a reference
+input and the caller may find entities (``build_manifest(find=True)``), and the descriptions of
+those inputs name it.
 
 Every schema is self-contained (no ``$ref``, no ``$defs``) and has an object at its root.
 """
@@ -25,6 +27,7 @@ from typing import Final
 from graph_cli.app_cli.column_schemas import column_schema
 from graph_cli.app_cli.commands.do import DO_ERRORS, DO_OUTPUT
 from graph_cli.app_cli.commands.read.entity import VIEW_ERRORS
+from graph_cli.app_cli.commands.read.find import LOOKUP_ERRORS, LOOKUP_PAGE_OUTPUT
 from graph_cli.app_cli.commands.read.query import RUN_ERRORS, RUN_OUTPUT
 from graph_cli.app_cli.output_schemas import standalone
 from graph_cli.app_cli.view_schemas import SectionShape, view_schema
@@ -38,12 +41,18 @@ from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services import describe_tools
 from graph_cli.services.describe import ModuleIndex, model_envelope
-from graph_cli.services.describe_tools import ACTION, FUNCTION, VIEW, ToolColumn, ToolHead
+from graph_cli.services.describe_tools import (
+    ACTION,
+    FUNCTION,
+    LOOKUP,
+    VIEW,
+    RefInput,
+    ToolColumn,
+    ToolHead,
+)
 from graph_cli.services.tool_errors import error_info
 
 TOOLS_FORMAT: Final = 1
-LOOKUP: Final = "lookup"  # a tool of the format that a later step builds
-TOOL_KINDS: Final = (FUNCTION, ACTION, VIEW, LOOKUP)
 
 # What a harness may get from the transport and the call itself, besides the codes of the command
 # a tool runs. A tool never gets a code that needs an argument it does not have (it selects no
@@ -65,6 +74,18 @@ NOT_FOR_TOOLS: Final = frozenset(
         "function.not_found",
         "action.not_found",
         "view.not_found",
+    }
+)
+# What the lookup tool never gets: it has no type, relation or entry name to be unknown or
+# ambiguous (its input is an enum of the slots it serves), and every slot has a name to look up.
+NOT_FOR_LOOKUP: Final = frozenset(
+    {
+        "term.unknown",
+        "query.ambiguous_term",
+        "term.no_labels",
+        "function.parameter_unknown",
+        "action.parameter_unknown",
+        "view.parameter_unknown",
     }
 )
 
@@ -123,13 +144,25 @@ def view_output(head: ToolHead, model: CompiledModel) -> JsonObject:
         if section.columns is not None:
             row = row_schema(section.columns, model, cut=head.entity)
         sections.append(SectionShape(section.kind, section.id, section.function, row))
+    assert head.entry is not None  # only the lookup tool has no entry
     return standalone(view_schema(head.entry, sections, entity=head.entity))
+
+
+def lookup_output() -> JsonObject:
+    """What a call of the lookup tool answers: the lookup answer and the ``page`` the command puts
+    in the envelope."""
+    return standalone(LOOKUP_PAGE_OUTPUT)
 
 
 def tool_errors(kind: str) -> tuple[str, ...]:
     """The codes a tool of ``kind`` may return, sorted."""
-    command = {FUNCTION: RUN_ERRORS, ACTION: DO_ERRORS, VIEW: VIEW_ERRORS}[kind]
+    command = {FUNCTION: RUN_ERRORS, ACTION: DO_ERRORS, VIEW: VIEW_ERRORS, LOOKUP: LOOKUP_ERRORS}[
+        kind
+    ]
     codes = {*command, *CALL_ERRORS, *TRANSPORT_ERRORS} - NOT_FOR_TOOLS
+    if kind == LOOKUP:
+        # a call of the tool names its input as an object, which the command's options do not
+        codes = (codes - NOT_FOR_LOOKUP) | {"usage.missing_argument"}
     return tuple(sorted(codes))
 
 
@@ -138,6 +171,8 @@ def _output(head: ToolHead, model: CompiledModel) -> JsonObject:
         return function_output(head.columns, model)
     if head.kind == ACTION:
         return action_output()
+    if head.kind == LOOKUP:
+        return lookup_output()
     return view_output(head, model)
 
 
@@ -180,8 +215,9 @@ def tool_json(head: ToolHead, model: CompiledModel) -> JsonObject:
 @dataclass(frozen=True, slots=True)
 class Selection:
     """Which of the tools a caller may use are listed. ``featured`` keeps the featured functions
-    and actions (a view has no such flag and stays); deprecated tools are listed unless
-    ``exclude_deprecated``, so an allow-listed tool does not vanish when its entry is deprecated."""
+    and actions (a view and the lookup tool have no such flag and stay); deprecated tools are
+    listed unless ``exclude_deprecated``, so an allow-listed tool does not vanish when its entry is
+    deprecated."""
 
     tools: tuple[str, ...] = ()
     kinds: tuple[str, ...] = ()
@@ -198,36 +234,57 @@ def heads(
     obligations: frozenset[str],
     *,
     only: str | None = None,
+    refs: Sequence[RefInput] = (),
 ) -> tuple[ToolHead, ...]:
-    """Every tool the caller may use: functions, then actions, then views, each by name. With
-    ``only`` just the tool of that name is built (a function's head resolves its query to type its
-    columns, which a call that needs one tool should not pay for every function); the entries
-    still count as the ones a replacement is looked up in."""
+    """Every tool the caller may use: functions, then actions, then views, each by name, then the
+    ``lookup`` tool. With ``only`` just the tool of that name is built (a function's head resolves
+    its query to type its columns, which a call that needs one tool should not pay for every
+    function); the entries still count as the ones a replacement is looked up in.
+
+    ``refs`` are the reference inputs the ``lookup`` tool serves (``lookup_refs``, over every
+    entry the caller may use, whatever ``only`` says): the tool is built, and the descriptions of
+    those inputs name it, only when there are some."""
+    lookup = bool(refs)
 
     def wanted(kind: str, entry: FunctionEntry | ActionEntry | ViewEntry) -> bool:
         return only is None or describe_tools.tool_name(kind, entry.name) == only
 
     function_heads = tuple(
-        describe_tools.function_head(e, model, functions)
+        describe_tools.function_head(e, model, functions, lookup=lookup)
         for e in _by_name(functions)
         if wanted(FUNCTION, e)
     )
-    known = {h.entry: h.columns for h in function_heads}  # a view's rows are typed by these
+    known = {h.entry: h.columns for h in function_heads if h.entry is not None}  # rows of a view
     found = (
         *function_heads,
         *(
-            describe_tools.action_head(e, model, actions, obligations)
+            describe_tools.action_head(e, model, actions, obligations, lookup=lookup)
             for e in _by_name(actions)
             if wanted(ACTION, e)
         ),
         *(
-            describe_tools.view_head(e, model, views, functions, known)
+            describe_tools.view_head(e, model, views, functions, known, lookup=lookup)
             for e in _by_name(views)
             if wanted(VIEW, e)
         ),
+        *((describe_tools.lookup_head(refs),) if lookup and only in (None, LOOKUP) else ()),
     )
     describe_tools.unique_names(found)
     return found
+
+
+def lookup_refs(
+    model: CompiledModel,
+    functions: Sequence[FunctionEntry],
+    actions: Sequence[ActionEntry],
+    views: Sequence[ViewEntry],
+    *,
+    find: bool,
+) -> tuple[RefInput, ...]:
+    """The reference inputs of the tools the caller may use that the ``lookup`` tool serves: none
+    when the caller may not find entities (``find``: it holds ``read.find``; until a narrower
+    lookup exists, a reference input takes the ids the caller already has)."""
+    return describe_tools.ref_inputs(model, functions, actions, views) if find else ()
 
 
 def _by_name[Entry: (FunctionEntry, ActionEntry, ViewEntry)](
@@ -258,7 +315,7 @@ def _kept(head: ToolHead, selection: Selection, module: str | None) -> bool:
         (not selection.tools or head.name in selection.tools)
         and (not selection.kinds or head.kind in selection.kinds)
         and (module is None or head.module == module)
-        and (not selection.featured or head.kind == VIEW or head.featured)
+        and (not selection.featured or head.kind in (VIEW, LOOKUP) or head.featured)
         and not (selection.exclude_deprecated and head.status == "deprecated")
     )
 
@@ -272,13 +329,16 @@ def build_manifest(
     views: Sequence[ViewEntry],
     obligations: frozenset[str],
     selection: Selection | None = None,
+    find: bool = False,
 ) -> dict[str, JsonValue]:
     """The manifest (``graph_cli.model/1``) of the entries the caller may use, over the model it
-    sees. A wanted name that is no visible tool is ``tool.not_found``; ``term.unknown`` for an
-    unknown module. ``version`` is the hash of the tools and errors listed."""
+    sees; ``find``: the caller holds ``read.find``, which lists the ``lookup`` tool. A wanted name
+    that is no visible tool is ``tool.not_found``; ``term.unknown`` for an unknown module.
+    ``version`` is the hash of the tools and errors listed."""
     selection = selection or Selection()
     module = ModuleIndex(model).filter(selection.module)
-    available = heads(model, functions, actions, views, obligations)
+    refs = lookup_refs(model, functions, actions, views, find=find)
+    available = heads(model, functions, actions, views, obligations, refs=refs)
     problem = missing_tools(selection.tools, [h.name for h in available])
     if problem is not None:
         raise problem

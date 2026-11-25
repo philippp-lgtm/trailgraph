@@ -373,6 +373,239 @@
           },
           {
             "$ref": "#/components/schemas/view_model"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "alias": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "record_status": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "match": {
+                      "type": "object",
+                      "properties": {
+                        "attr": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "label",
+                            "alt_label",
+                            "hidden_label"
+                          ]
+                        },
+                        "kind": {
+                          "type": "string"
+                        },
+                        "lang": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "value": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "attr",
+                        "role",
+                        "kind",
+                        "lang",
+                        "value"
+                      ]
+                    },
+                    "facts": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "rel": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "alias": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "label": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "rel",
+                              "id",
+                              "alias",
+                              "label"
+                            ]
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "id",
+                    "alias",
+                    "type",
+                    "record_status",
+                    "label",
+                    "match",
+                    "facts"
+                  ]
+                }
+              },
+              "texts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "exact": {
+                      "type": "integer"
+                    },
+                    "excluded": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "total",
+                    "exact",
+                    "excluded"
+                  ]
+                }
+              },
+              "fit": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "for": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "for_source": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "types": {
+                        "anyOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "for",
+                      "for_source",
+                      "types"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "page": {
+                "$ref": "#/components/schemas/page"
+              }
+            },
+            "required": [
+              "items",
+              "texts",
+              "fit",
+              "page"
+            ]
           }
         ]
       },
@@ -14894,7 +15127,7 @@
                         "items": {
                           "type": "string"
                         },
-                        "description": "Only this tool (run_NAME, do_NAME or view_NAME); repeat for several."
+                        "description": "Only this tool (run_NAME, do_NAME, view_NAME or lookup); repeat for several."
                       },
                       "--tool": {
                         "type": "array",
@@ -14909,16 +15142,18 @@
                         "enum": [
                           "function",
                           "action",
-                          "view"
+                          "view",
+                          "lookup"
                         ],
-                        "description": "Only the tools of this kind of entry."
+                        "description": "Only the tools of this kind: function, action, view or lookup."
                       },
                       "--kind": {
                         "type": "string",
                         "enum": [
                           "function",
                           "action",
-                          "view"
+                          "view",
+                          "lookup"
                         ],
                         "description": "The inventory name of kind; never both.",
                         "deprecated": true
@@ -14934,7 +15169,7 @@
                       },
                       "featured": {
                         "type": "boolean",
-                        "description": "Only featured functions and actions (views stay)."
+                        "description": "Only featured functions and actions (views and lookup stay)."
                       },
                       "--featured": {
                         "type": "boolean",
@@ -20212,7 +20447,7 @@
             }
           },
           "400": {
-            "description": "Bad Request: action.parameter_unknown, function.parameter_unknown, graph.not_selected, usage.invalid_argument.",
+            "description": "Bad Request: action.parameter_unknown, function.parameter_unknown, graph.not_selected, usage.invalid_argument, view.parameter_unknown.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -20234,7 +20469,8 @@
               "action.parameter_unknown",
               "function.parameter_unknown",
               "graph.not_selected",
-              "usage.invalid_argument"
+              "usage.invalid_argument",
+              "view.parameter_unknown"
             ]
           },
           "401": {
@@ -20286,7 +20522,7 @@
             ]
           },
           "404": {
-            "description": "Not Found: function.not_found, graph.not_found, term.unknown.",
+            "description": "Not Found: action.not_found, function.not_found, graph.not_found, term.unknown, view.not_found.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -20305,9 +20541,11 @@
               }
             },
             "x-graph-cli-error-codes": [
+              "action.not_found",
               "function.not_found",
               "graph.not_found",
-              "term.unknown"
+              "term.unknown",
+              "view.not_found"
             ]
           },
           "422": {
@@ -20441,7 +20679,7 @@
                       },
                       "for": {
                         "type": "string",
-                        "description": "Only candidates that can fill this slot: a relation (the candidate is its target) or <function or action>.<param> (a ref parameter)."
+                        "description": "Only candidates that can fill this slot: a relation (the candidate is its target), <function or action>.<param> or view:<view>.<param> (a ref parameter), or view:<view>._entity (the entity of an entity view)."
                       },
                       "--for": {
                         "type": "string",

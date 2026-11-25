@@ -62,6 +62,7 @@ from graph_cli.query.plan import DEFAULT_LIMIT, check_paging, resolve_types
 MatchKind = Literal["exact", "prefix"]
 MATCH_KINDS: Final[tuple[MatchKind, ...]] = ("exact", "prefix")
 MAX_FACTS: Final = 3
+MAX_LOOKUP_TEXTS: Final = 50  # names one lookup takes
 
 
 @dataclass(frozen=True, slots=True)

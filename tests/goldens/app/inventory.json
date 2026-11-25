@@ -208,6 +208,10 @@
         {
           "command": "graph call <name> --input _entity='\"<id>\"' --expect-hash <value> --json",
           "summary": "Show an entity, only if the tool is still the one the manifest described."
+        },
+        {
+          "command": "graph call <name> --input text='\"<value>\"' --input for='\"run_<function>.<param>\"' --json",
+          "summary": "Run the lookup tool, named lookup: find the entity a name stands for, for a reference input of another tool."
         }
       ],
       "errors": [
@@ -1478,18 +1482,19 @@
           "type": "string",
           "required": false,
           "repeatable": true,
-          "summary": "Only this tool (run_NAME, do_NAME or view_NAME); repeat for several."
+          "summary": "Only this tool (run_NAME, do_NAME, view_NAME or lookup); repeat for several."
         },
         {
           "name": "--kind",
           "type": "choice",
           "required": false,
           "repeatable": false,
-          "summary": "Only the tools of this kind of entry.",
+          "summary": "Only the tools of this kind: function, action, view or lookup.",
           "choices": [
             "function",
             "action",
-            "view"
+            "view",
+            "lookup"
           ]
         },
         {
@@ -1504,7 +1509,7 @@
           "type": "flag",
           "required": false,
           "repeatable": false,
-          "summary": "Only featured functions and actions (views stay)."
+          "summary": "Only featured functions and actions (views and lookup stay)."
         },
         {
           "name": "--exclude-deprecated",
@@ -2901,7 +2906,7 @@
           "type": "string",
           "required": false,
           "repeatable": false,
-          "summary": "Only candidates that can fill this slot: a relation (the candidate is its target) or <function or action>.<param> (a ref parameter)."
+          "summary": "Only candidates that can fill this slot: a relation (the candidate is its target), <function or action>.<param> or view:<view>.<param> (a ref parameter), or view:<view>._entity (the entity of an entity view)."
         },
         {
           "name": "--for-source",
@@ -2995,6 +3000,7 @@
       "errors": [
         "access.denied",
         "access.project_mismatch",
+        "action.not_found",
         "action.parameter_unknown",
         "backend.unavailable",
         "config.forbidden_key",
@@ -3014,7 +3020,9 @@
         "temporal.as_of_unsupported",
         "term.no_labels",
         "term.unknown",
-        "usage.invalid_argument"
+        "usage.invalid_argument",
+        "view.not_found",
+        "view.parameter_unknown"
       ],
       "exit_codes": [
         0,
