@@ -176,7 +176,7 @@ Update the documentation in the same change as the code:
 | an error code, finding code or policy action renamed or removed | every document that names it (checked) |
 | an example graph's files or setup | `examples/<name>/README.md`; `tests/cli/test_company_example.py` keeps the example buildable |
 | a way to run graph_cli, a core concept or a foundational design decision | `docs/deployment_options.md`, `docs/overview.md` or `docs/design_decisions.md` |
-| a value of a closed set (a status, kind, verb or parameter type), a module, a phase or an access-log key, the commands of a project admin, the parts push uploads | the list that names the set (checked by `tests/test_doc_sets.py`, which names the place) |
+| a value of a closed set (a status, kind, verb or parameter type), an answer key, a migration step, a module, a phase or an access-log key, the commands of a project admin, the parts push uploads | the list that names the set (checked by `tests/test_doc_sets.py`, which names the place) |
 | a limit, default, size or time a document states | the document and its fact in `tests/test_doc_facts.py` (a changed constant fails there until both follow) |
 | install steps or the quickstart | `README.md`; `tests/cli/test_readme_quickstart.py` runs the quickstart's blocks on a throwaway data root and knows only the commands it uses (`uv run graph-admin`, `graph`, `mkdir -p`, a pointer file) |
 
@@ -206,7 +206,9 @@ error code next to it, and that every format number names a real format.
 `uv run pytest tests/test_doc_sets.py` checks that the lists of the documents
 that mirror a code set name exactly that set: value sets and statuses, the
 module tables of the internals documents, the extractor table of
-`docs/files.md`, the phases and keys of the access log, the commands of a
+`docs/files.md` and the attributes and qualifiers of the `files` module, the
+answer keys a document lists against the command's output schema, the
+migration steps, the phases and keys of the access log, the commands of a
 project admin, the meta commands and the parts push uploads.
 
 ## Generated files

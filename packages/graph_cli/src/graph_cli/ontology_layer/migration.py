@@ -492,6 +492,7 @@ _BUILDERS: Final[dict[str, Callable[[_Problems, YamlNode, str], Step | None]]] =
     "drop_qualifier": _drop_qualifier,
     "convert": _convert,
 }
+STEP_NAMES: Final = tuple(_BUILDERS)  # the step kinds of migration.yaml, in documentation order
 
 
 # ---- checking against the models ---------------------------------------------------------

@@ -11,6 +11,9 @@
 - The phases of the access log in docs/audit.md are the phases the code times (every
   `phase("...")` and `until_now("...")` literal, plus `other`); the keys of its access-log
   table are the keys `access_record` writes.
+- `FIELDS`: the field names between two phrases of a document equal the keys the output
+  schema of a command declares at a path (`changes` items, `start` graphs, the short
+  envelope ...), so a key added to or removed from an answer fails here.
 - The commands a project admin may run (docs/server.md), the meta commands that are never
   skill-checked (docs/skills.md) and the parts push uploads (docs/server.md) equal their
   sets in code; crash points named anywhere exist.
@@ -24,25 +27,32 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import get_args, get_type_hints
+from typing import Any, get_args, get_type_hints
 
 import pytest
 import yaml
 from harness import REPO_ROOT
 
 from graph_cli.access_control.compiler import WRITE_VERBS
+from graph_cli.app_cli.commands import all_specs as app_specs
+from graph_cli.app_cli.output_schemas import DEFS as APP_DEFS
+from graph_cli.app_cli.output_schemas import RECONCILE
 from graph_cli.catalog import access_log
 from graph_cli.catalog.config import Config, FileStoreKind, OutputMode
 from graph_cli.catalog.tokens import SCOPES
+from graph_cli.cli_kit.output_schemas import DEFS as KIT_DEFS
 from graph_cli.cli_kit.spec import Pairs, PairValues
 from graph_cli.extractors.registry import REGISTRY
 from graph_cli.kernel.actions import SCOPE_LEVELS
 from graph_cli.kinetic.params import PARAM_TYPES
+from graph_cli.ontology_layer.migration import STEP_NAMES
 from graph_cli.services.files import CHECK_STATUSES
 from graph_cli.skills.install import STATUSES
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli.storage.files.durable import Durability
 from graph_cli.storage.s3.settings import Addressing
+from graph_cli_admin.maintenance_cli.commands import all_specs as admin_specs
+from graph_cli_admin.maintenance_cli.output_schemas import DEFS as ADMIN_DEFS
 from graph_cli_admin.services_admin.sources import PARTS, SOURCE_FILE
 from graph_cli_server.admin_api import PROJECT_COMMANDS
 
@@ -158,6 +168,126 @@ SETS: tuple[DocSet, ...] = (
     ),
 )
 
+
+def _schema_keys(schema: dict[str, Any], defs: dict[str, Any]) -> dict[str, Any]:
+    """The properties of a schema by name (`[]` for the items of an array), through
+    `$ref`, `oneOf`, `anyOf` and `allOf`."""
+    if "$ref" in schema:
+        return _schema_keys(defs[schema["$ref"].rsplit("/", 1)[1]], defs)
+    keys: dict[str, Any] = {}
+    for combinator in ("oneOf", "anyOf", "allOf"):
+        for branch in schema.get(combinator, []):
+            keys |= _schema_keys(branch, defs)
+    if isinstance(schema.get("items"), dict):
+        keys["[]"] = schema["items"]
+    return keys | schema.get("properties", {})
+
+
+def _answer_keys(program: str, command: str, *path: str) -> frozenset[str]:
+    """The keys the output schema of a command declares at a path below `data`."""
+    specs, defs = (app_specs(), APP_DEFS) if program == "graph" else (admin_specs(), ADMIN_DEFS)
+    schema = next(s.output for s in specs if " ".join(s.path) == command)
+    assert schema is not None, command
+    for key in path:
+        schema = _schema_keys(schema, defs)[key]
+    return frozenset(_schema_keys(schema, defs)) - {"[]"}
+
+
+def _enum(program: str, command: str, *path: str) -> frozenset[str]:
+    specs, defs = (app_specs(), APP_DEFS) if program == "graph" else (admin_specs(), ADMIN_DEFS)
+    schema = next(s.output for s in specs if " ".join(s.path) == command)
+    assert schema is not None, command
+    for key in path:
+        schema = _schema_keys(schema, defs)[key]
+    return frozenset(schema["enum"])
+
+
+def _names(item: DocSet, prose: str) -> set[str]:
+    """The field names of a region: its spans that look like a name, less `ignore`."""
+    return {s for s in _spans(_between(prose, item.start, item.end)) if NAME.match(s)} - item.ignore
+
+
+def _class_attributes(curie: str) -> set[str]:
+    module, name = curie.split(":")
+    document = yaml.safe_load((MODULES / f"{module}.yaml").read_text())
+    return set(document["classes"][name].get("attributes", {}))
+
+
+def _relation_qualifiers(curie: str) -> set[str]:
+    module, name = curie.split(":")
+    document = yaml.safe_load((MODULES / f"{module}.yaml").read_text())
+    return set(document["relations"][name].get("qualifiers", {}))
+
+
+_SHORT = _schema_keys(KIT_DEFS["short_envelope"], KIT_DEFS)
+_RECONCILE_SCOPE = _schema_keys(_schema_keys(RECONCILE, {})["scopes"], {})["[]"]
+
+FIELDS: tuple[DocSet, ...] = (
+    doc_set(
+        "cli_graph.md",
+        "since every answer goes into an agent's context:",
+        "read a missing key",
+        frozenset(_SHORT) | frozenset(_schema_keys(_SHORT["graph"], KIT_DEFS)),
+        ignore=("null",),
+    ),
+    doc_set(
+        "cli_graph.md",
+        "**The answer.** `data` has these keys, in this order:",
+        "An entry has",
+        _answer_keys("graph", "changes"),
+        ignore=("null", "true"),
+    ),
+    doc_set(
+        "cli_graph.md",
+        "An entry has",
+        "Each item of `entities` has",
+        _answer_keys("graph", "changes", "items", "[]"),
+        ignore=("history", "name", "hash", "do"),
+    ),
+    doc_set(
+        "cli_graph.md",
+        "Each item of `entities` has",
+        "The text form prints",
+        _answer_keys("graph", "changes", "items", "[]", "entities", "[]"),
+        ignore=("history", "null"),
+    ),
+    doc_set(
+        "cli_graph.md",
+        "- **Graphs.** One item per graph the project may use",
+        "`hidden_count` is the",
+        _answer_keys("graph", "start", "graphs", "[]")
+        | _answer_keys("graph", "start", "graphs", "[]", "counts"),
+        ignore=("graphs", "write", "read", "none", "whoami"),
+    ),
+    doc_set(
+        "cli_graph.md",
+        "The write result has `reconcile`:",
+        "(item keys;",
+        frozenset(_schema_keys(RECONCILE, {})) - {"scopes"}
+        | frozenset(_schema_keys(_RECONCILE_SCOPE, {})),
+    ),
+    doc_set(
+        "files.md",
+        "- `files:File` holds",
+        "A graph module may subclass",
+        frozenset(_class_attributes("files:File")),
+        ignore=("blob", "local_path"),
+    ),
+    doc_set(
+        "files.md",
+        "- `files:from_file` points from any entity to a file, with the qualifiers",
+        "number).",
+        frozenset(_relation_qualifiers("files:from_file")),
+    ),
+    doc_set(
+        "cli_graph.md",
+        "- `get --rev`, the revisions behind",
+        "stored, for example",
+        STEP_NAMES,
+        ignore=("history", "changes", "changed"),
+    ),
+)
+
 # Packages whose every module has a row in the module tables of the internals documents.
 COMPLETE_PACKAGES = (
     "graph_cli.access_control",
@@ -241,12 +371,6 @@ def _extractor_rows(text: str) -> dict[str, list[str]]:
         if before.endswith("| Module | Extractor | Records | Applies to |"):
             return {_spans(row[1])[0]: [_spans(row[0])[0], row[2]] for row in rows}
     raise AssertionError("no extractor table")
-
-
-def _class_attributes(curie: str) -> set[str]:
-    module, name = curie.split(":")
-    document = yaml.safe_load((MODULES / f"{module}.yaml").read_text())
-    return set(document["classes"][name].get("attributes", {}))
 
 
 def _record_problems(name: str, module: str, cell: str) -> list[str]:
@@ -362,6 +486,20 @@ def test_list_names_the_code_set(item: DocSet) -> None:
     assert members == item.values, (sorted(members - item.values), sorted(item.values - members))
 
 
+def test_schema_keys_follow_refs_and_branches() -> None:
+    defs = {"x": {"type": "object", "properties": {"a": {}, "b": {"type": "array", "items": {}}}}}
+    schema = {"oneOf": [{"$ref": "#/$defs/x"}, {"properties": {"c": {}}}]}
+    assert set(_schema_keys(schema, defs)) == {"a", "b", "c"}
+    assert "[]" in _schema_keys(defs["x"]["properties"]["b"], defs)
+    assert {"since", "items"} <= _answer_keys("graph", "changes")
+
+
+@pytest.mark.parametrize("item", FIELDS, ids=lambda s: f"{s.doc}:{s.start[:30]}")
+def test_field_list_names_the_answer_keys(item: DocSet) -> None:
+    names = _names(item, _prose((DOCS / item.doc).read_text()))
+    assert names == item.values, (sorted(names - item.values), sorted(item.values - names))
+
+
 def test_module_tables_name_existing_modules() -> None:
     missing = [
         f"{doc}: {name}"
@@ -396,6 +534,11 @@ def test_access_log_phases_are_the_timed_phases() -> None:
 def test_access_log_keys_are_the_written_keys() -> None:
     documented = _first_column((DOCS / "audit.md").read_text(), "| Key | Content |")
     assert documented == _access_log_keys()
+
+
+def test_workspace_sync_actions() -> None:
+    documented = _first_column((DOCS / "cli_graph_admin.md").read_text(), "| Action | Meaning |")
+    assert documented == _enum("graph-admin", "workspace sync", "graphs", "[]", "action")
 
 
 def test_project_admin_commands() -> None:
