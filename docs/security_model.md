@@ -101,10 +101,11 @@ prevents depends on what is verified:
   written (its decision is the one on a resource no rule names, which no grant allows). The
   decisions are made again under the lock after a policy refresh and in a dry run. The audit event
   of the write names the action (name and hash) and, in every decision, the grant that let the step
-  through; a refusal of an action the caller sees names it too. An action the grant does not name
-  is `action.not_found`. The action's template, preconditions, outputs and refusals are a security
-  boundary for these callers: whoever may publish the graph's actions decides what a granted name
-  writes (see the project admin item). <!-- claim: security_model.catalog_actions -->
+  through; a refusal of an action the caller sees names it too. For a token limited to its catalog,
+  an action the grant does not name is `action.not_found`; a reader with `catalog.actions` keeps
+  its answer for the others. The action's template, preconditions, outputs and refusals are a
+  security boundary for these callers: whoever may publish the graph's actions decides what a
+  granted name writes (see the project admin item). <!-- claim: security_model.catalog_actions -->
 - A caller limited to a catalog cannot list the graph through the one thing it may ask for,
   entities by name, except by trying aliases (the residual below)
   ([References and names](access_control.md#references-and-names-for-a-caller-limited-to-its-catalog)):

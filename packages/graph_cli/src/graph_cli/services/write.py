@@ -70,20 +70,20 @@ whose expansion is empty is authorized by the any-of rule of ``services.action_r
 its derived needs.
 
 Actions through grants (catalog callers plan CA4): an action plan is authorized by the caller's
-own rights first. When they do not allow it and a rule allows ``write.action`` on the action's
-entry resource (``graph:<id>/action:<name>``, which a ``catalog`` grant of the caller does), the
-decisions are made again deny-only: the entry decision, with the context of the request (its
-reason, the op count of the expansion), then every op through ``authorize_entry``, so a rule that
-denies an op (a type limit, a term or agent-type rule, a scope, an obligation) refuses the whole
-action, and no allow rule has to name what the action writes. A type or attribute the caller does
-not see keeps the decision of ``authorize_unlisted_type`` and ``authorize_unlisted_attribute`` (it
-is never asked deny-only): an action never writes what its caller cannot see. The decision runs
-inside ``_authorize``, so it is made again under the lock after the policy refresh and in a dry
-run, and the decisions of the path that allowed (the entry decision, naming the grant, and every
-op decision, naming the same grant) are what the event and the tx record, never the ones of the
-by-hand probes that failed. A refusal of a caller whose grants name the action but whose entry
-decision denies (an obligation of ``write.action``, a deny rule on it) is that denial, not the
-default one of the first op.
+own rights first. When they do not allow it, the caller's grants name the action (a ``catalog``
+grant, ``catalog_grants``, the predicate the listing uses) and a rule allows ``write.action`` on
+the action's entry resource (``graph:<id>/action:<name>``), the decisions are made again
+deny-only: the entry decision, with the context of the request (its reason, the op count of the
+expansion), then every op through ``authorize_entry``, so a rule that denies an op (a type limit,
+a term or agent-type rule, a scope, an obligation) refuses the whole action, and no allow rule has
+to name what the action writes. A type or attribute the caller does not see keeps the decision of
+``authorize_unlisted_type`` and ``authorize_unlisted_attribute`` (it is never asked deny-only): an
+action never writes what its caller cannot see. The decision runs inside ``_authorize``, so it is
+made again under the lock after the policy refresh and in a dry run, and the decisions of the path
+that allowed (the entry decision, naming the grant, and every op decision, naming the same grant)
+are what the event and the tx record, never the ones of the by-hand probes that failed. A refusal
+of a caller whose grants name the action but whose entry decision denies (an obligation of
+``write.action``, a deny rule on it) is that denial, not the default one of the first op.
 
 Refusals (B3.14): ``invalid`` and ``conflict`` go to the graph stream under
 the lock; if that append fails the original error is raised with warning
@@ -532,11 +532,12 @@ class WriteService:
             terms: set[FineTerm] = set()
             derived = action_needs(plan.entry, model)
             through = self._through_action(request, entry, plan.entry.name, ctx, policy)
+            named = plan.entry.name in catalog_grants(request.actor, entry.id, policy).actions
             for need in derived:
                 found = need_decisions(
                     request.actor, entry.id, need, ctx, policy, fine, view.types, keeps=view.keeps
                 )
-                if not found.met and through.effect == "allow":
+                if not found.met and named and through.effect == "allow":
                     found = need_decisions(  # the caller's grant of the action: deny-only
                         request.actor,
                         entry.id,
@@ -673,20 +674,25 @@ class WriteService:
                 for key, d in recorded.items()
             }
             plan = request.plan
-            if plan is not None and any(
-                d.effect == "deny" and d.rule_id == DEFAULT_DENY_RULE for d in answering.values()
+            # the caller's own rights lack an allow for a write of the action (a denial by a rule no
+            # grant could lift stays as it is) and its grants name the action, as the listing
+            # decides it (a rule that allows ``write.action`` some other way is no grant of it)
+            if (
+                plan is not None
+                and any(
+                    d.effect == "deny" and d.rule_id == DEFAULT_DENY_RULE
+                    for d in answering.values()
+                )
+                and plan.entry.name in catalog_grants(request.actor, entry.id, policy).actions
             ):
-                # the caller's own rights lack an allow for a write of the action (a denial by a
-                # rule no grant could lift stays as it is): its grant of the action may carry it
                 through = self._through_action(request, entry, plan.entry.name, ctx, policy)
                 if through.effect == "allow":
                     recorded, answering = self._authorize_through(
                         request, entry, through, ctx, policy, recorded, answering, unlisted, unseen
                     )
-                elif plan.entry.name in catalog_grants(request.actor, entry.id, policy).actions:
-                    # named by the grants but refused on the entry itself (an obligation of
-                    # ``write.action``, a rule on the action): that is the denial, not the first
-                    # op's missing right
+                else:
+                    # refused on the entry itself (an obligation of ``write.action``, a rule on the
+                    # action): that is the denial, not the first op's missing right
                     recorded = {(through.action, through.resource): through}
                     answering = dict(recorded)
                     unlisted = {}
