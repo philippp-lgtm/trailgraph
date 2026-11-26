@@ -557,6 +557,45 @@ def test_a_grant_of_one_action_carries_no_other_action(tmp_path: Path) -> None:
     assert scene.refused(CLOSER, "retire_item", scene.item()).code == "action.not_found"
 
 
+def test_a_rule_that_allows_the_entry_without_naming_the_action_is_no_grant(tmp_path: Path) -> None:
+    """The write service takes the entry path only for an action the caller's grants name, as the
+    listing does: a caller whose rules allow ``write.action`` by a glob (here a hand-made rule on
+    ``graph:<id>*``) and whose grants name no action is decided by its own rights alone."""
+    scene = Scene(tmp_path)
+    document = dict(installation_document(scene.env))
+    document["rules"] = [
+        *document["rules"],  # type: ignore[misc]
+        {
+            "id": "odd.entry_glob",
+            "effect": "allow",
+            "principal": {"entrypoint": "server", "role": "odd"},
+            "action": ["write.action", "read.list", "read.describe", "read.get"],
+            "resource": f"graph:{scene.env.entry.id}*",
+        },
+    ]
+    scene.install(source=Fixed(policy_set(document)))  # type: ignore[arg-type]
+    odd = server_actor("odd")
+    policy = scene.source.current(scene.env.entry.id)
+    entry = f"graph:{scene.env.entry.id}/action:mark_damaged"
+    from graph_cli.access_control.authorize import authorize
+
+    ctx = AuthzContext(op_count=1, has_reason=True, dry_run=False)
+    assert (
+        authorize(odd, "write.action", entry, ctx, policy).effect == "allow"
+    )  # the glob allows it
+    from graph_cli.access_control.effective import catalog_grants
+
+    assert catalog_grants(odd, scene.env.entry.id, policy).actions == ()  # and names nothing
+    since = scene.count()
+    with pytest.raises(GraphCliError) as refused:
+        scene.writer.apply(plan_request(scene, odd, "mark_damaged", item=scene.ids["item"]))
+    assert refused.value.code == "access.denied"
+    assert scene.condition() is None
+    got = decisions(scene.newest(since))
+    assert not any(d[0] == "write.action" for d in got)  # no entry decision: the path was not taken
+    assert ("write.update", "type:inv:Item", "deny", "default.deny") in got
+
+
 # ---- deny rules win ---------------------------------------------------------------------
 
 
@@ -578,6 +617,11 @@ DENY_KINDS: dict[str, tuple[str, str | None, dict[str, str]]] = {
     "installation_deny": (
         "",
         "deny:\n  - {id: no_updates, action: [write.update]}\n",
+        {},
+    ),
+    "deny_write_action": (
+        "",
+        "deny:\n  - {id: no_actions, action: [write.action]}\n",
         {},
     ),
     "scope_read": ("", None, {"project": SCOPES_FROZEN}),
@@ -756,18 +800,16 @@ def test_a_reason_obligation_on_the_writes_is_asked_of_the_action_without_a_reas
     assert done.write.tx_id is not None
     # the reason a caller must give is shown: the manifest's input demands it
     obligations = scene.reader.reason_obligations(CLOSER, scene.env.entry)
-    assert (
-        obligations
-        == {"write.update", "write.action"}
-        | DEFAULT_REASONS
-        | {
-            "write.create",
-            "write.link",
-            "write.unlink",
-            "write.transition",
-        }
-        or {"write.update", "write.action"} <= obligations
-    )
+    assert obligations == {
+        "write.action",
+        "write.alias",
+        "write.create",
+        "write.update",
+        "write.link",
+        "write.unlink",
+        "write.transition",
+        *DEFAULT_REASONS,
+    }
     assert scene.reader.reason_obligations(PLAIN, scene.env.entry) == frozenset()
 
 
@@ -996,7 +1038,7 @@ def test_the_listing_marks_the_action_not_allowed_for_every_kind_of_deny(
     assert str(missing) in {
         "write.update on type:inv:Item",  # a type limit, a rule on the action
         "write.update on type:inv:Item/attr:condition",  # a rule on the term
-        "write.action on action:mark_damaged",  # a scope or an agent rule takes the entry itself
+        "write.action on action:mark_damaged",  # a scope or a rule on the entry takes it itself
     }, (kind, missing)
     assert found["mark_damaged"].denials[0].rule_id != "default.deny"
 
@@ -1079,7 +1121,27 @@ def test_a_policy_applied_while_the_write_waited_decides_the_action(tmp_path: Pa
     event = scene.newest(since)
     assert event["result"]["status"] == "denied"
     assert any(d[2] == "deny" and d[3] != "default.deny" for d in decisions(event))
-    # the other way round: a policy that grants nothing while the write waited refuses it, too
+    # a rule that takes only the entry (``write.action``), applied meanwhile: the by-hand answer
+    # is a default deny, so the under-lock decision goes through the grant and the entry itself
+    # is the denial
+    scene = Scene(tmp_path / "entry")
+    taking = policy_set(
+        installation_document(
+            scene.env, INSTALLATION + "deny:\n  - {id: no_actions, action: [write.action]}\n"
+        )  # type: ignore[arg-type]
+    )
+    swapping = Swapping(scene.policy.current(scene.env.entry.id), taking)
+    scene.install(source=swapping)
+    since = scene.count()
+    refused = scene.refused(CLOSER, "mark_damaged", scene.item())
+    assert swapping.refreshed and refused.code == "access.denied"
+    assert refused.details["action"] == "write.action"
+    assert ("write.action", "action:mark_damaged", "deny", "deny.no_actions") in decisions(
+        scene.newest(since)
+    )
+    assert scene.condition() is None
+    # the other way round: a policy that grants nothing while the write waited: the item is no
+    # entity of a caller who sees no type any more (its read view is decided under the new policy)
     scene = Scene(tmp_path / "revoked")
     nothing = policy_set(
         installation_document(  # type: ignore[arg-type]
@@ -1090,7 +1152,7 @@ def test_a_policy_applied_while_the_write_waited_decides_the_action(tmp_path: Pa
     swapping = Swapping(scene.policy.current(scene.env.entry.id), nothing)
     scene.install(source=swapping)
     refused = scene.refused(CLOSER, "mark_damaged", scene.item())
-    assert swapping.refreshed and refused.code in ("access.denied", "entity.not_found")
+    assert swapping.refreshed and refused.code == "entity.not_found"
     assert scene.condition() is None
 
 

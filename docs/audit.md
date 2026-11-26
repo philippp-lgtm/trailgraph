@@ -86,12 +86,15 @@ entry decision (`write.action` on `graph:<id>/action:<name>`, rule `grant.<n>.ac
 every op, the decision on its type and terms, which names the same rule because it was made
 deny-only on behalf of the entry. They replace the decisions of the by-hand probes that found no
 allow, which are never recorded next to an `ok` event; a write the caller's own rights allow
-records no entry decision, as before. A refusal of an action the caller sees but may not run (a
-deny rule took one of its writes, an obligation of `write.action` was not met) carries
-`request.action` (name and hash) and, when the entry decision allowed, that decision next to the
-denial; an action the caller does not see records only the `args_digest`, as before. A verifier
-from before `write.action` reports it as an unknown action (`unknown_action`), so update
-`graph-admin` before verifying such events.
+records no entry decision, as before. A verifier from before `write.action` reports it as an
+unknown action (`unknown_action`), so update `graph-admin` before verifying such events.
+
+For every caller, the refusal of a `graph do` of an action it sees but may not run (the listing
+calls it not allowed, a deny rule took one of its writes, an obligation of `write.action` was not
+met) carries `request.action` (name and hash), as the refusal of its write always did; for a
+caller whose grants name the action, the entry decision that allowed it is recorded next to the
+denial. An action the caller does not see records nothing (a name outside a catalog caller's
+catalog is `action.not_found`).
 
 A refused read through a [catalog entry](access_control.md#decisions-on-catalog-entries)
 (`run`, `view --name`, `lookup --for`; a `call` of them records what the command it runs records)

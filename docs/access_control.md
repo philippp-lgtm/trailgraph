@@ -1246,15 +1246,16 @@ named by [catalog grants](#catalog-grants)
   count once: `require_reason` and `max_batch` hold on the entry decision and on each op with
   the same context, so an action of two ops under `max_batch: 2` is allowed and under
   `max_batch: 1` is refused with `access.batch_too_large`; without a reason the caller is
-  told `access.reason_required`, naming `write.action`. A type or attribute the caller does not
-  see is never written: its decision is the one on a resource no rule names, which no grant allows (an
-  action that names one is hidden from the listing, and a write service asked anyway answers
-  `access.denied`). References and preconditions resolve over what the caller sees, as for any
-  action. The decisions are made again under the lock, after the policy is refreshed, and in a
-  dry run, which gets the same answer without a record. The audit event names the action
-  (`request.action`) and the grant behind every decision ([Audit](audit.md)), a replay
-  by idempotency key is what it was, and a caller whose rights allow the ops by hand is never
-  decided through the entry.
+  told `access.reason_required`, naming `write.action` when the obligation covers it (`write.*` or
+  `write.action`) and the op's write otherwise. A type or attribute the caller does not
+  see is never written: its decision is the one on a resource no rule names, which no grant
+  allows (an action that names one is hidden from the listing, and a write service asked anyway
+  answers `access.denied`). References and preconditions resolve over what the caller sees, as
+  for any action. The decisions are made again under the lock, after the policy is refreshed, and
+  in a dry run, which gets the same answer without a record. The audit event names the action
+  (`request.action`) and the grant behind every decision ([Audit](audit.md)), a replay by
+  idempotency key is what it was, and a caller whose rights allow the ops by hand, or whose grants
+  do not name the action, is never decided through the entry.
 - **Needs.** What an action needs is derived when its catalog is loaded
   against the graph's pinned ontology, so nothing is republished when the
   ontology or a policy changes. A need on an abstract class or a superclass
@@ -1293,7 +1294,8 @@ named by [catalog grants](#catalog-grants)
 - **Publishing** the catalog is `maint.graph_configure`, as for the functions.
 - **Writes only through actions.** A catalog grant is how a token runs reviewed actions while it
   may not use the primitives: it names the actions one by one, and nothing else of the policy
-  language does (a `writes` list, a type limit or a deny rule never names `write.action`). That
+  language does (a `writes` list and the type, attribute and relation rules never name
+  `write.action`; only a plain deny rule may). That
   makes the action's template, preconditions, outputs and refusals a security boundary for such a
   token: it writes what the template says, so whoever may publish the graph's actions decides
   what a granted name writes ([Security model](security_model.md#prevention)).
