@@ -129,14 +129,16 @@ def withheld_actions(actor: ActorContext, graph: GraphId, policy: PolicySet) -> 
     ``graph_level`` alone cannot show (a denied ``read.history`` leaves the level at
     ``none`` while the graph stays readable). A catalog-only caller was never granted the
     primitives, so a deny rule took nothing of them away: only a denied ``read.list`` or
-    ``read.describe`` (what its grant does allow) is withheld from it."""
+    ``read.describe`` (what its grant does allow) is withheld from it, and, as in a class of
+    the ladder, only while the other one is still allowed."""
     resource = f"graph:{graph}"
     if catalog_grants(actor, graph, policy).catalog_only:
-        return sorted(
+        denied = [
             a
             for a in CATALOG_BASE_ACTIONS
             if authorize(actor, a, resource, _PROBE, policy).effect != "allow"
-        )
+        ]
+        return sorted(denied) if len(denied) < len(CATALOG_BASE_ACTIONS) else []
     ladder = [a for a in level_actions("write") if not a.endswith("*")] + sorted(
         LEVEL_WRITE_ACTIONS
     )

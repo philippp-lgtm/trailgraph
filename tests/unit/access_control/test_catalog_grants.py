@@ -1096,8 +1096,10 @@ def test_a_deny_of_the_reads_leaves_a_catalog_caller_no_level_like_a_reader() ->
     installed = policy(SUPPORT, READER, tail=tail)
     assert graph_level(token("support"), EXAMPLE, installed) == "none"
     assert effective_level(token("support"), EXAMPLE, installed) == "none"
-    # what its grant does allow and a rule denied is withheld; the primitives were never granted
-    assert withheld_actions(token("support"), EXAMPLE, installed) == ["read.describe", "read.list"]
+    # as for a reader in the same position (a class with every action denied withholds nothing),
+    # nothing is withheld: the primitives were never granted and nothing of its grant is left
+    assert withheld_actions(token("support"), EXAMPLE, installed) == []
+    assert withheld_actions(token("reader"), EXAMPLE, installed) == []
     assert graph_level(token("reader"), EXAMPLE, installed) == "none"
     assert catalog_grants(token("support"), EXAMPLE, installed).catalog_only
     # a deny that leaves list and describe alone leaves the level
