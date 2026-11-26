@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from graph_cli.kernel.authz import Decision
@@ -115,6 +115,11 @@ def push(
         _check_unmoved(ws, entry, current, target_pin)
         publishes = _publishing(ws, current)
         planned = _plan_release(ctx, session, ws, current, publishes, dry_run=dry_run)
+        if planned is not None and auth.decisions is not None:  # renames the lock sees (W.6)
+            decisions = release.decide_under_the_lock(
+                ctx, planned, auth.decisions, auth.meta, reason=reason
+            )
+            auth = replace(auth, decisions=decisions)
         locked = Locked.of(ctx, entry, ws, current, publishes, planned, target_pin)
         catalogs = _check_catalogs(locked)
         checked = _check_skill(locked, catalogs, inventory=inventory)

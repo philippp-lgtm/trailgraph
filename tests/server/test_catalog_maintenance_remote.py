@@ -17,6 +17,8 @@ from support.moved_supplier import BARE_FUNCTION, INVENTORY, moved_source, write
 from support.policies import write_policy
 from support.server import call
 
+from graph_cli_admin.services_admin import release as release_service
+
 pytestmark = pytest.mark.slow
 
 POLICY = """\
@@ -406,3 +408,77 @@ def test_a_project_admin_cannot_make_a_release_that_compiles_a_granted_entry_aga
         ["own_agent"],
         ["other_agent"],
     ]
+
+
+@pytest.fixture
+def stale_precheck(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The check before the lock saw a pin the lock no longer holds: another release came in
+    between, and the renames of the target (``renamed_from`` against that release) only show
+    under the lock. ``wants_migration`` answers what it answered then: no migration."""
+    monkeypatch.setattr(release_service, "wants_migration", lambda *args, **kwargs: False)
+
+
+def release_scene(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> tuple[Any, str, str, Path]:
+    init(run_cli, isolated_env)
+    created = admin(
+        run_cli, "graph", "create", "example_graph", "--ontology", str(INVENTORY / "1.1.0")
+    )
+    assert created.code == 0, created.envelope
+    functions = write_folder(tmp_path, "functions", {"suppliers_by_name": BARE_FUNCTION})
+    assert (
+        admin(run_cli, "graph", "functions", "publish", "example_graph", str(functions)).code == 0
+    )
+    path = write_policy(tmp_path / "policies", "installation.yaml", RELEASE_PROJECT_POLICY)
+    assert admin(run_cli, "policy", "apply", str(path), "--reason", "release").code == 0
+    pa = admin(run_cli, "token", "create", "pa", "--scope", "admin", "--project", "p1")
+    root = admin(run_cli, "token", "create", "root", "--scope", "admin")
+    app = served({"env": isolated_env}, tmp_path)
+    return app, pa.data["token"], root.data["token"], moved_source(tmp_path)
+
+
+def test_renames_the_lock_sees_are_decided_again_for_a_project_admin(
+    run_cli: CliRunner,
+    isolated_env: dict[str, str],
+    tmp_path: Path,
+    stale_precheck: None,
+) -> None:
+    """The race of the pre-lock check: a project admin's release (and its dry run, and a push
+    that carries it) whose renames appear only under the lock is refused for ``maint.migrate``
+    before any write, as when the check had seen them; a maintainer's goes through."""
+    app, pa, root, source = release_scene(run_cli, isolated_env, tmp_path)
+    before = admin(run_cli, "graph", "show", "example_graph").data["ontology"]["version"]
+    slot = admin(run_cli, "graph", "functions", "show", "example_graph").data["slot"]
+
+    def release(token: str, **more: Any) -> Any:
+        args = {
+            "graph": "example_graph",
+            "source": upload_tree(app, token, source),
+            "--module": "inventory",
+            **more,
+        }
+        return command(app, "ontology/release", token, args=args)
+
+    for more in ({"--dry-run": True}, {}):
+        refused = release(pa, **more)
+        assert refused.status == 403, (more, refused.json)
+        assert "maint.migrate" in refused.error["message"]
+    workspace = tmp_path / "workspace"
+    assert admin(run_cli, "graph", "pull", "example_graph", str(workspace)).code == 0
+    moved_source(workspace / "ontology", "2.0.0")
+    pushed = command(
+        app,
+        "graph/push",
+        pa,
+        args={"ref": "example_graph", "dir": upload_tree(app, pa, workspace), "--dry-run": True},
+    )
+    assert pushed.status == 403 and "maint.migrate" in pushed.error["message"], pushed.json
+    # nothing was written: the pin and the published functions are as they were
+    assert admin(run_cli, "graph", "show", "example_graph").data["ontology"]["version"] == before
+    assert admin(run_cli, "graph", "functions", "show", "example_graph").data["slot"] == slot
+    # a maintainer holds the right: the release goes through and compiles the catalog again
+    done = release(root)
+    assert done.status == 200, done.json
+    assert codes(done) == ["catalog.granted_entry_changed"]
+    assert done.json["data"]["pinned"] is True

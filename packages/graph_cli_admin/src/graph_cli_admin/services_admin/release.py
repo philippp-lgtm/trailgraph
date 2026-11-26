@@ -169,6 +169,9 @@ class Planned:
     functions: Republish | None = None  # the function catalog compiled again for the release
     actions: Republish | None = None  # the action catalog compiled again for the release
     views: Republish | None = None  # the view catalog compiled again for the release
+    # the release carries a migration file or renames against the pin the lock holds: the
+    # rights of ``maint.migrate`` and the catalogs' ``maint.graph_configure`` belong to it
+    needs_migrate: bool = False
 
     @property
     def unchanged(self) -> bool:
@@ -227,6 +230,34 @@ def wants_migration(
     return migrations.has_renames(renames)
 
 
+def decide_under_the_lock(
+    ctx: AdminContext,
+    planned: Planned,
+    decisions: Decisions,
+    meta: RequestMeta,
+    *,
+    reason: str | None = None,
+) -> Decisions:
+    """The decisions of a release whose plan, made under the lock, needs rights the check before
+    the lock did not make. ``wants_migration`` compares with the pin read before the lock; when
+    another release came in between, the renames are those of the pin the lock holds, and a
+    release that compiles the catalogs again (or migrates) is decided for ``maint.migrate`` and
+    ``maint.graph_configure`` now: a project admin has no such right (``access.ceiling``), so
+    the release is refused before any write, a dry run included."""
+    if not planned.needs_migrate or planned.old is None:
+        return decisions
+    resource = f"graph:{planned.manifest.entry.id}"
+    entry_id = planned.manifest.entry.id
+    migrate, configure = decisions.migrate, decisions.configure
+    if not migrate:
+        pairs = [("maint.migrate", resource)]
+        migrate = ctx.authorize(pairs, request=meta, graph=entry_id, reason=reason)
+    if not configure:
+        pairs = [("maint.graph_configure", resource)]
+        configure = ctx.authorize(pairs, request=meta, graph=entry_id, reason=reason)
+    return replace(decisions, migrate=migrate, configure=configure)
+
+
 def release(
     ctx: AdminContext,
     *,
@@ -255,6 +286,7 @@ def release(
     )
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
         planned = plan(ctx, session, compiled, migration=migration, dry_run=dry_run)
+        decisions = decide_under_the_lock(ctx, planned, decisions, meta, reason=reason)
         if planned.unchanged or dry_run:
             return Released(planned.manifest.entry, planned.data, planned.seq, planned.warnings)
         pinned = write(ctx, session, planned, decisions, meta, reason=reason)
@@ -492,6 +524,7 @@ def plan(
         followed_functions.republish,
         followed_actions.republish,
         followed_views.republish,
+        file is not None or migrations.has_renames(renames),
     )
 
 
