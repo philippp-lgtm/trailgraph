@@ -103,13 +103,18 @@ class ReadFinding(ReadCatalogs):
         text and the limit, an exact match, the first page, active records, no ``--type``,
         ``--lang`` or accent folding. Any other shape (a relation, ``--for-source``, a prefix, an
         offset, ``--include-inactive``) has no entry: it is the plain ``read.find`` question and a
-        caller that lacks the right is refused. Decides nothing about the caller. An unqualified
+        caller that lacks the right is refused. It decides no right: ``open`` does. An unqualified
         name is the action when the caller may run an action of that name, else a function (the
         order ``_slots`` looks in), so that a name no entry answers to is one error for every
-        caller."""
+        caller. Only for a caller limited to its catalog (``catalog_scope``), the one
+        ``lookup_served`` serves through entries, and for a graph it may list (an unreadable
+        catalog of a graph it cannot see is no reason to answer before ``graph.not_found``);
+        for everyone else the lookup is the plain ``read.find`` question."""
         parsed = None if for_use is None else split_slot(for_use)
         if parsed is None or for_source is not None or not _narrow_shape(spec):
             return None
+        if self.catalog_scope(actor, entry) is None or not self.visible(actor, entry):
+            return None  # only a caller limited to its catalog works through an entry here
         qualifier, name, _ = parsed
         if qualifier is None:
             actions = self.actions(actor, entry) or ()

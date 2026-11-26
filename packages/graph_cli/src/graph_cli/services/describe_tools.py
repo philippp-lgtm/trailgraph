@@ -135,6 +135,9 @@ class ToolHead:
     columns: tuple[ToolColumn, ...] = ()
     sections: tuple[ToolSection, ...] = ()
     entity: bool = False
+    # the caller may not find entities: its references are ids and aliases (``tool_errors`` leaves
+    # out the codes of the forms it is never answered)
+    exact_ids: bool = False
 
 
 def enum_values(

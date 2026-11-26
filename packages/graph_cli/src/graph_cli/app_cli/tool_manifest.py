@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import difflib
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Final
 
 from graph_cli.app_cli.column_schemas import column_schema
@@ -158,12 +158,28 @@ def lookup_output() -> JsonObject:
     return standalone(LOOKUP_PAGE_OUTPUT)
 
 
-def tool_errors(kind: str) -> tuple[str, ...]:
-    """The codes a tool of ``kind`` may return, sorted."""
+# What a caller limited to its catalog is never answered: a suffix is not matched (no ambiguous
+# reference) and a reference of another class is no entity (no wrong class, no class mismatch).
+NOT_FOR_EXACT_IDS: Final = frozenset(
+    {
+        "entity.ambiguous_ref",
+        "function.parameter_type",
+        "action.parameter_type",
+        "view.parameter_type",
+        "view.class_mismatch",
+    }
+)
+
+
+def tool_errors(kind: str, *, exact_ids: bool = False) -> tuple[str, ...]:
+    """The codes a tool of ``kind`` may return, sorted; ``exact_ids``: for a caller limited to its
+    catalog, which is never answered the codes of ``NOT_FOR_EXACT_IDS``."""
     command = {FUNCTION: RUN_ERRORS, ACTION: DO_ERRORS, VIEW: VIEW_ERRORS, LOOKUP: LOOKUP_ERRORS}[
         kind
     ]
     codes = {*command, *CALL_ERRORS, *TRANSPORT_ERRORS} - NOT_FOR_TOOLS
+    if exact_ids:
+        codes -= NOT_FOR_EXACT_IDS
     if kind == LOOKUP:
         # a call of the tool names its input as an object, which the command's options do not
         codes = (codes - NOT_FOR_LOOKUP) | {"usage.missing_argument"}
@@ -212,7 +228,7 @@ def tool_json(head: ToolHead, model: CompiledModel) -> JsonObject:
         "module": head.module,
         "hash": hash_value(built),
         "entry_hash": head.entry_hash,
-        "errors": list(tool_errors(head.kind)),
+        "errors": list(tool_errors(head.kind, exact_ids=head.exact_ids)),
     }
 
 
@@ -292,7 +308,7 @@ def heads(
         ),
     )
     describe_tools.unique_names(found)
-    return found
+    return tuple(replace(h, exact_ids=True) for h in found) if exact_ids else found
 
 
 def classified(

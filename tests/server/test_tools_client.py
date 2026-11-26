@@ -356,11 +356,9 @@ def test_a_caller_limited_to_its_catalog_finds_names_only_through_the_narrow_loo
     )
     assert wrong_view.code == "entity.not_found"
     # a trailing hex is no reference: the schema forbids it and the server refuses it
-    suffix = str(members.data["items"][0]["person"])  # any text of hex digits will do
     hexed = client.call("run_members_of_unit", {"unit": "0123abcd"}, valid=False)
     assert hexed.code == "function.parameter_invalid"
     assert "candidates" not in hexed.details and "matches" not in hexed.reply.error["message"]
-    assert suffix
 
 
 @pytest.mark.doc_claim("security_model.catalog_no_enumeration")

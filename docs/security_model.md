@@ -88,9 +88,9 @@ prevents depends on what is verified:
   rule: only through server tokens (the grant needs `entrypoint: server`, since a local agent with
   a shell reads the files). What an entry needs is decided deny-only: an explicit deny rule, a
   scope, a type limit or a ceiling still refuses it, and the audit of a refusal names the entry,
-  and the grant when the entry decision allowed it, next to the rule that denied. An entry outside the grant is `not_found`, as for a name
-  never published. Whoever may publish the graph's catalog decides what a granted name reads
-  (see the project admin item). <!-- claim: security_model.catalog_grants -->
+  and the grant when the entry decision allowed it, next to the rule that denied. An entry
+  outside the grant is `not_found`, as for a name never published. Whoever may publish the
+  graph's catalog decides what a granted name reads (see the project admin item). <!-- claim: security_model.catalog_grants -->
 - An action a catalog grant names writes through the grant ([Actions](access_control.md#actions)):
   `graph do` of it is decided by the token's own rights first and, where they lack an allow, by the
   entry, `write.action` on the action's resource and then every op of its expansion deny-only. A
@@ -106,14 +106,16 @@ prevents depends on what is verified:
   boundary for these callers: whoever may publish the graph's actions decides what a granted name
   writes (see the project admin item). <!-- claim: security_model.catalog_actions -->
 - A caller limited to a catalog cannot list the graph through the one thing it may ask for,
-  entities by name ([References and names](access_control.md#references-and-names-for-a-caller-limited-to-its-catalog)):
-  a `ref` parameter takes a full id or an alias and never the trailing hex digits of an id (so no answer
-  lists the ids that share a suffix), an id of another class or of a type it does not see is
-  `entity.not_found` like an id that does not exist (no class, no id), and its `lookup` is the exact match of a
-  name for the parameter of an entry it may use: first page, active records, candidates of that
-  parameter's class among the types it sees, no count of other classes, no prefix, no paging, with
-  `read.find` asked deny-only. A plain lookup, `search` and `find` stay refused, and so does every lookup that
-  is not of that shape. <!-- claim: security_model.catalog_no_enumeration -->
+  entities by name, except by trying aliases (the residual below)
+  ([References and names](access_control.md#references-and-names-for-a-caller-limited-to-its-catalog)):
+  a `ref` parameter takes a full id or an alias and never the trailing hex digits of an id (so no
+  answer lists the ids that share a suffix), an id of another class or of a type it does not see
+  is `entity.not_found` like an id that does not exist (no class, no id), and its `lookup` is the
+  exact match of a name for the parameter of an entry it may use: first page, active records,
+  candidates of that parameter's class among the types it sees, no count of other classes, no
+  prefix, no paging, with `read.find` asked deny-only. A plain lookup, `search` and `find` stay
+  refused, and so does every lookup that is not of that shape.
+  <!-- claim: security_model.catalog_no_enumeration -->
 - Write allow lists ([Write allow lists](access_control.md#write-allow-lists))
   narrow what a subject may write to the attributes and relations its grant
   names. They hold like any rule: only through server tokens, where the
@@ -203,11 +205,12 @@ download, a function, an action, the generated skill or `whoami`; a function or 
 grant names runs over the same limited snapshot and model, so it too returns visible entities only.
 <!-- claim: security_model.type_limits_complete --> The tool manifest
 ([Tools for agent harnesses](cli_graph.md#tools-for-agent-harnesses)) is rendered the same way: it lists only
-the functions, actions and views the caller may use (and the `lookup` tool only when the caller is served one: it may
-find entities, or its catalog grant names an entry with a reference input and nothing denies `read.find`), and its schemas hold the enum values, classes and entity
-attributes of the model the caller sees, so a hidden type, attribute or marking never reaches it, and an entry the caller sees
-but may not use is absent. <!-- claim: security_model.tool_manifest_per_caller --> A call of a
-tool (`graph call`) is no way around that: it finds the tool among the entries the caller sees (one it
+the functions, actions and views the caller may use (and the `lookup` tool only when the caller is
+served one: it may find entities, or its catalog grant names an entry with a reference input and
+nothing denies `read.find`), and its schemas hold the enum values, classes and entity attributes of
+the model the caller sees, so a hidden type, attribute or marking never reaches it, and an entry
+the caller sees but may not use is absent. <!-- claim: security_model.tool_manifest_per_caller -->
+A call of a tool (`graph call`) is no way around that: it finds the tool among the entries the caller sees (one it
 does not see is `tool.not_found`, one it may not use is `access.denied`, recorded) and runs the service
 of the command behind it, so who may do it, what is refused and what the audit records are the
 command's. <!-- claim: security_model.tool_call_is_the_command --> What is left
@@ -243,9 +246,10 @@ are accepted and known:
   view that names anything the caller cannot see is not found at all, so a view definition never
   shows a hidden term ([Views](access_control.md#views)). A view a catalog grant names needs none
   of these as rights of the caller (they are asked deny-only), which adds one accepted
-  point: `graph view REF` answers with the default view where the entity's class has a granted default
-  view and with the one refusal of the card otherwise (the entity of a granted entity view that is of
-  another class is `entity.not_found`, like an unknown id). <!-- claim: security_model.view_is_read_get -->
+  point: `graph view REF` answers with the default view where the entity's class has a granted
+  default view and with the one refusal of the card otherwise (the entity of a granted entity view
+  that is of another class is `entity.not_found`, like an unknown id).
+  <!-- claim: security_model.view_is_read_get -->
 - **A function, action or view the caller may not use is named.** One that names only what the
   caller sees but needs a right it lacks is listed as not allowed, with its name, summary, `use_when`,
   parameters and the right that is missing; the maintainer's query, operations, conditions, sections
@@ -267,12 +271,16 @@ are accepted and known:
   that could not read those entities by hand (of types it sees). They are not filtered, because an
   agent needs them to correct a call; an action's `require` conditions are written with that in
   mind. <!-- claim: security_model.catalog_action_residual -->
-- **A catalog caller's lookup shows facts and confirms aliases.** The candidates of its narrow
-  lookup carry `facts` when a name has several, the labels of the neighbours that tell the homonyms
-  apart, so it learns the names of the neighbours of the entities it finds by name; and an alias it
-  tries is accepted or `entity.not_found`, so the aliases of the parameter's class (which are
-  sequential) can be probed one at a time. Neither lists anything it could not already name, and every
-  candidate and neighbour is of a type it sees. <!-- claim: security_model.catalog_lookup_residual -->
+- **A catalog caller can walk aliases and sees facts.** An alias it tries is accepted or
+  `entity.not_found`, and aliases are minted in sequence (`DEPT-0001`, `DEPT-0002`, ...), so it can
+  walk the aliases of the class of a reference parameter of any entry it may use (a `many`
+  parameter takes a list per call) and read through the entry what the entry returns for each
+  entity; this lists the entities of that class it sees, bounded by the types of its `reads`, and
+  allowed reads are not audited, so a walk leaves no trace. Narrowing it is a later decision (an
+  audited refusal, a rate limit, a grant that refuses aliases). The candidates of its narrow
+  lookup also carry `facts` when a name has several, the labels of the neighbours that tell the
+  homonyms apart, so it learns the names of the neighbours of the entities it finds by name, all
+  of a type it sees. <!-- claim: security_model.catalog_lookup_residual -->
 - **Activity shows, data does not.** The envelope's `seq` counts every
   transaction of the graph, hidden ones included. A revision whose only change
   was an edge to a hidden entity appears in `history` with an empty `changed`.

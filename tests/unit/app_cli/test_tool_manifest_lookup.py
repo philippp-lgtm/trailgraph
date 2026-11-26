@@ -523,3 +523,29 @@ def test_the_hash_of_a_catalog_callers_tool_is_the_hash_in_its_manifest() -> Non
     # the exactness is part of what a harness builds its tool from
     (loose,) = tm.heads(*scene_args(scene), only="run_members_of_unit", refs=refs)
     assert tm.tool_hash(loose, scene.model) != document["run_members_of_unit"]["hash"]
+
+
+NEVER_TO_A_CATALOG_CALLER = {
+    "entity.ambiguous_ref",
+    "function.parameter_type",
+    "action.parameter_type",
+    "view.parameter_type",
+    "view.class_mismatch",
+}
+
+
+def test_the_error_lists_of_a_catalog_caller_leave_out_the_codes_it_is_never_answered() -> None:
+    narrow = catalog_manifest()
+    for tool in narrow["tools"]:
+        assert not NEVER_TO_A_CATALOG_CALLER & set(tool["errors"]), tool["name"]
+        assert "entity.not_found" in tool["errors"] or tool["kind"] == "lookup", tool["name"]
+    assert not NEVER_TO_A_CATALOG_CALLER & set(narrow["errors"])
+    # everyone else still gets them
+    plain = manifest(COMPANY.scene())
+    listed = {c for t in plain["tools"] for c in t["errors"]}
+    assert listed >= NEVER_TO_A_CATALOG_CALLER
+    # and the lists differ per caller
+    assert (
+        by_name(narrow)["run_members_of_unit"]["errors"]
+        != by_name(plain)["run_members_of_unit"]["errors"]
+    )

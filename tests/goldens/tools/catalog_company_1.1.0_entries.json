@@ -9,7 +9,7 @@
     "version": "1.1.0"
   },
   "tools_format": 1,
-  "version": "sha256:9611f4b242e039f9502c49d2e3088cb986d689e105a64c0bb37db70b25c8ea4c",
+  "version": "sha256:0df62f0360357ecf8c314a1a057498e447a0feaa6a6c044acfe78ee24ec08846",
   "tools": [
     {
       "name": "run_members_of_unit",
@@ -178,11 +178,9 @@
         "access.denied",
         "config.forbidden_key",
         "config.invalid",
-        "entity.ambiguous_ref",
         "entity.not_found",
         "function.parameter_invalid",
         "function.parameter_missing",
-        "function.parameter_type",
         "function.parameter_unknown",
         "function.stale",
         "graph.not_found",
@@ -1164,7 +1162,6 @@
         "access.denied",
         "config.forbidden_key",
         "config.invalid",
-        "entity.ambiguous_ref",
         "entity.not_found",
         "graph.not_found",
         "graph.not_in_project",
@@ -1176,12 +1173,10 @@
         "usage.invalid_argument",
         "usage.invalid_input",
         "usage.missing_argument",
-        "view.class_mismatch",
         "view.cursor_invalid",
         "view.cursor_stale",
         "view.parameter_invalid",
         "view.parameter_missing",
-        "view.parameter_type",
         "view.parameter_unknown",
         "view.stale"
       ]
@@ -1552,12 +1547,6 @@
       "summary": "The configuration is invalid.",
       "on_error": "stop"
     },
-    "entity.ambiguous_ref": {
-      "category": "refused",
-      "retryable": false,
-      "summary": "The reference matches several entities.",
-      "on_error": "fix_input"
-    },
     "entity.not_found": {
       "category": "not_found",
       "retryable": false,
@@ -1574,12 +1563,6 @@
       "category": "usage",
       "retryable": false,
       "summary": "A function parameter has no value.",
-      "on_error": "fix_input"
-    },
-    "function.parameter_type": {
-      "category": "refused",
-      "retryable": false,
-      "summary": "A reference parameter names an entity of the wrong class.",
       "on_error": "fix_input"
     },
     "function.parameter_unknown": {
@@ -1666,12 +1649,6 @@
       "summary": "A required argument is missing.",
       "on_error": "fix_input"
     },
-    "view.class_mismatch": {
-      "category": "refused",
-      "retryable": false,
-      "summary": "The entity is not of the class the view takes.",
-      "on_error": "fix_input"
-    },
     "view.cursor_invalid": {
       "category": "usage",
       "retryable": false,
@@ -1694,12 +1671,6 @@
       "category": "usage",
       "retryable": false,
       "summary": "A view parameter has no value.",
-      "on_error": "fix_input"
-    },
-    "view.parameter_type": {
-      "category": "refused",
-      "retryable": false,
-      "summary": "A reference parameter names an entity of the wrong class.",
       "on_error": "fix_input"
     },
     "view.parameter_unknown": {
