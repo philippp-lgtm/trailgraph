@@ -220,3 +220,20 @@ def test_relations_carry_their_query_pattern() -> None:
     text = skill(compiled_model("inventory"))
     assert "- `inv:located_in` `(:Item)-[:located_in]->(:Location)` (out 1..1): Where" in text
     assert "As patterns for `graph query`" not in text
+
+
+def test_a_reader_limited_to_its_catalog_gets_one_line_saying_so() -> None:
+    model = compiled_model("company", "1.1.0")
+    files, problems = read_tree(BLOCKS)
+    assert problems == []
+    documents, graph = render_inputs(model, functions=function_catalog())
+    plain, _ = render_checked(files, documents, graph, name=GRAPH_SKILL_NAME)
+    limited, _ = render_checked(
+        files, {**documents, "catalog_only": True}, graph, name=GRAPH_SKILL_NAME
+    )
+    assert plain is not None and limited is not None
+    before, after = plain[SKILL_FILE].decode(), limited[SKILL_FILE].decode()
+    assert "works through named entries only" not in before
+    extra = [line for line in after.splitlines() if line not in before.splitlines()]
+    assert len(extra) == 1 and "works through named entries only" in extra[0]
+    assert "`graph describe tools --graph" in extra[0]

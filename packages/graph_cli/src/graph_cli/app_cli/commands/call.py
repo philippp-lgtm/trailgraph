@@ -67,7 +67,7 @@ from graph_cli.kinetic.view_format import PAGE_BYTES_MAX
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.lookup import MAX_LOOKUP_TEXTS, LookupSpec
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT, split_assignment
-from graph_cli.services.catalog_access import Classified, allowed_entries
+from graph_cli.services.catalog_access import Classified, EntryPath, allowed_entries
 from graph_cli.services.describe_tools import (
     ACTION,
     CURSOR,
@@ -417,7 +417,16 @@ def _run(
     offset = _integer(controls, OFFSET, 0, 0, MAX_SAFE_INT)
     asked = _digestible(params)
     args: dict[str, JsonValue] = {"name": name, "input": asked, "limit": limit, "offset": offset}
-    view = open_graph(state, graph, "read.function", "run", args, None, via=VIA_CALL)
+    view = open_graph(
+        state,
+        graph,
+        "read.function",
+        "run",
+        args,
+        None,
+        via=VIA_CALL,
+        through=EntryPath("function", (name,)),
+    )
     data, page, warnings = context(state).reader.run(view, name, params, limit=limit, offset=offset)
     state.warnings += warnings
     columns, items = data["columns"], data["items"]
@@ -490,7 +499,16 @@ def _view(
     args: dict[str, JsonValue] = {"name": name, "param": sorted(params)}
     if ref is not None:
         args["ref"] = ref
-    reading = open_graph(state, graph, "read.get", "view", args, None, via=VIA_CALL)
+    reading = open_graph(
+        state,
+        graph,
+        "read.get",
+        "view",
+        args,
+        None,
+        via=VIA_CALL,
+        through=EntryPath("view", (name,)),
+    )
     try:
         data, warnings = context(state).reader.view(
             reading,

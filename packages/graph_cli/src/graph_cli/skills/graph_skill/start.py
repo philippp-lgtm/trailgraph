@@ -10,7 +10,9 @@
   consent rule: ask the user before ``retract``, and before a ``transition`` into a terminal
   state when some lifecycle has terminal states; for a model with ``files:File``, one line on
   the file workflow; for a graph with published views a clause on the ``graph view`` rule that
-  names ``graph describe views``.
+  names ``graph describe views``; for a token that works through the entries its grants name
+  (``catalog_only`` in the model documents) one line saying so and that the primitives are not
+  for it.
 
 The compiled view catalog (``graph_cli.view_catalog/1``, the key ``views``) is one more input
 document, present only when the graph has views the reader may see. Only its presence shows: one
@@ -62,6 +64,16 @@ def render_start(doc: Model) -> list[str]:
         "",
         "Working with `graph`:",
         "",
+        *(
+            [
+                "- This token works through named entries only: run the functions and views that"
+                f" `graph describe tools --graph {name}` lists for it (`graph run`, `graph view"
+                " --name`). The primitives (`get`, `find`, `search`, `neighbors`, `query`, the"
+                " card of `graph view <id>`) are not for it: do not try them."
+            ]
+            if doc.catalog_only
+            else []
+        ),
         "- Run each call as a plain command that starts with `graph` and passes `--json`"
         + (
             " (the module views of `graph describe module` read better as text)"

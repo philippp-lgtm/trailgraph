@@ -77,6 +77,17 @@ prevents depends on what is verified:
   assign any, and a project admin is kept from it by its ceiling. A role
   change counts from the next request, as a revoke does, and every change is
   audited ([Audit](audit.md#token-verification)). <!-- claim: security_model.roles_verified -->
+- Catalog grants ([Catalog grants](access_control.md#catalog-grants)) limit a server
+  token to the published functions and views its grant names (actions follow with the writes
+  through entries): it runs them with the entry's own rights, over its own read view, so a
+  function or view reads what the token could not `get` or `find` by hand, while every primitive,
+  the card and every entry the grant does not name stay refused or unknown. They hold like any
+  rule: only through server tokens (the grant needs `entrypoint: server`, since a local agent with
+  a shell reads the files). What an entry needs is decided deny-only: an explicit deny rule, a
+  scope, a type limit or a ceiling still refuses it, and the audit of a refusal names the entry
+  grant next to the rule that denied. An entry outside the grant is `not_found`, as for a name
+  never published. Whoever may publish the graph's catalog decides what a granted name reads
+  (see the project admin item). <!-- claim: security_model.catalog_grants -->
 - Write allow lists ([Write allow lists](access_control.md#write-allow-lists))
   narrow what a subject may write to the attributes and relations its grant
   names. They hold like any rule: only through server tokens, where the
@@ -162,7 +173,9 @@ A limited caller is answered as if the hidden types did not exist
 ([What a caller can see](access_control.md#what-a-caller-can-see)). The
 protection is complete for data: no entity, id, alias, label, value, edge,
 count or term of a hidden type reaches it through a read command, a file
-download, a function, an action, the generated skill or `whoami`. <!-- claim: security_model.type_limits_complete --> The tool manifest
+download, a function, an action, the generated skill or `whoami`; a function or view a catalog
+grant names runs over the same limited snapshot and model, so it too returns visible entities only.
+<!-- claim: security_model.type_limits_complete --> The tool manifest
 ([Tools for agent harnesses](cli_graph.md#tools-for-agent-harnesses)) is rendered the same way: it lists only
 the functions, actions and views the caller may use (and the `lookup` tool only when it may find entities), and its schemas hold the enum values, classes and entity
 attributes of the model the caller sees, so a hidden type, attribute or marking never reaches it, and an entry the caller sees
@@ -201,7 +214,12 @@ are accepted and known:
   the caller cannot see stay out of the card like out of every read.
   Published views follow the same rule with two additions: a set view also needs `read.find`, and a
   view that names anything the caller cannot see is not found at all, so a view definition never
-  shows a hidden term ([Views](access_control.md#views)). <!-- claim: security_model.view_is_read_get -->
+  shows a hidden term ([Views](access_control.md#views)). A view a catalog grant names needs none
+  of these as rights of the caller (they are asked deny-only), which adds two accepted
+  points: its entity view answers `view.class_mismatch` with the class of an entity id the caller
+  gives, when the class is one it sees (an entity of a hidden class is `entity.not_found`), and
+  `graph view REF` answers with the default view where the entity's class has a granted default
+  view and with the one refusal of the card otherwise. <!-- claim: security_model.view_is_read_get -->
 - **A function, action or view the caller may not use is named.** One that names only what the
   caller sees but needs a right it lacks is listed as not allowed, with its name, summary, `use_when`,
   parameters and the right that is missing; the maintainer's query, operations, conditions, sections

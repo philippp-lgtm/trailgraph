@@ -3,14 +3,17 @@ opening the graph for a command and the parameters several commands take."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Final
 
 from graph_cli.app_cli.commands.common import GRAPH_ERRORS, context
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import ParamSpec
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.query_ast import AsOf
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.services.catalog_access import EntryPath
 from graph_cli.services.read import GraphRead
 from graph_cli.temporal_knowledge.as_of import as_of_text, parse_as_of
 
@@ -31,13 +34,18 @@ def open_graph(
     args: dict[str, JsonValue],
     as_of: AsOf | None,
     via: str | None = None,
+    through: EntryPath | Callable[[GraphEntry], EntryPath | None] | None = None,
 ) -> GraphRead:
+    """The graph opened for ``command``. ``through`` names the catalog entries it works through
+    (or tells them from the graph once it is selected): a caller whose rights on the graph do
+    not allow ``action`` may still be allowed through an entry its grants name."""
     ctx = context(state)
     entry = ctx.select(graph)
     if as_of is not None:
         args = {**args, "as_of": as_of_text(as_of)}
     request = RequestMeta.of(command, {"graph": entry.name, **args}, via=via)
-    view = ctx.reader.open(ctx.actor, entry, action, request, as_of=as_of)
+    path = through(entry) if callable(through) else through
+    view = ctx.reader.open(ctx.actor, entry, action, request, as_of=as_of, through=path)
     state.warnings += view.warnings
     return view
 

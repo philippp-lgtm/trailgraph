@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from graph_cli.access_control.authorize import authorize
+from collections.abc import Sequence
+
+from graph_cli.access_control.authorize import authorize, authorize_entry
 from graph_cli.access_control.effective import CatalogGrants
 from graph_cli.audit import events
 from graph_cli.kernel.actor import ActorContext
@@ -14,6 +16,7 @@ from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.read_view import ReadView
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli.services.catalog_access import EntryRef
 from graph_cli.services.read.state import ReadState
 from graph_cli.services.visibility import VisibleSnapshot
 
@@ -94,6 +97,30 @@ class ReadAccess(ReadState):
         with self.timings.phase("authorize"):
             return self._catalog_filter.scope(actor, entry.id, self._policy.current(entry.id))
 
+    def entry_decisions(
+        self,
+        actor: ActorContext,
+        entry: GraphEntry,
+        ref: EntryRef,
+        needs: Sequence[str],
+    ) -> tuple[Decision, tuple[Decision, ...]]:
+        """What the policy decides for ``actor`` using the catalog entry ``ref`` of the graph, a
+        probe (nothing is recorded): the entry decision (``authorize`` on the entry resource with
+        the action of its kind) and, when it allows, the decisions that deny what the entry needs
+        (``needs``: actions on the graph, each asked *deny-only* through ``authorize_entry``, so no
+        rule has to allow them again and any rule that denies them still wins). The second item is
+        ``(entry decision,)`` when the entry decision itself denies and empty when the actor may
+        use the entry. Made under one policy, so the deny-only decisions always follow the entry
+        decision."""
+        with self.timings.phase("authorize"):
+            policy = self._policy.current(entry.id)
+            granted = authorize(actor, ref.action, ref.resource(entry.id), VISIBLE, policy)
+            if granted.effect != "allow":
+                return granted, (granted,)
+            graph = f"graph:{entry.id}"
+            asked = (authorize_entry(actor, granted, a, graph, VISIBLE, policy) for a in needs)
+            return granted, tuple(d for d in asked if d.effect != "allow")
+
     def visible_types(self, actor: ActorContext, entry: GraphEntry) -> frozenset[str] | None:
         """The concrete types ``actor`` sees in the graph, ``None`` for no limit (the type
         half of ``read_view``; the model is read only when the graph is type limited)."""
@@ -150,13 +177,18 @@ class ReadAccess(ReadState):
         request: RequestMeta,
         graph: GraphEntry | None,
         error: GraphCliError,
+        before: Sequence[Decision] = (),
     ) -> GraphCliError:
+        """Audit the refusal ``decision`` stands for and return ``error``; ``before`` are the
+        decisions that allowed the steps up to it (the entry decision of a caller that works
+        through a catalog grant), so the event names the grant that let the request get that
+        far."""
         assert decision.code is not None
         event = events.refusal(
             status="denied",
             code=decision.code,
             actor=actor,
-            decisions=[decision],
+            decisions=[*before, decision],
             request=request,
             ts=self._clock.now(),
             event_id=EventId(self._ids.new_id()),

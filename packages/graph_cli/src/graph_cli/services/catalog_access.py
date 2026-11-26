@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import Final
 
 from graph_cli.access_control.effective import CatalogGrants, catalog_grants
+from graph_cli.kernel.actions import ENTRY_KIND_ACTIONS
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import Decision
 from graph_cli.kernel.canonical import JsonValue
@@ -77,14 +78,48 @@ def first_denial(decisions: Iterable[Decision]) -> Decision | None:
 
 
 @dataclass(frozen=True, slots=True)
+class EntryRef:
+    """One published entry of a graph named by kind (``function``, ``action`` or ``view``) and
+    name: what a command that works through a catalog grant asks for."""
+
+    kind: str
+    name: str
+
+    @property
+    def action(self) -> str:
+        """The action that allows this kind of entry (``read.function``, ``read.view``,
+        ``write.action``)."""
+        return ENTRY_KIND_ACTIONS[self.kind]
+
+    def resource(self, graph: GraphId) -> str:
+        return f"graph:{graph}/{self.kind}:{self.name}"
+
+
+@dataclass(frozen=True, slots=True)
+class EntryPath:
+    """The entries a command may work through when the graph's own right is not enough: of one
+    kind, in order of preference (one name for ``run`` and ``view --name``, the granted default
+    views for ``view`` without a name)."""
+
+    kind: str
+    names: tuple[str, ...]
+
+    def refs(self) -> tuple[EntryRef, ...]:
+        return tuple(EntryRef(self.kind, n) for n in self.names)
+
+
+@dataclass(frozen=True, slots=True)
 class Classified[Entry]:
     """A catalog entry the caller sees, with the decisions that deny it (empty: allowed).
 
     The decisions are the probes that failed, kept so a call of the entry can record the
-    denial it stands for; ``missing`` is what a caller is told."""
+    denial it stands for; ``missing`` is what a caller is told. ``granted`` is the entry
+    decision that allowed the caller to use the entry through its catalog grant, when the denials
+    are those of what the entry needs (a refusal records it next to them)."""
 
     entry: Entry
     denials: tuple[Decision, ...] = field(default=())
+    granted: Decision | None = None
 
     @property
     def allowed(self) -> bool:

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Final
 
 from graph_cli.app_cli.commands.common import AS_OF, GRAPH, context
@@ -22,9 +23,12 @@ from graph_cli.cli_kit.output_schemas import ANY, INTEGER, obj, ref
 from graph_cli.cli_kit.runner import CommandState, missing_argument
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.query.plan import split_assignment
+from graph_cli.services.catalog_access import EntryPath
 from graph_cli.services.read import refuse_affordances_with_rev
+from graph_cli.services.view_call import CARD
 
 
 def get(
@@ -86,8 +90,15 @@ def view(
         args["name"] = name
     if pairs:
         args["param"] = sorted({key for key, _ in pairs})
-    reading = open_graph(state, graph, "read.get", "view", args, point)
-    data, warnings = context(state).reader.view(
+    reader = context(state).reader
+    through: EntryPath | Callable[[GraphEntry], EntryPath | None] | None = None
+    if name is not None and name != CARD:
+        through = EntryPath("view", (name,))
+    elif name is None:  # the default view of the entity's class, if the grants name one
+        actor = context(state).actor
+        through = lambda entry: reader.default_views_path(actor, entry)  # noqa: E731
+    reading = open_graph(state, graph, "read.get", "view", args, point, through=through)
+    data, warnings = reader.view(
         reading,
         ref,
         name=name,

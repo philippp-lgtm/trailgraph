@@ -13,6 +13,7 @@ from graph_cli.kernel.read_view import UNLIMITED, ReadView
 from graph_cli.kernel.records import OntologyPin, Revision
 from graph_cli.kinetic.action_entries import ActionEntry
 from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli.services.catalog_access import EntryRef
 from graph_cli.services.names import MappedSnapshot
 from graph_cli.services.visibility import VisibleSnapshot
 
@@ -35,6 +36,9 @@ class GraphRead:
     mapping: MappedSnapshot | None = None
     # what the request says made it (``RequestMeta.via``), for the denial a later step records
     via: str | None = None
+    # The catalog entry the graph was opened through when the caller's own rights on the graph
+    # did not allow the command (``ReadOpen.open``); ``None`` when they did.
+    through: EntryRef | None = None
 
     def envelope_graph(self) -> dict[str, JsonValue]:
         return graph_json(self.entry, self.snapshot.seq)

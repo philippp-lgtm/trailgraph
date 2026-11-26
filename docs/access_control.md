@@ -875,9 +875,12 @@ Every published function, action and view is, for one caller, in one of three st
 - **Allowed.** The caller sees everything the entry names and holds the rights it needs.
 - **Not allowed.** The caller sees everything the entry names but lacks a right. Only such an entry
   is named as unusable, so nothing hidden can leak through it. A catalog caller sees exactly the
-  entries its grants name, classified like any entry by the rights below, which it does not hold
-  on the graph itself: until `run`, `view --name` and `do` decide it through its entry grants,
-  a named entry is not allowed. The rights are `read.function` on the
+  entries its grants name, classified like any entry by the rights below. It holds none of them on
+  the graph itself, so a named function or view is allowed through its entry decision, with what it
+  needs checked deny-only ([Decisions on catalog entries](#decisions-on-catalog-entries)): it is
+  not allowed only when a deny rule takes the entry or one of its needs, and `missing` names that
+  right. A named action is still classified by the write rights it needs, which only `do` by hand
+  would use. The rights are `read.function` on the
   graph (a function, and a view with a `rows` section), `read.get` on the graph (every view),
   `read.find` (a set view) and, for an action,
   per unmet need the first denied write decision: the write action on the type, or on the attribute
@@ -898,7 +901,7 @@ What each command does with a not-allowed entry:
 | `describe modules`, `describe module M` | counts of the allowed entries per kind (`functions`, `actions`, `views`) and, per kind, the number not allowed in `not_allowed`; `describe module` lists them with `--include-not-allowed` |
 | `describe search` | finds them like allowed ones, marked `allowed: false` with `missing`, ranked after the allowed hits of the same tier; they match on name, summary and what they are for (`use_when`, parameter names) only, not on example texts, section titles or touched terms |
 | `describe function\|action\|view NAME` | what the entry is for and how it is called, with `allowed: false` and `missing`: name, module, summary, `use_when`, signature, status and the parameters (name, type, class or enum, `many`, summary, `required`), `replaced_by` only when the caller may use the replacement. Not the query, the operations, conditions, sections, example texts or values, parameter defaults, touched terms, needed rights, hash or call command: a definition can carry literals of the maintainer's, and the right that is missing is the one that protects them |
-| `run`, `do`, `view --name` | `access.denied`, recorded as a denial (the first denying decision, so the audit event names the right), message naming the missing right and the hint to ask the maintainer for a role |
+| `run`, `do`, `view --name` | `access.denied`, recorded as a denial (the first denying decision, so the audit event names the right; for a catalog caller also the entry decision, so it names the grant), message naming the missing right and the hint to ask the maintainer for a role |
 
 `missing` is a list of `{action, resource}`; the resource is graph-relative (`graph`,
 `type:<curie>`, `type:<curie>/attr:<name>`, `type:<curie>/rel:<curie>`) and always names something
@@ -1038,6 +1041,17 @@ Published views add three rules.
 
 - **A view needs `read.get`, a set view `read.find` as well**, because it lists entities as `find` does;
   a view with a `rows` section needs `read.function`, and the function must be one the caller sees.
+  A caller whose [catalog grant](#catalog-grants) names the view needs none of these on the graph:
+  `read.view` on the view (`graph:<id>/view:<name>`) allows it, and the needs above are then asked
+  deny-only, so an explicit deny on `read.get`, `read.find` or `read.function` still makes the view
+  not allowed (`missing` names it). The functions of its `rows` sections run without being granted
+  themselves (the view is the reviewed boundary) over the caller's own snapshot and model, so read
+  limits and markings filter rows, neighbours and counts as for every caller. The card is not a
+  published view: `graph view REF` without `--name` and `--name card` stay refused (`read.get`) for a
+  caller limited to its catalog, except that the default view of the entity's class answers when the
+  grant names it (the class is resolved with the entity, so the refusal is the same whether the id
+  exists, is seen or has such a view). A stale `--cursor` says to start again; `--as-of` needs
+  `read.history`, which such a caller does not hold.
 - **A view is visible exactly when everything it names is**: its classes, attributes, relations and
   enums, and the functions it runs. Otherwise it does not exist for the caller: `view.not_found`
   (a hidden view is never `access.denied`), absent from `describe views`, `describe search` and the affordances, and
@@ -1073,12 +1087,16 @@ Named functions of a graph ([Functions](cli_graph.md#functions)) have their
 own action, `read.function`, in the `read` level.
 
 - **Running.** `graph run` is decided by `read.function` on the graph, before
-  any storage is read. A denial is audited like that of any other read (the
+  any storage is read, or, for a caller whose [catalog grant](#catalog-grants) names the function,
+  by `read.function` on `graph:<id>/function:<name>` (the entry decision; the right on the graph is
+  then asked deny-only, so a deny rule on it still wins). A caller limited to its catalog that asks
+  for another name gets `function.not_found`, audited as a refusal on the graph, like a name that
+  was never published. A denial is audited like that of any other read (the
   `args_digest` covers the function name and the parameters; the values
   themselves are never written).
 - **Listing.** `describe functions`, `describe module`, `describe modules`
   and `describe search` show functions as usable only to callers who may
-  `read.function` on the graph. For everyone else they are *not allowed*
+  `read.function` on the graph, or on the function through a catalog grant. For everyone else they are *not allowed*
   ([Functions, actions and views you may not use](#functions-actions-and-views-you-may-not-use)):
   counted in `not_allowed`, listed with `--include-not-allowed`, found by
   search and shown by `describe function` marked `allowed: false` with
@@ -1094,7 +1112,9 @@ own action, `read.function`, in the `read` level.
   it lists the functions that reader sees and none that names a hidden term.
   The claim of an installed copy records a digest of what that reader's render
   shows of the catalogs, so granting or taking `read.function` makes the copy
-  stale ([Skills](skills.md#per-reader)).
+  stale ([Skills](skills.md#per-reader)). A reader limited to its catalog gets the
+  functions its grants name (deprecated ones too, only when named) and one line that it works
+  through named entries only; its digest also covers the entry list.
 - **Read limits.** A caller who sees only some types does not see a function
   that names a hidden term, and the others run over what the caller sees
   ([Functions and actions of a limited reader](#functions-and-actions-of-a-limited-reader)).

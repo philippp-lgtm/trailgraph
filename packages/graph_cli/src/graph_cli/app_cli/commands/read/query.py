@@ -38,6 +38,7 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.langtag import tagged_parts
 from graph_cli.query.cypher.values import Value, is_number_text, parameter_value
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT, check_paging, split_assignment
+from graph_cli.services.catalog_access import EntryPath
 from graph_cli.services.read import QuerySpec
 
 if TYPE_CHECKING:  # the cover rule pulls in the Cypher parser, which reads must not load
@@ -231,7 +232,9 @@ def run(
         "limit": limit,
         "offset": offset,
     }
-    view = open_graph(state, graph, "read.function", "run", args, None)
+    view = open_graph(
+        state, graph, "read.function", "run", args, None, through=EntryPath("function", (name,))
+    )
     data, page, warnings = context(state).reader.run(view, name, pairs, limit=limit, offset=offset)
     state.warnings += warnings
     page_json = page.to_json()
