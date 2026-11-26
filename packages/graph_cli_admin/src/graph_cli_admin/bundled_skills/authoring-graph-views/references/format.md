@@ -345,7 +345,7 @@ and functions come once the shape is fixed. Other files are checked in full. The
 | functions | `view.unknown_function`, `view.unknown_argument`, `view.argument_missing`, `view.literal_reference` |
 | replacement and default | `view.replaced_by_invalid` (target missing, deprecated or itself), `view.default_taken` |
 | size | `view.too_many_views` (1,000 per graph) |
-| warning | `view.function_deprecated` |
+| warning | `view.function_deprecated`; `catalog.granted_entry_removed` and `catalog.granted_entry_changed` (one record per view that a catalog grant of the installation policy names and the publish removes or changes) |
 
 The published form is the compiled catalog (`graph_cli.view_catalog/1`): per view the normalized
 definition (CURIEs, defaults filled), the authored source, `touches` (types, relations, attributes and

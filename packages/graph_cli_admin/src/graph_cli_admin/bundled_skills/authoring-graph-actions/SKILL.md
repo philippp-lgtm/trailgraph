@@ -10,7 +10,8 @@ writes it once; agents find it by what it is for and run it with `graph do
 <action> --param <name>=<value>` instead of composing the writes
 themselves. It compiles to one change set: one document, one transaction,
 one audit entry that names the action, and every op is authorized as if the
-caller had written it by hand. The graph checks the file against the
+caller had written it by hand (a caller limited to a catalog is the exception,
+see "Actions for callers limited to a catalog"). The graph checks the file against the
 ontology when it is published and again on every ontology release, so a
 published action always resolves. Publishing and releasing are in the
 `maintaining-graphs` skill; the graph skill that lists featured actions is
@@ -180,6 +181,15 @@ first right it misses, and `graph do` answers `access.denied`. So `summary` and
 `use_when` reach every caller who sees the names: write them in terms that
 hold for every such caller. The graph skill lists only the featured actions
 the installing reader may run.
+
+## Actions for callers limited to a catalog
+
+A server token whose grant names an action runs it although it could not write the
+same ops by hand, so for those callers the file is a security boundary: the template,
+the preconditions (a refusal quotes the values they check), the outputs and the
+refusals are all they get, and a republish changes what their tokens write. Review such
+an action like a grant of write access, with
+[references/catalog_callers.md](references/catalog_callers.md).
 
 ## Release refusals
 
