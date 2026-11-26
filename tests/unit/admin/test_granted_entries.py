@@ -168,21 +168,30 @@ def test_only_the_grants_of_the_graph_count() -> None:
     ]
 
 
-def test_an_entry_the_catalog_did_not_hold_is_no_removal_and_no_change() -> None:
+def test_a_granted_name_that_gets_an_entry_warns_with_no_hash_before() -> None:
+    """A grant gives whatever is published under its name: the first publish of a name granted
+    ahead of its entry, and the publish that brings one back after a removal, say so (review S1
+    of the bundle); a name no catalog holds before or after is nothing to judge."""
     grants = installed()
-    nothing = granted_entries.warnings(
+    first = granted_entries.warnings(
         grants, ENTRY, "functions", None, slot("functions", open_tickets="h1")
     )
-    appeared = granted_entries.warnings(
+    again = granted_entries.warnings(
         grants,
         ENTRY,
         "functions",
         slot("functions", other="h0"),
         slot("functions", open_tickets="h1"),
     )
-    assert nothing == () and appeared == ()
-    # nothing published before, nothing after
+    for found in (first, again):
+        assert codes(found) == [("catalog.granted_entry_changed", "open_tickets")]
+        assert found[0].details["hash_before"] is None and found[0].details["hash_after"] == "h1"
+        assert [g["grant"] for g in found[0].details["grants"]] == ["grant.1", "grant.2"]  # type: ignore[attr-defined, union-attr]
+        assert "adds function open_tickets" in found[0].message
+    # nothing published before, nothing after; and an unchanged catalog is silent
     assert granted_entries.warnings(grants, ENTRY, "functions", None, None) == ()
+    both = slot("functions", open_tickets="h1")
+    assert granted_entries.warnings(grants, ENTRY, "functions", both, both) == ()
 
 
 def test_unpublishing_a_whole_catalog_warns_for_every_granted_name() -> None:

@@ -12,6 +12,9 @@ publish does to the tokens behind the grant:
   policy has to name it;
 - ``catalog.granted_entry_changed``: the entry stays but its hash changes (the sources, the
   model it resolves against or its status). The callers of the grants run the new definition.
+  The same code, with ``hash_before`` null, says a granted name that the catalog did not hold now
+  has an entry: a name granted ahead of its entry, or one an earlier publish removed (a grant
+  gives whatever is published under its name, so the day it gives something again is a change.
   A granted view also changes when a function its ``rows`` sections run changes or is gone
   (the view names the function, never its hash, and runs whatever the graph publishes under that
   name): ``details.functions`` lists them (``row_function_warnings``).
@@ -23,8 +26,7 @@ project, or one no project binds, is its id alone (``only_project``).
 
 Pure over the installed policy and two slots; ``graph functions|actions|views publish`` and
 ``graph push`` call it with the published slot and the one they would publish, also on a dry
-run. An entry the catalog did not hold before is not warned about (the grant gave nothing
-and ``policy.entry_unknown`` said so). ``published_entries`` and ``published_hash`` read what
+run. ``published_entries`` and ``published_hash`` read what
 the graph publishes now for ``policy explain``.
 """
 
@@ -69,13 +71,12 @@ def warnings(
     before, after = _entries(current), _entries(new)
     found: list[WarningRecord] = []
     for name, grants in granted.items():
-        old = before.get(name)
-        if old is None:
+        old, now = before.get(name), after.get(name)
+        if old is None and now is None:
             continue
-        now = after.get(name)
-        if now is None:
+        if now is None and old is not None:
             found.append(_removed(entry, singular, name, grants, old, only_project))
-        elif now.get("hash") != old.get("hash"):
+        elif now is not None and (old is None or now.get("hash") != old.get("hash")):
             found.append(_changed(entry, singular, name, grants, old, now, only_project))
     return tuple(found)
 
@@ -234,20 +235,32 @@ def _changed(
     kind: str,
     name: str,
     grants: Sequence[EntryGrant],
-    old: JsonObject,
+    old: JsonObject | None,
     new: JsonObject,
     only_project: str | None,
 ) -> WarningRecord:
+    """``old`` is ``None`` for an entry the catalog did not hold: a name granted ahead of its
+    entry, or one that was removed, gives the callers whatever is published under it now."""
+    who = _who(grants, only_project)
+    if old is None:
+        message = (
+            f"the publish adds {kind} {name} to graph {entry.name}, which {who} names: until now"
+            " the grant gave nothing, and the callers of the grant run what is published under"
+            " that name from now on; check what it reads or writes before the callers use it"
+        )
+    else:
+        message = (
+            f"the publish changes {kind} {name} of graph {entry.name}, which {who} names:"
+            " the callers of the grant run the new definition, and what it reads or writes is the"
+            " new definition's, not the one the grant was written for; check it before the"
+            " callers use it"
+        )
     return WarningRecord(
         "catalog.granted_entry_changed",
-        f"the publish changes {kind} {name} of graph {entry.name}, which"
-        f" {_who(grants, only_project)} names:"
-        " the callers of the grant run the new definition, and what it reads or writes is the"
-        " new definition's, not the one the grant was written for; check it before the callers"
-        " use it",
+        message,
         {
             **_details(entry, kind, name, grants, only_project),
-            "hash_before": old.get("hash"),
+            "hash_before": old.get("hash") if old is not None else None,
             "hash_after": new.get("hash"),
         },
     )

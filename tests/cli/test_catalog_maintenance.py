@@ -270,16 +270,60 @@ def test_a_publish_that_touches_no_granted_entry_has_no_catalog_warning(
     assert added.data["published"] is True and catalog_warnings(added) == []
 
 
-def test_a_name_the_graph_had_not_published_warns_about_nothing_when_it_appears(
+def test_a_granted_name_that_is_published_again_warns_as_a_change(
     run_cli: CliRunner, work: dict[str, Path], tmp_path: Path
 ) -> None:
-    """A grant for a name nothing publishes gave nothing (``policy.entry_unknown`` said so); the
-    publish that adds the entry is no removal and no change."""
+    """A removal warned once; whoever publishes a different ``move_item`` later changes what the
+    grant gives, and that warns too: ``hash_before`` is null, the grants are named."""
     (work["actions"] / "move_item.yaml").unlink()
-    publish(run_cli, "actions", work["actions"])
+    gone = publish(run_cli, "actions", work["actions"])
+    assert gone.warning_codes == [REMOVED]
     shutil.copy(ACTIONS / "move_item.yaml", work["actions"])
+    edit(work["actions"], "move_item.yaml", "summary: ", "summary: A different ")
+    dry = publish(run_cli, "actions", work["actions"], "--dry-run")
+    (warning,) = catalog_warnings(dry)
+    assert warning["code"] == CHANGED
+    assert (warning["details"]["kind"], warning["details"]["name"]) == ("action", "move_item")
+    assert warning["details"]["hash_before"] is None and warning["details"]["hash_after"]
+    assert [g["grant"] for g in warning["details"]["grants"]] == ["grant.1"]
+    assert "move_item" not in rows(run_cli, "actions")  # a dry run
     back = publish(run_cli, "actions", work["actions"])
-    assert catalog_warnings(back) == [] and back.data["published"] is True
+    assert [w["code"] for w in catalog_warnings(back)] == [CHANGED]
+    assert rows(run_cli, "actions")["move_item"]["hash"] == warning["details"]["hash_after"]
+
+
+def test_a_name_granted_ahead_of_its_entry_warns_when_the_first_entry_is_published(
+    run_cli: CliRunner, work: dict[str, Path], tmp_path: Path
+) -> None:
+    """``policy.entry_unknown`` said the grant gave nothing; the publish that makes it give
+    something says so."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    for kind in ("actions", "views"):
+        publish(run_cli, kind, empty)  # an empty folder unpublishes all
+        assert rows(run_cli, kind) == {}
+    back = publish(run_cli, "actions", work["actions"])
+    assert [(w["details"]["kind"], w["details"]["name"]) for w in catalog_warnings(back)] == [
+        ("action", "move_item")
+    ]
+    view = publish(run_cli, "views", work["views"])
+    assert [(w["details"]["kind"], w["details"]["name"]) for w in catalog_warnings(view)] == [
+        ("view", "location_overview")
+    ]
+
+
+def test_a_push_warns_for_a_granted_name_that_comes_back(
+    run_cli: CliRunner, work: dict[str, Path], tmp_path: Path
+) -> None:
+    (work["actions"] / "move_item.yaml").unlink()
+    assert publish(run_cli, "actions", work["actions"]).warning_codes == [REMOVED]
+    source = tmp_path / "workspace"
+    assert admin(run_cli, "graph", "pull", "example_graph", str(source)).code == 0
+    shutil.copy(ACTIONS / "move_item.yaml", source / "actions")
+    dry = push(run_cli, source, "--dry-run")
+    assert [
+        (w["code"], w["details"]["name"], w["details"]["hash_before"]) for w in dry.warnings
+    ] == [(CHANGED, "move_item", None)]
 
 
 def test_without_a_catalog_grant_no_publish_warns(

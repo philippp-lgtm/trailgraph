@@ -544,7 +544,7 @@ no_project: {"*": write}
   the grant. `graph-admin graph functions publish`, `graph-admin graph actions publish`,
   `graph-admin graph views publish` and `graph-admin graph push` warn `catalog.granted_entry_removed` when the new catalog lacks an entry the published one
   has, and `catalog.granted_entry_changed` when the entry stays and its hash changes (its
-  sources, the model it resolves against or its status); each names the entry and the grants
+  sources, the model it resolves against or its status) or appears; each names the entry and the grants
   (`grant.<n>` with the facts of its principal; a role stays a list), the second both hashes.
   A granted view also changes when a function its `rows` sections run changes or goes (the
   view names the function, never its hash): `graph-admin graph functions publish` and
@@ -554,8 +554,10 @@ no_project: {"*": write}
   named a `replaced_by` in the published catalog gives it in the warning, and the grant does
   not follow it: a replacement may read and write otherwise, so a policy names it itself (a
   renamed entry is the removal of the old name and a new, ungranted entry). The warnings
-  also show on a dry run and in remote mode, and an entry the catalog did not hold before
-  is not warned about (`policy.entry_unknown` said that its grant gave nothing). An
+  also show on a dry run and in remote mode. A granted name the catalog did not hold (granted
+  ahead of its entry, which `policy.entry_unknown` flagged, or removed by an earlier publish)
+  warns `catalog.granted_entry_changed` with `hash_before: null` when a publish gives it an
+  entry: the grant gave nothing and gives what is published under the name from then on. An
   `ontology release` (and a `graph-admin graph push` that carries one, also on a dry run) that must compile
   the catalogs again for renamed terms republishes the same sources against the new model; a
   granted entry that compiles to another hash, or whose rows run a function that does, warns

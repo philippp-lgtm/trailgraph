@@ -73,7 +73,7 @@ that name. Publishing warns, never refuses, and the dry run shows the warnings:
 
 | Warning | Meaning | What to do |
 | --- | --- | --- |
-| `catalog.granted_entry_changed` | the entry stays, its hash changes (sources, model it resolves against, status); `details` give the grants and both hashes; for a view whose row function changed or went, `details.functions` lists the function and its hashes | review the new definition as a new grant (what it reads or writes now), tell the policy's owner, then publish; `policy explain` shows the new hash |
+| `catalog.granted_entry_changed` | the entry stays and its hash changes (sources, model it resolves against, status), or a granted name gets an entry it did not have (granted ahead, or removed before; `hash_before` is null); `details` give the grants and both hashes; for a view whose row function changed or went, `details.functions` lists the function and its hashes | review the new definition as a new grant (what it reads or writes now), tell the policy's owner, then publish; `policy explain` shows the new hash |
 | `catalog.granted_entry_removed` | the grant now gives nothing; `details.replaced_by` names the successor the old entry declared, if any | a replacement or a renamed entry is never granted by the old name: publish it, then name it in the policy and apply; do this before removing the old entry if the app must not lose a step |
 
 The publish commands (`graph-admin graph functions publish`, `graph-admin graph actions publish`,
