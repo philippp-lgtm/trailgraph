@@ -79,6 +79,20 @@ records the decisions on types alone, so its events are unchanged. The shape che
 resource string, and the policy hash of these decisions is verified like that of any other
 ([Policy verification](#policy-verification)).
 
+A `graph do` of an action that a [catalog grant](access_control.md#catalog-grants) names, by a
+caller whose own rights lack an allow for its ops ([Actions](access_control.md#actions)), is
+decided through the grant. The intent, or the refusal, then holds the decisions of that path: the
+entry decision (`write.action` on `graph:<id>/action:<name>`, rule `grant.<n>.actions`) and, for
+every op, the decision on its type and terms, which names the same rule because it was made
+deny-only on behalf of the entry. They replace the decisions of the by-hand probes that found no
+allow, which are never recorded next to an `ok` event; a write the caller's own rights allow
+records no entry decision, as before. A refusal of an action the caller sees but may not run (a
+deny rule took one of its writes, an obligation of `write.action` was not met) carries
+`request.action` (name and hash) and, when the entry decision allowed, that decision next to the
+denial; an action the caller does not see records only the `args_digest`, as before. A verifier
+from before `write.action` reports it as an unknown action (`unknown_action`), so update
+`graph-admin` before verifying such events.
+
 A refused read through a [catalog entry](access_control.md#decisions-on-catalog-entries)
 (`run`, `view --name`, `lookup --for`; a `call` of them records what the command it runs records)
 is a `denied` event of the installation stream like any denial of a read. When the entry

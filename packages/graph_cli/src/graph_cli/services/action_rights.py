@@ -38,7 +38,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from graph_cli.access_control.authorize import authorize
+from graph_cli.access_control.authorize import authorize, authorize_entry
 from graph_cli.access_control.documents import fine_types
 from graph_cli.access_control.terms import term_resource
 from graph_cli.kernel.actor import ActorContext
@@ -79,14 +79,22 @@ def _option_decisions(
     ctx: AuthzContext,
     policy: PolicySet,
     fine: frozenset[str],
+    through: Decision | None = None,
 ) -> tuple[Decision, ...]:
-    """The decision on the type and, when ``type_curie`` is in ``fine``, on each fine term."""
-    decisions = [authorize(actor, action, f"graph:{graph}/type:{type_curie}", ctx, policy)]
+    """The decision on the type and, when ``type_curie`` is in ``fine``, on each fine term;
+    deny-only when ``through`` is the entry decision of an action the caller's grants name."""
+
+    def decide(a: str, resource: str) -> Decision:
+        if through is None:
+            return authorize(actor, a, resource, ctx, policy)
+        return authorize_entry(actor, through, a, resource, ctx, policy)
+
+    decisions = [decide(action, f"graph:{graph}/type:{type_curie}")]
     if type_curie in fine:
         for term_action, kind, term in terms:
             resource = term_resource(graph, type_curie, kind, term)
             if resource is not None:
-                decisions.append(authorize(actor, term_action, resource, ctx, policy))
+                decisions.append(decide(term_action, resource))
     return tuple(decisions)
 
 
@@ -112,14 +120,21 @@ def need_decisions(
     visible: frozenset[str] | None = None,
     *,
     keeps: Callable[[str], frozenset[str] | None] | None = None,
+    through: Decision | None = None,
 ) -> NeedResult:
-    """The decisions that decide ``need`` and whether it is met (see the module docstring)."""
+    """The decisions that decide ``need`` and whether it is met (see the module docstring);
+    ``through``: deny-only, for an action the caller's grants name."""
     if not need.options:
         if need.type is None:
             return NeedResult((), True, None)
         if visible is not None and need.type not in visible:
             return NeedResult((), False, need.type)
-        decision = authorize(actor, need.action, f"graph:{graph}/type:{need.type}", ctx, policy)
+        resource = f"graph:{graph}/type:{need.type}"
+        decision = (
+            authorize(actor, need.action, resource, ctx, policy)
+            if through is None
+            else authorize_entry(actor, through, need.action, resource, ctx, policy)
+        )
         return NeedResult((decision,), decision.effect == "allow", need.type)
     first: NeedResult | None = None
     for type_curie, terms in need.options:
@@ -128,7 +143,7 @@ def need_decisions(
         if attribute_hidden(keeps, type_curie, terms):
             continue
         decisions = _option_decisions(
-            actor, graph, need.action, type_curie, terms, ctx, policy, fine
+            actor, graph, need.action, type_curie, terms, ctx, policy, fine, through
         )
         met = all(d.effect == "allow" for d in decisions)
         found = NeedResult(decisions, met, type_curie, terms)

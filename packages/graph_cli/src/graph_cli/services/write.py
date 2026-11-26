@@ -69,6 +69,22 @@ set of terms is compared like the pairs for the re-authorization under the lock.
 whose expansion is empty is authorized by the any-of rule of ``services.action_rights`` on
 its derived needs.
 
+Actions through grants (catalog callers plan CA4): an action plan is authorized by the caller's
+own rights first. When they do not allow it and a rule allows ``write.action`` on the action's
+entry resource (``graph:<id>/action:<name>``, which a ``catalog`` grant of the caller does), the
+decisions are made again deny-only: the entry decision, with the context of the request (its
+reason, the op count of the expansion), then every op through ``authorize_entry``, so a rule that
+denies an op (a type limit, a term or agent-type rule, a scope, an obligation) refuses the whole
+action, and no allow rule has to name what the action writes. A type or attribute the caller does
+not see keeps the decision of ``authorize_unlisted_type`` and ``authorize_unlisted_attribute`` (it
+is never asked deny-only): an action never writes what its caller cannot see. The decision runs
+inside ``_authorize``, so it is made again under the lock after the policy refresh and in a dry
+run, and the decisions of the path that allowed (the entry decision, naming the grant, and every
+op decision, naming the same grant) are what the event and the tx record, never the ones of the
+by-hand probes that failed. A refusal of a caller whose grants name the action but whose entry
+decision denies (an obligation of ``write.action``, a deny rule on it) is that denial, not the
+default one of the first op.
+
 Refusals (B3.14): ``invalid`` and ``conflict`` go to the graph stream under
 the lock; if that append fails the original error is raised with warning
 ``audit.refusal_not_recorded``. Usage errors and dry-runs are not audited.
@@ -130,15 +146,18 @@ from typing import Final
 from uuid import UUID
 
 from graph_cli.access_control.authorize import (
+    DEFAULT_DENY_RULE,
     authorize,
+    authorize_entry,
     authorize_unlisted_attribute,
     authorize_unlisted_type,
 )
 from graph_cli.access_control.documents import NAME_RE
+from graph_cli.access_control.effective import catalog_grants
 from graph_cli.access_control.terms import marking_resource, term_resource
 from graph_cli.audit import events
 from graph_cli.audit.events import RefusalStatus
-from graph_cli.kernel.actions import Action
+from graph_cli.kernel.actions import ENTRY_KIND_ACTIONS, Action
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthorizedTx, AuthzContext, Decision
 from graph_cli.kernel.canonical import JsonValue
@@ -172,7 +191,7 @@ from graph_cli.kernel.ids import (
 from graph_cli.kernel.json_access import JsonShapeError, as_object
 from graph_cli.kernel.ports.audit import AuditSink
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, graph_not_found
-from graph_cli.kernel.ports.policy import PolicySource
+from graph_cli.kernel.ports.policy import PolicySet, PolicySource
 from graph_cli.kernel.ports.storage import (
     GraphStoreRead,
     GraphStoreWrite,
@@ -512,10 +531,23 @@ class WriteService:
             pairs: set[tuple[Action, TermRef]] = set()
             terms: set[FineTerm] = set()
             derived = action_needs(plan.entry, model)
+            through = self._through_action(request, entry, plan.entry.name, ctx, policy)
             for need in derived:
                 found = need_decisions(
                     request.actor, entry.id, need, ctx, policy, fine, view.types, keeps=view.keeps
                 )
+                if not found.met and through.effect == "allow":
+                    found = need_decisions(  # the caller's grant of the action: deny-only
+                        request.actor,
+                        entry.id,
+                        need,
+                        ctx,
+                        policy,
+                        fine,
+                        view.types,
+                        keeps=view.keeps,
+                        through=through,
+                    )
                 if view.limited and not found.met and not found.decisions:
                     find_action((), plan.entry.name)  # raises action.not_found
                 if found.type is None:
@@ -561,6 +593,26 @@ class WriteService:
                     (Action(a), TermRef(found.type), kind, term) for a, kind, term in found.terms
                 )
         return _Wanted(tuple(sorted(pairs)), tuple(sorted(terms)))
+
+    def _through_action(
+        self,
+        request: WriteRequest,
+        entry: GraphEntry,
+        name: str,
+        ctx: AuthzContext,
+        policy: PolicySet,
+    ) -> Decision:
+        """The entry decision of an action plan: ``write.action`` on ``graph:<id>/action:<name>``
+        with the context of the request (its reason, the op count of the expansion: an obligation
+        on ``write.*`` that covers the action counts the ops once, here and on each op alike).
+        Its allow names the rule of the grant that lets the ops through deny-only."""
+        return authorize(
+            request.actor,
+            ENTRY_KIND_ACTIONS["action"],
+            f"graph:{entry.id}/action:{name}",
+            ctx,
+            policy,
+        )
 
     def _authorize(
         self,
@@ -620,6 +672,24 @@ class WriteService:
                 )
                 for key, d in recorded.items()
             }
+            plan = request.plan
+            if plan is not None and any(
+                d.effect == "deny" and d.rule_id == DEFAULT_DENY_RULE for d in answering.values()
+            ):
+                # the caller's own rights lack an allow for a write of the action (a denial by a
+                # rule no grant could lift stays as it is): its grant of the action may carry it
+                through = self._through_action(request, entry, plan.entry.name, ctx, policy)
+                if through.effect == "allow":
+                    recorded, answering = self._authorize_through(
+                        request, entry, through, ctx, policy, recorded, answering, unlisted, unseen
+                    )
+                elif plan.entry.name in catalog_grants(request.actor, entry.id, policy).actions:
+                    # named by the grants but refused on the entry itself (an obligation of
+                    # ``write.action``, a rule on the action): that is the denial, not the first
+                    # op's missing right
+                    recorded = {(through.action, through.resource): through}
+                    answering = dict(recorded)
+                    unlisted = {}
             if view.types_limited:  # V1: the read decision of every type the request names
                 assert model is not None
                 for t in sorted({t for _, t in pairs if t in model.classes}):
@@ -657,6 +727,38 @@ class WriteService:
         ):
             named = (*decisions, first)
         raise self._append_denial(request, entry, named, error, {t for _, t in pairs})
+
+    def _authorize_through(
+        self,
+        request: WriteRequest,
+        entry: GraphEntry,
+        through: Decision,
+        ctx: AuthzContext,
+        policy: PolicySet,
+        recorded: Mapping[tuple[Action, str], Decision],
+        answering: Mapping[tuple[Action, str], Decision],
+        unlisted: Mapping[tuple[Action, str], tuple[str, str]],
+        unseen: Set[str],
+    ) -> tuple[dict[tuple[Action, str], Decision], dict[tuple[Action, str], Decision]]:
+        """The decisions of the entry path for the keys the by-hand path decided: the entry
+        decision ``through`` itself, and for each op ``authorize_entry`` (deny-only, naming the
+        grant). The keys of an unseen type or a lacking attribute keep their by-hand decisions (the
+        ones on a resource no rule names, which a grant never allows): they are not asked
+        deny-only, so the entry path never writes what the caller cannot see. Returns ``recorded``
+        (what the event names) and ``answering`` (what the caller is answered by)."""
+        taken = {(through.action, through.resource): through}
+        kept: dict[tuple[Action, str], Decision] = {}
+        asked: dict[tuple[Action, str], Decision] = {}
+        for key in recorded:
+            if _type_of(key[1]) in unseen or key in unlisted:
+                kept[key] = answering[key]
+            else:
+                asked[key] = authorize_entry(request.actor, through, key[0], key[1], ctx, policy)
+        # the decisions the hand path recorded for a key it answered otherwise stay the record
+        return (
+            {**taken, **asked, **{k: recorded[k] for k in kept}},
+            {**taken, **asked, **kept},
+        )
 
     def _append_denial(
         self,

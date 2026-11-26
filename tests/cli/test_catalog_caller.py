@@ -2,9 +2,9 @@
 that list, describe and count entries show exactly the entries its grant names and nothing else;
 the answers for an entry outside the catalog are those for an entry that does not exist; a granted
 function or view runs (``run``, ``view --name``, ``call``) although the token holds neither
-``read.function`` nor ``read.get`` on the graph, an action waits for a later step; ``whoami``
-shows the level ``catalog`` and the names it sees; token creation and enrollment count the grant
-as granted.
+``read.function`` nor ``read.get`` on the graph, and a granted action writes (``do``, ``call``)
+although the token could not write by hand; ``whoami`` shows the level ``catalog`` and the names it
+sees; token creation and enrollment count the grant as granted.
 
 The role ``catalog_agent`` is granted ``items_by_condition``, ``move_item`` and ``item_catalog`` of
 ``example_graph`` (inventory), ``reader`` reads everything, ``idle`` is granted nothing. The server
@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 from harness import CliRunner
 from support.admin import admin, init
-from support.app import create_graph
+from support.app import app, create_graph
 from support.catalog_leaks import assert_hidden_absent
 from support.fixtures import FIXTURES
 from support.policies import write_policy
@@ -67,6 +67,22 @@ def installation(
         folder = FIXTURES / kind / "inventory" / "valid"
         published = admin(run_cli, "graph", kind, "publish", "example_graph", str(folder))
         assert published.code == 0, published.envelope
+    # the data the actions work on is written under the built-in policy, before the installation's
+    env = {"GRAPH_CLI_GRAPH": "example_graph"}
+    ids: dict[str, str] = {}
+    for name, cls, sets in (
+        ("shelf", "inv:Location", ("name=Shelf", "code=S1")),
+        ("rack", "inv:Location", ("name=Rack", "code=R1")),
+    ):
+        made = app(run_cli, "create", cls, *(f"--set={s}" for s in sets), env=env)
+        assert made.code == 0, made.envelope
+        ids[name] = made.data["entities"][0]["id"]
+    made = app(
+        run_cli, "create", "inv:Item", "--set=name=Chair", f"--edge=inv:located_in={ids['shelf']}",
+        env=env,
+    )  # fmt: skip
+    assert made.code == 0, made.envelope
+    ids["chair"] = made.data["entities"][0]["id"]
     path = write_policy(tmp_path / "policies", "installation.yaml", POLICY)
     applied = admin(run_cli, "policy", "apply", str(path), "--reason", "catalog caller")
     assert applied.code == 0, applied.envelope
@@ -74,7 +90,7 @@ def installation(
         name: new_token(run_cli, f"app_{name}", "--project", "example_project", "--role", name)
         for name in ("catalog_agent", "reader")
     }
-    return {"env": isolated_env, "tokens": tokens, "root": root}
+    return {"env": isolated_env, "tokens": tokens, "root": root, "ids": ids}
 
 
 @pytest.fixture
@@ -135,7 +151,7 @@ def test_start_counts_the_catalog_only_and_says_level_catalog(
     (graph,) = started.json["data"]["graphs"]
     assert graph["level"] == "catalog" and graph["withheld"] == []
     assert graph["counts"]["functions"] == 1 and graph["counts"]["views"] == 1
-    assert graph["not_allowed"] == {"actions": 1}  # an action is written through its grant later
+    assert graph["counts"]["actions"] == 1 and "not_allowed" not in graph
     full = command(served, "start", reader).json["data"]["graphs"][0]
     assert full["counts"]["functions"] == 2 and full["level"] == "read"
 
@@ -175,10 +191,14 @@ def test_every_listing_names_the_granted_entries_only(
     for answer in answers:
         assert_hidden_absent(answer["data"], OTHERS)
     modules = command(served, "describe/modules", agent, **GRAPH).json["data"]["modules"]
-    assert [m["not_allowed"] for m in modules if "not_allowed" in m] == [{"actions": 1}]
-    # the manifest is exactly the tools the token may use: its function and its view
+    assert [m["not_allowed"] for m in modules if "not_allowed" in m] == []
+    # the manifest is exactly the tools the token may use: its function, its action and its view
     tools = command(served, "describe/tools", agent, **GRAPH).json["data"]["tools"]
-    assert sorted(t["name"] for t in tools) == ["run_items_by_condition", "view_item_catalog"]
+    assert sorted(t["name"] for t in tools) == [
+        "do_move_item",
+        "run_items_by_condition",
+        "view_item_catalog",
+    ]
 
 
 KINDS = ("function", "action", "view")
@@ -192,7 +212,7 @@ def test_a_granted_entry_is_described_as_allowed_and_another_is_unknown(
     assert shown.status == 200, shown.json
     assert "allowed" not in shown.json["data"]["function"]  # allowed entries carry no mark
     action = command(served, "describe/action", agent, name="move_item", **GRAPH)
-    assert action.json["data"]["action"]["allowed"] is False  # step 3 lets it write
+    assert "allowed" not in action.json["data"]["action"]  # allowed through its grant
     for path, hidden, missing, swap in (
         ("describe/function", "items_in_location", "items_in_nowhere", "function"),
         ("describe/action", "retire_item", "retire_itemm", "action"),
@@ -212,13 +232,39 @@ def test_a_granted_entry_is_described_as_allowed_and_another_is_unknown(
 # ---- using an entry: not yet, and unknown stays unknown --------------------------------
 
 
-def test_do_of_a_granted_action_is_denied_and_of_another_is_not_found(
-    served: ServerApp, agent: str
+def moved(served: ServerApp, token: str, item: str) -> str:
+    """The location the item is in, as the token that reads it sees it."""
+    shown = command(served, "get", token, ref=item, **GRAPH)
+    assert shown.status == 200, shown.json
+    (edge,) = [e for e in shown.json["data"]["entity"]["edges"] if e["rel"] == "inv:located_in"]
+    return str(edge["target"])
+
+
+@pytest.mark.doc_claim("security_model.catalog_actions")
+def test_a_granted_action_writes_and_another_is_not_found(
+    served: ServerApp, agent: str, reader: str, installation: dict[str, Any]
 ) -> None:
-    args = {**GRAPH, "--param": ["item=x"], "--reason": "test"}
-    granted = command(served, "do", agent, name="move_item", **args)
-    assert granted.status == 403 and granted.error["code"] == "access.denied", granted.json
-    assert granted.error["details"]["action"].startswith("write.")
+    ids = installation["ids"]
+    chair, rack = ids["chair"], ids["rack"]
+    args = {**GRAPH, "--param": [f"item={chair}", f"location={rack}"], "--reason": "test"}
+    # a reader that is granted no action may not write; the token that is granted it does
+    assert command(served, "do", reader, name="move_item", **args).status == 403
+    done = command(served, "do", agent, name="move_item", **args)
+    assert done.status == 200, done.json
+    assert done.json["data"]["action"]["name"] == "move_item"
+    assert done.json["data"]["entity_count"] == 1
+    assert moved(served, reader, chair) == rack
+    # the primitives stay refused: the token cannot write the item by hand
+    by_hand = command(
+        served, "update", agent, ref=chair, **GRAPH, **{"--set": ["name=Other"], "--reason": "x"}
+    )
+    assert by_hand.status == 403 and by_hand.error["code"] == "access.denied", by_hand.json
+    # a dry run is decided the same way and writes nothing
+    back = {**args, "--param": [f"item={chair}", f"location={ids['shelf']}"]}
+    dry = command(served, "do", agent, name="move_item", **back, **{"--dry-run": True})
+    assert dry.status == 200 and dry.json["data"]["dry_run"] is True, dry.json
+    assert moved(served, reader, chair) == rack
+    # an action the grant does not name does not exist for the token
     unnamed = command(served, "do", agent, name="retire_item", **args)
     absent = command(served, "do", agent, name="retire_itemm", **args)
     assert unnamed.status == absent.status == 404
@@ -296,8 +342,8 @@ def test_call_of_an_unnamed_tool_is_tool_not_found(served: ServerApp, agent: str
         assert_hidden_absent(reply.json["error"]["details"].get("did_you_mean", []), OTHERS)
 
 
-def test_call_runs_the_granted_function_and_view_through_the_manifest(
-    served: ServerApp, agent: str
+def test_call_runs_the_granted_function_view_and_action_through_the_manifest(
+    served: ServerApp, agent: str, installation: dict[str, Any]
 ) -> None:
     ran = command(served, "call", agent, tool="run_items_by_condition",
                   input={"condition": "damaged"}, **GRAPH)  # fmt: skip
@@ -317,10 +363,20 @@ def test_call_runs_the_granted_function_and_view_through_the_manifest(
         **{"--expect-hash": tools["run_items_by_condition"]["hash"]}, **GRAPH,
     )  # fmt: skip
     assert stamped.status == 200, stamped.json
-    # an action is not a tool until step 3 lets the token write through its grant
-    assert "do_move_item" not in tools
-    refused = command(served, "call", agent, tool="do_move_item", input={}, **GRAPH)
-    assert refused.status in (403, 404), refused.json
+    # the action is a tool of the manifest and runs through ``call`` with its grant
+    assert "do_move_item" in tools
+    ids = installation["ids"]
+    wanted = {"item": ids["chair"], "location": ids["rack"], "_reason": "through call"}
+    written = command(served, "call", agent, tool="do_move_item", input=wanted, **GRAPH)
+    assert written.status == 200, written.json
+    assert written.json["data"]["action"]["name"] == "move_item"
+    again = command(
+        served, "call", agent, tool="do_move_item", input={**wanted, "_dry_run": True}, **GRAPH
+    )
+    assert again.status == 200 and again.json["data"]["dry_run"] is True, again.json
+    # a tool the grant does not name is unknown
+    refused = command(served, "call", agent, tool="do_retire_item", input={}, **GRAPH)
+    assert refused.status == 404 and refused.error["code"] == "tool.not_found"
 
 
 def test_the_lookup_tool_is_listed_only_when_a_tool_has_a_reference_input(
@@ -435,17 +491,27 @@ def test_policy_explain_shows_the_level_the_names_and_the_decision_on_an_entry(
     assert wrong.code == 2 and wrong.error["details"]["argument"] == "function"
 
 
-def test_the_audit_names_no_entry_the_catalog_lacks(
-    served: ServerApp, agent: str, installation: dict[str, Any]
-) -> None:
-    """An unnamed entry is unknown, so asking for it records nothing; the denial of a named one
-    is audited as a refusal. Neither names an entry outside the catalog."""
-    command(served, "do", agent, name="retire_item", **GRAPH, **{"--param": ["item=x"]})
-    command(served, "do", agent, name="move_item", **GRAPH, **{"--param": ["item=x"]})
-    root: Path = installation["root"]
-    text = "".join(
+def audit_text(root: Path) -> str:
+    return "".join(
         segment.read_text() for segment in sorted((root / "audit").rglob("*.jsonl"))
     ) + "".join(segment.read_text() for segment in sorted((root / "graphs").rglob("audit/*.jsonl")))
-    assert "access.denied" in text  # the named action's refusal was recorded
+
+
+def test_the_audit_names_no_entry_the_catalog_lacks(
+    run_cli: CliRunner, served: ServerApp, agent: str, installation: dict[str, Any]
+) -> None:
+    """An unnamed entry is unknown, so asking for it records nothing; what a named one does is
+    audited, a write with the decisions of its grant. Neither names an entry outside the catalog."""
+    ids = installation["ids"]
+    given = {"--param": [f"item={ids['chair']}", f"location={ids['rack']}"], "--reason": "test"}
+    command(served, "do", agent, name="retire_item", **GRAPH, **given)
+    done = command(served, "do", agent, name="move_item", **GRAPH, **given)
+    assert done.status == 200, done.json
+    text = audit_text(installation["root"])
+    assert "write.action" in text and "grant.1.actions" in text
     for name in OTHERS:
         assert name not in text
+    # the events with the entry decisions verify
+    verified = admin(run_cli, "audit", "verify")
+    assert verified.code == 0, verified.envelope
+    assert verified.data["counts"]["error"] == 0, verified.data

@@ -1111,8 +1111,10 @@ Run one with `do NAME --param name=value ...`, with `--dry-run` first:
   `action.stale`: tell the maintainer.
 
 An action needs no right of its own: it is allowed when every write it
-expands to is allowed to you. An action whose writes you may not make is
-not listed but counted as not allowed, and `do` of it is `access.denied`
+expands to is allowed to you, or when your token is granted the action by name
+(a [catalog grant](access_control.md#catalog-grants)), in which case it writes
+what the action says unless a deny rule takes one of its writes. An action whose writes you
+may not make is not listed but counted as not allowed, and `do` of it is `access.denied`
 (see [Entries you may not use](#entries-you-may-not-use) and
 [Access control](access_control.md#actions)). A graph that has no actions
 shows nothing about them in any `describe` command.

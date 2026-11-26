@@ -164,14 +164,13 @@ def test_a_catalog_caller_sees_exactly_the_entries_its_grants_name(
     env: ServiceEnv, read: ReadService
 ) -> None:
     found = classified(env, read, SUPPORT)
-    # a named function or view the policy lets it run is allowed through its entry grant (step 2);
-    # an action is classified as before until step 3 lets it write
+    # a named function, view or action the policy lets it use is allowed through its entry grant
     assert verdicts(found["functions"]) == {"members_of_unit": ()}
-    assert verdicts(found["actions"]) == {"create_task": ("write.create on type:ops:Task",)}
+    assert verdicts(found["actions"]) == {"create_task": ()}
     assert verdicts(found["views"]) == {"unit_overview": ()}
     assert [e.name for e in allowed_entries(found["functions"])] == ["members_of_unit"]  # type: ignore[arg-type]
     assert [e.name for e in allowed_entries(found["views"])] == ["unit_overview"]  # type: ignore[arg-type]
-    assert allowed_entries(found["actions"]) == ()  # type: ignore[arg-type]
+    assert [e.name for e in allowed_entries(found["actions"])] == ["create_task"]  # type: ignore[arg-type]
 
 
 def test_a_reader_and_a_reader_with_catalog_actions_see_every_entry(
@@ -186,11 +185,11 @@ def test_a_reader_and_a_reader_with_catalog_actions_see_every_entry(
     assert len(everything["actions"]) == ALL_ACTIONS
     assert len(everything["views"]) == ALL_VIEWS
     # `catalog.actions` on a read grant names an action and filters none: the unnamed ones are
-    # classified as before
+    # classified as before, the named one is allowed through its grant
     closer = classified(env, read, token("closer"))
     assert names(closer["actions"]) == names(everything["actions"])
     assert names(closer["functions"]) == names(everything["functions"])
-    assert verdicts(closer["actions"]) == verdicts(everything["actions"])
+    assert verdicts(closer["actions"]) == {**verdicts(everything["actions"]), "create_task": ()}
 
 
 def test_the_listings_that_return_allowed_entries_return_none_of_the_others(
@@ -198,7 +197,7 @@ def test_the_listings_that_return_allowed_entries_return_none_of_the_others(
 ) -> None:
     # no read.function on the graph: the allowed functions are those its grants name
     assert [f.name for f in read.functions(SUPPORT, env.entry) or ()] == ["members_of_unit"]
-    assert read.actions(SUPPORT, env.entry) is None  # step 3
+    assert [a.name for a in read.actions(SUPPORT, env.entry) or ()] == ["create_task"]
     assert [v.name for v in read.views(SUPPORT, env.entry) or ()] == ["unit_overview"]
     # a catalog caller whose grant also lets it read functions sees the named ones only
     callable_ = read.callable_functions(SUPPORT, env.entry, read.read_view(SUPPORT, env.entry))
@@ -358,16 +357,16 @@ def test_start_counts_cover_the_catalog_only(env: ServiceEnv, read: ReadService)
     item = read.start_graphs(SUPPORT, [env.entry])[0]
     assert item["level"] == "catalog"
     assert item["withheld"] == []
-    # the function and the view it is granted are allowed; the action waits for step 3
-    assert item["counts"]["functions"] == 1 and item["counts"]["actions"] == 0  # type: ignore[index]
+    # the function, the action and the view it is granted are allowed
+    assert item["counts"]["functions"] == 1 and item["counts"]["actions"] == 1  # type: ignore[index]
     assert item["counts"]["views"] == 1  # type: ignore[index]
-    assert item["not_allowed"] == {"actions": 1}
+    assert "not_allowed" not in item
     modules = read.start_modules(SUPPORT, env.entry)
     counted = sum(
         sum(m.get("not_allowed", {}).get(k, 0) for k in ("functions", "actions", "views"))  # type: ignore[attr-defined]
         for m in modules
     )
-    assert counted == 1
+    assert counted == 0
     reader = read.start_graphs(token("reader"), [env.entry])[0]
     assert reader["level"] == "read"
     assert reader["counts"]["functions"] == ALL_FUNCTIONS  # type: ignore[index]
@@ -454,9 +453,9 @@ def test_the_skill_documents_name_nothing_outside_the_catalog(
         documents, _ = read.skill_model(who, env.entry, request)
         scope = read.catalog_scope(who, env.entry)
         assert scope is not None
-        # the functions and views it may run are listed, the action it may not write is not, and
-        # nothing else of the catalogs is named (a granted name its read view hides stays out)
-        runnable = {*scope.functions, *scope.views} - {"employer_of"}
+        # the functions, actions and views it may run are listed, and nothing else of the
+        # catalogs is named (a granted name its read view hides stays out)
+        runnable = {*scope.functions, *scope.actions, *scope.views} - {"employer_of"}
         assert_hidden_absent(documents, ALL_NAMES - runnable)
         assert "vacant_positions" not in str(documents)
         assert "employer_of" not in str(documents)
@@ -1554,14 +1553,13 @@ def test_a_granted_view_the_graph_does_not_publish_is_unknown_like_any_other(
 def test_a_lookup_for_an_action_slot_is_asked_among_the_actions_the_caller_sees(
     env: ServiceEnv, read: ReadService
 ) -> None:
-    """Until actions are usable through a grant (step 3) a granted action is classified by the
-    write rights it needs: its slot is not one the lookup serves, and an action outside the
-    catalog is as unknown as one that does not exist, with suggestions among the catalog only."""
+    """A granted action the policy lets the caller use is a slot the lookup serves, like a
+    function's; an action outside the catalog is as unknown as one that does not exist, with
+    suggestions among the catalog only."""
     answers = []
     for use in (
         "action:assign_position.person",  # published, not granted
         "action:assign_positionz.person",  # never published
-        "action:create_task.assignee",  # granted, not usable yet
     ):
         with pytest.raises(GraphCliError) as caught:
             opened, lookup = lookup_view(read, env, SUPPORT, use)
@@ -1573,3 +1571,13 @@ def test_a_lookup_for_an_action_slot_is_asked_among_the_actions_the_caller_sees(
         )
         answers.append(error.message.replace(use.split(":")[1].split(".")[0], "X"))
     assert answers[0] == answers[1]
+    # the granted action: its person slot lists the persons of its class that the caller sees,
+    # decided by the entry (read.find deny-only), exactly as for a function's slot
+    created = env.apply(
+        *entity_ops(env, "ppl:Employee", "ada", "name", "Ada Quill"),
+        *entity_ops(env, "org:Department", "d", "name", "Ada Quill"),  # another class
+    )
+    ids = {e.local: str(e.id) for e in created.entities if e.local}
+    found = candidates(read, env, SUPPORT, "action:create_task.assignee", "Ada Quill")
+    assert [i["id"] for i in found["items"]] == [ids["ada"]]  # type: ignore[attr-defined, union-attr]
+    assert ids["d"] not in str(found)

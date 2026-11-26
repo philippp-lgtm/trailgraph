@@ -87,7 +87,14 @@ class ActionService:
         # an action the caller sees but may not run is a recorded denial, not a missing one
         for item in classified:
             if item.entry.name == name and not item.allowed:
-                request = RequestMeta.of("do", {"graph": entry.name, "action": name}, via=via)
+                # the caller sees this action, so the refusal names it (name and hash) in the audit;
+                # an action it does not see never reaches here and is recorded without one
+                request = RequestMeta.of(
+                    "do",
+                    {"graph": entry.name, "action": name},
+                    ActionRef(name, item.entry.hash),
+                    via=via,
+                )
                 raise self._reader.refuse_not_allowed(actor, entry, item, request)
         # a name the caller sees but may not run was refused above: what is found here is allowed,
         # and the suggestions of a name that is none are over everything the caller sees

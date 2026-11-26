@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
-from graph_cli.access_control.effective import write_obligations
+from graph_cli.access_control.authorize import authorize
+from graph_cli.access_control.effective import entry_write_obligations, write_obligations
+from graph_cli.kernel.actions import ENTRY_KIND_ACTIONS
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext, Decision
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry
+from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.read_view import UNLIMITED, ReadView
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.kinetic.action_entries import ActionEntry, find_action, load_action_entries
@@ -33,6 +36,9 @@ from graph_cli.services.catalog_access import (
 from graph_cli.services.read.access import ACCESS_DENIED_HINT, ReadAccess, denial_error
 from graph_cli.services.read.graph_read import ActionCatalog
 from graph_cli.services.visible_catalog import hidden_actions, hidden_functions, hidden_views
+
+# the context of a probe: a reason is given, so an obligation never turns an allow into a denial
+_PROBE_CONTEXT = AuthzContext(op_count=1, has_reason=True, dry_run=False)
 
 
 class ReadCatalogs(ReadAccess):
@@ -313,26 +319,88 @@ class ReadCatalogs(ReadAccess):
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
             fine = self._fine.of(policy, entry.id)
-            ctx = AuthzContext(op_count=1, has_reason=True, dry_run=False)
+            ctx = _PROBE_CONTEXT
+            granted = self._catalog_filter.grants(actor, entry.id, policy).names("action")
             for action in named:
                 if action.name in hidden:
                     continue
-                denials: list[Decision] = []
-                undecided = False
-                for need in needs[action.name]:
-                    result = need_decisions(
-                        actor, entry.id, need, ctx, policy, fine, view.types, keeps=view.keeps
+                item = self._action_needs_met(
+                    actor, entry, action, needs[action.name], view, (ctx, policy, fine), None
+                )
+                if item is not None and not item.allowed and action.name in granted:
+                    # by hand the caller lacks a right: its grant may still carry the action, every
+                    # op then asked deny-only (the entry decision, then what the ops need)
+                    item = self._action_through_grant(
+                        actor, entry, action, needs[action.name], view, (ctx, policy, fine)
                     )
-                    if result.met:
-                        continue
-                    denied = first_denial(result.decisions)
-                    if denied is None:
-                        undecided = True
-                        break
-                    denials.append(denied)
-                if not undecided:
-                    found.append(Classified(action, tuple(denials)))
+                if item is not None:
+                    found.append(item)
         return tuple(found)
+
+    def _action_needs_met(
+        self,
+        actor: ActorContext,
+        entry: GraphEntry,
+        action: ActionEntry,
+        needs: Sequence[NeedOptions],
+        view: ReadView,
+        decided: tuple[AuthzContext, PolicySet, frozenset[str]],
+        through: Decision | None,
+    ) -> Classified[ActionEntry] | None:
+        """``action`` classified over its ``needs``: by hand, or deny-only when ``through`` is the
+        entry decision of the caller's grant of the action (``decided``: the context, the policy
+        and the types with term rules the decisions are made with). ``None`` for an action with an
+        unmet need no decision was made for (every option lies outside what the caller sees), which
+        is hidden; any other action that is not allowed names, per unmet need, its first denied
+        decision."""
+        ctx, policy, fine = decided
+        denials: list[Decision] = []
+        for need in needs:
+            result = need_decisions(
+                actor,
+                entry.id,
+                need,
+                ctx,
+                policy,
+                fine,
+                view.types,
+                keeps=view.keeps,
+                through=through,
+            )
+            if result.met:
+                continue
+            denied = first_denial(result.decisions)
+            if denied is None:
+                return None
+            denials.append(denied)
+        return Classified(action, tuple(denials), through)
+
+    def _action_through_grant(
+        self,
+        actor: ActorContext,
+        entry: GraphEntry,
+        action: ActionEntry,
+        needs: Sequence[NeedOptions],
+        view: ReadView,
+        decided: tuple[AuthzContext, PolicySet, frozenset[str]],
+    ) -> Classified[ActionEntry] | None:
+        """``action`` classified through the caller's grant of it (the caller's own rights did not
+        allow it): the entry decision (``write.action`` on ``graph:<id>/action:<name>``) allows,
+        then every need is met deny-only; a deny rule that takes a write the action needs makes it
+        not allowed and names that write. An entry decision that denies makes it not allowed and
+        names that decision, not the missing write of the graph. Obligations never count (the
+        context has a reason), as for the rights by hand."""
+        ctx, policy, _ = decided
+        decision = authorize(
+            actor,
+            ENTRY_KIND_ACTIONS["action"],
+            f"graph:{entry.id}/action:{action.name}",
+            ctx,
+            policy,
+        )
+        if decision.effect != "allow":
+            return Classified(action, (decision,))
+        return self._action_needs_met(actor, entry, action, needs, view, decided, decision)
 
     def _hidden_actions(
         self, entry: GraphEntry, catalog: ActionCatalog, view: ReadView
@@ -352,12 +420,36 @@ class ReadCatalogs(ReadAccess):
         """The write actions (``write.create``, ...) the actor's policy demands a reason for
         (a ``require_reason`` obligation), so that a listing can say which actions need one.
         Obligations never make an entry not allowed. Records nothing."""
-        found = write_obligations(actor, entry.id, self._policy.current(entry.id))
+        policy = self._policy.current(entry.id)
+        found = write_obligations(actor, entry.id, policy)
+        entered = self._entered_action(actor, entry, policy)
+        if entered is not None:  # the writes of a granted action are decided deny-only
+            found = {**found, **entry_write_obligations(actor, entry.id, entered, policy)}
         return frozenset(
             action
             for action, item in found.items()
             if isinstance(item, Mapping) and item.get("require_reason") is True
         )
+
+    def _entered_action(
+        self, actor: ActorContext, entry: GraphEntry, policy: PolicySet
+    ) -> Decision | None:
+        """The first allowed entry decision of an action the actor's grants name (names in order),
+        ``None`` when they name none or a rule denies each: what the obligations shown for the
+        actions of a graph come from, as the entry path holds every granted action to the same
+        ones. A probe, nothing is recorded."""
+        granted = self._catalog_filter.grants(actor, entry.id, policy).names("action")
+        for name in granted:
+            decision = authorize(
+                actor,
+                ENTRY_KIND_ACTIONS["action"],
+                f"graph:{entry.id}/action:{name}",
+                _PROBE_CONTEXT,
+                policy,
+            )
+            if decision.effect == "allow":
+                return decision
+        return None
 
     def default_views_path(self, actor: ActorContext, entry: GraphEntry) -> EntryPath | None:
         """The default views of the graph that ``actor``'s grants name and that it sees, for
