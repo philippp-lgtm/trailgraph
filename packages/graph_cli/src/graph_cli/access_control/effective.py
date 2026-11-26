@@ -58,8 +58,10 @@ _UNDECLARED_MARKING: Final = "probe:undeclared"  # a marking no model declares
 def graph_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> str:
     """The highest level of the ladder whose every action is allowed on ``graph:<id>``, or
     ``catalog`` for a caller whose grants on the graph are catalog grants only (it holds no right
-    on the graph itself beyond listing and describing it, which no rung of the ladder describes)."""
-    if catalog_grants(actor, graph, policy).catalog_only:
+    on the graph itself beyond listing and describing it, which no rung of the ladder describes)
+    and the decisions still let it list and describe the graph: a catalog caller a scope or a deny
+    rule takes the graph from is at ``none``, like a reader in the same position."""
+    if _catalog_level(actor, graph, policy):
         return CATALOG_LEVEL
     resource = f"graph:{graph}"
     reached = ACCESS_LEVELS[0]
@@ -73,6 +75,17 @@ def graph_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> str:
             break
         reached = level
     return reached
+
+
+def _catalog_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> bool:
+    """Whether ``actor`` is at the level ``catalog`` on ``graph``: its grants there are catalog
+    grants only and ``read.list`` and ``read.describe`` on ``graph:<id>`` are allowed to it."""
+    resource = f"graph:{graph}"
+    return (
+        catalog_grants(actor, graph, policy).catalog_only
+        and authorize(actor, "read.list", resource, _PROBE, policy).effect == "allow"
+        and authorize(actor, "read.describe", resource, _PROBE, policy).effect == "allow"
+    )
 
 
 def effective_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> str:
@@ -113,7 +126,7 @@ def withheld_actions(actor: ActorContext, graph: GraphId, policy: PolicySet) -> 
     ``graph_level`` alone cannot show (a denied ``read.history`` leaves the level at
     ``none`` while the graph stays readable). Nothing is withheld from a catalog-only caller: the
     primitives were never granted to it, so a deny rule took nothing away."""
-    if catalog_grants(actor, graph, policy).catalog_only:
+    if _catalog_level(actor, graph, policy):
         return []
     resource = f"graph:{graph}"
     ladder = [a for a in level_actions("write") if not a.endswith("*")] + sorted(
@@ -240,6 +253,9 @@ def catalog_overlaps(documents: Iterable[Mapping[str, JsonValue]]) -> tuple[Cata
             matched = _CATALOG_RULE_RE.match(str(rule.get("id")))
             if matched is None:
                 continue
+            base = next((r for r in allows if r.get("id") == matched.group(1)), None)
+            if base is None or any(a not in CATALOG_BASE_ACTIONS for a in strings(base, "action")):
+                continue  # a read grant with catalog.actions is a reader: it limits nothing anyway
             graphs = {
                 m.group(1)
                 for p in strings(rule, "resource")

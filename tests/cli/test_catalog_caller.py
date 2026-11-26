@@ -331,7 +331,9 @@ def test_token_creation_and_enrollment_count_a_catalog_grant_as_granted(
     )  # fmt: skip
     assert created.code == 0, created.envelope
     assert created.warning_codes == []
-    idle = admin(run_cli, "token", "create", "idle_one", "--role", "idle")
+    idle = admin(
+        run_cli, "token", "create", "idle_one", "--project", "example_project", "--role", "idle"
+    )
     assert idle.warning_codes == ["admin.token_not_granted"]
     added = admin(run_cli, "token", "role", "add", "idle_one", "catalog_agent")
     assert added.code == 0 and added.warning_codes == []  # the grant makes the token granted
@@ -343,6 +345,13 @@ def test_token_creation_and_enrollment_count_a_catalog_grant_as_granted(
     checked = call(served, "POST", "/v1/enroll", body={"code": code.data["code"], "check": True})
     assert checked.status == 200, checked.json
     assert checked.json["data"]["enrollment"]["graphs"] == ["example_graph"]
+    # a scope that takes the graph away (no project: none) leaves the grant dead, as for a reader
+    dead = admin(run_cli, "token", "create", "dead_one", "--role", "catalog_agent")
+    assert dead.warning_codes == ["admin.token_not_granted"]
+    elsewhere = admin(
+        run_cli, "enroll", "create", "--project", "nowhere", "--role", "catalog_agent"
+    )
+    assert elsewhere.warning_codes == ["admin.token_not_granted"]
     nothing = admin(run_cli, "enroll", "create", "--project", "example_project", "--role", "idle")
     assert nothing.warning_codes == ["admin.token_not_granted"]
 

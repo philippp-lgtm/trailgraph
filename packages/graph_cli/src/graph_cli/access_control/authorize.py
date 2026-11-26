@@ -117,9 +117,11 @@ def authorize_entry(
 
     A question outside what an entry needs is a bug (``internal.error``): ``entry`` must be an
     allow of the right kind made under this very policy (a decision from before a policy refresh
-    grants nothing); ``resource`` must be the entry's graph or a type or term of it, and
+    grants nothing) for this very ``actor`` (never pass a decision across requests or actors);
+    ``resource`` must be the entry's graph or a type or term of it, and
     ``action`` a read of the graph (``read.get``, ``read.find``, ``read.function``,
-    ``read.traverse``) or a write action of the ladder, never an entry action, a read of a type
+    ``read.traverse``) or, for an action entry only, a write action of the ladder, never an entry
+    action, a read of a type
     or marking, ``maint.*`` or ``ext.*``. Recorded like every decision."""
     if not (is_known_action(action) or EXT_ACTION_RE.match(action)):
         raise GraphCliError("internal.error", f"unknown action {action!r}")
@@ -138,19 +140,24 @@ def authorize_entry(
         )
     if entry.policy_hash != policy.hash:
         raise GraphCliError("internal.error", "the entry decision was made under another policy")
+    if entry.subject != _subject(actor):
+        raise GraphCliError("internal.error", "the entry decision was made for another actor")
     graph = found.group(1)
-    if not _entry_needs(action, resource, graph):
+    if not _entry_needs(action, resource, graph, str(entry.action)):
         raise GraphCliError(
             "internal.error", f"{action} on {resource} is not something an entry needs"
         )
     return _decide(actor, Action(action), resource, resource, ctx, policy, entry.rule_id)
 
 
-def _entry_needs(action: str, resource: str, graph: str) -> bool:
-    """Whether ``action`` on ``resource`` is something an entry of ``graph`` may ask."""
+def _entry_needs(action: str, resource: str, graph: str, entered: str) -> bool:
+    """Whether ``action`` on ``resource`` is something an entry of ``graph`` may ask; ``entered``
+    is the action of its entry decision: writes only through an action entry (a function or a
+    view entry decision, which a plain reader's ``level: read`` also passes through its glob, never
+    authorizes a write)."""
     if action in _ENTRY_READS:
         return resource == graph
-    if action in LEVEL_WRITE_ACTIONS:
+    if action in LEVEL_WRITE_ACTIONS and entered == str(ENTRY_KIND_ACTIONS["action"]):
         return resource == graph or resource.startswith(f"{graph}/type:")
     return False
 
@@ -221,8 +228,10 @@ def _decide(
     rule (``authorize_entry``)."""
     action = str(checked)
 
+    subject = _subject(actor)
+
     def deny(rule_id: str, code: str) -> Decision:
-        return Decision("deny", checked, named, rule_id, policy.hash, code=code)
+        return Decision("deny", checked, named, rule_id, policy.hash, code=code, subject=subject)
 
     ceiling = CEILINGS.get(actor.client.entrypoint.value)
     if ceiling is not None and action.startswith("maint."):
@@ -264,7 +273,17 @@ def _decide(
         return deny(REASON_RULE, "access.reason_required")
     if obligations.max_batch is not None and ctx.op_count > obligations.max_batch:
         return deny(BATCH_RULE, "access.batch_too_large")
-    return Decision("allow", checked, named, granted_by, policy.hash, obligations)
+    return Decision("allow", checked, named, granted_by, policy.hash, obligations, subject=subject)
+
+
+def _subject(actor: ActorContext) -> tuple[object, ...]:
+    """Everything a decision reads of an actor: the asserted and the verified facts and whether it
+    is a project admin (the facts ``authorize`` matches on)."""
+    return (
+        tuple(principal_facts(actor).items()),
+        tuple(principal_facts(actor, verified_only=True).items()),
+        is_project_admin(actor),
+    )
 
 
 def allow_rule_holds(rule: Mapping[str, JsonValue], actor: ActorContext) -> bool:

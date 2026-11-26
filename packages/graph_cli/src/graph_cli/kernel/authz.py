@@ -38,6 +38,10 @@ class Decision:
     policy_hash: str
     obligations: Obligations = field(default_factory=Obligations)
     code: str | None = None  # set iff deny
+    # Who the decision was made for (``access_control.authorize``): not part of equality, of the
+    # text or of the audit record; ``authorize_entry`` refuses an entry decision made for another
+    # actor.
+    subject: tuple[object, ...] | None = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if (self.effect == "deny") != (self.code is not None):

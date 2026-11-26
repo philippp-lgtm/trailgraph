@@ -1085,31 +1085,51 @@ def test_a_catalog_caller_is_at_the_level_catalog_and_withholds_nothing() -> Non
     assert graph_level(token("closer", "reader"), EXAMPLE, installed) == "write"
 
 
-def test_a_deny_rule_does_not_change_the_level_of_a_catalog_caller() -> None:
-    """The level follows the grants: a deny of every read takes entries away at decision time
-    but the caller is still a catalog caller, with nothing withheld that was granted."""
+def test_a_deny_of_the_reads_leaves_a_catalog_caller_no_level_like_a_reader() -> None:
+    """The level follows the decisions: a catalog caller a deny rule takes ``read.list`` from
+    has no graph, as a reader in the same position has none. Its grants still name the entries
+    (the filter is rule-based), so the two answers never disagree about what it is *called*."""
     tail = (
-        'no_project: {"*": write}\ndeny:\n  - {id: no_reads, role: [support], action: ["read.*"]}\n'
+        'no_project: {"*": write}\ndeny:\n  - {id: no_reads, role: [support, reader],'
+        ' action: ["read.*"]}\n'
     )
-    installed = policy(SUPPORT, tail=tail)
-    assert graph_level(token("support"), EXAMPLE, installed) == "catalog"
+    installed = policy(SUPPORT, READER, tail=tail)
+    assert graph_level(token("support"), EXAMPLE, installed) == "none"
+    assert effective_level(token("support"), EXAMPLE, installed) == "none"
     assert withheld_actions(token("support"), EXAMPLE, installed) == []
-    # and the entry grants stay named
+    assert graph_level(token("reader"), EXAMPLE, installed) == "none"
     assert catalog_grants(token("support"), EXAMPLE, installed).catalog_only
+    # a deny that leaves list and describe alone leaves the level
+    describe_only = (
+        'no_project: {"*": write}\ndeny:\n  - {id: no_get, role: [support], action: [read.get]}\n'
+    )
+    kept = policy(SUPPORT, tail=describe_only)
+    assert graph_level(token("support"), EXAMPLE, kept) == "catalog"
+    # listing is needed
+    no_list = (
+        'no_project: {"*": write}\ndeny:\n  - {id: nl, role: [support], action: [read.list]}\n'
+    )
+    assert graph_level(token("support"), EXAMPLE, policy(SUPPORT, tail=no_list)) == "none"
+    # describing is needed too
+    no_describe = (
+        'no_project: {"*": write}\ndeny:\n  - {id: nd, role: [support], action: [read.describe]}\n'
+    )
+    assert graph_level(token("support"), EXAMPLE, policy(SUPPORT, tail=no_describe)) == "none"
 
 
-def test_a_scope_that_takes_the_graph_away_is_still_a_catalog_level_until_the_decisions_deny() -> (
-    None
-):
+def test_a_scope_that_takes_the_graph_away_takes_the_catalog_level_too() -> None:
     installed = policy(
         SUPPORT,
-        tail='scopes:\n  frozen: {example_graph: none}\nno_project: {"*": write}\n',
+        READER,
+        tail="scopes:\n  frozen: {example_graph: none}\n  open: {example_graph: write}\n"
+        'no_project: {"*": write}\n',
     )
-    # the level answers from the grants; the scope is shown by ``scope`` and by every decision
-    assert graph_level(token("support", project="frozen"), EXAMPLE, installed) == "catalog"
-    assert authorize(
-        token("support", project="frozen"), "read.list", GRAPH, CTX, installed
-    ).code == ("access.denied")
+    frozen, open_ = token("support", project="frozen"), token("support", project="open")
+    assert graph_level(frozen, EXAMPLE, installed) == "none"
+    assert graph_level(token("reader", project="frozen"), EXAMPLE, installed) == "none"
+    assert effective_level(frozen, EXAMPLE, installed) == "none"
+    assert authorize(frozen, "read.list", GRAPH, CTX, installed).code == "access.denied"
+    assert graph_level(open_, EXAMPLE, installed) == "catalog"
 
 
 def test_a_write_level_grant_allows_write_action_only_through_the_glob() -> None:
@@ -1175,9 +1195,13 @@ def test_only_certain_overlaps_are_found() -> None:
     assert overlaps(SUPPORT, app) == []
     # a second catalog grant of the same role grants no more than entries
     assert overlaps(SUPPORT, TRIAGE.replace("triage", "support")) == []
-    # a read grant that only adds catalog.actions overlaps (it is a reader)
-    assert overlaps(SUPPORT, CLOSER.replace("closer", "support")) == [
-        ("example_graph", "grant.1", "grant.2")
+    # a read grant with catalog.actions is a reader, not a catalog grant: it limits nothing, so
+    # there is nothing to widen
+    open_read = "  - {entrypoint: server, graphs: [example_graph], level: read}\n"
+    assert overlaps(CLOSER, open_read) == []
+    # while a real catalog grant of the same role is widened by that read grant
+    assert overlaps(CLOSER.replace("closer", "support"), SUPPORT) == [
+        ("example_graph", "grant.2", "grant.1")
     ]
 
 
