@@ -35,6 +35,7 @@ id: installation
 roles:
   catalog_agent: {description: "Runs three entries of example_graph"}
   reader: {description: "Reads example_graph"}
+  mover: {description: "Reads example_graph and moves items through one action"}
   idle: {description: "Granted nothing"}
 grants:
   - entrypoint: server
@@ -47,6 +48,11 @@ grants:
       views: [item_catalog]
     reads: [inv:Item, inv:Location, inv:Category]
   - {entrypoint: server, principal: {role: reader}, graphs: [example_graph], level: read}
+  - entrypoint: server
+    principal: {role: mover}
+    graphs: [example_graph]
+    level: read
+    catalog: {actions: [move_item]}
 scopes:
   example_project: {example_graph: write}
 no_project: {"*": none}
@@ -88,7 +94,7 @@ def installation(
     assert applied.code == 0, applied.envelope
     tokens = {
         name: new_token(run_cli, f"app_{name}", "--project", "example_project", "--role", name)
-        for name in ("catalog_agent", "reader")
+        for name in ("catalog_agent", "reader", "mover")
     }
     return {"env": isolated_env, "tokens": tokens, "root": root, "ids": ids}
 
@@ -112,6 +118,11 @@ def agent(installation: dict[str, Any]) -> str:
 @pytest.fixture
 def reader(installation: dict[str, Any]) -> str:
     return str(installation["tokens"]["reader"])
+
+
+@pytest.fixture
+def mover(installation: dict[str, Any]) -> str:
+    return str(installation["tokens"]["mover"])
 
 
 def names(reply: Any, key: str) -> list[str]:
@@ -272,6 +283,89 @@ def test_a_granted_action_writes_and_another_is_not_found(
     for reply in (unnamed, absent):
         assert reply.error["details"]["did_you_mean"] in ([], ["move_item"])
     assert_hidden_absent(unnamed.json["error"]["details"]["did_you_mean"], OTHERS)
+
+
+@pytest.mark.doc_claim("security_model.catalog_actions")
+def test_a_reader_with_catalog_actions_writes_through_these_actions_only(
+    served: ServerApp, mover: str, installation: dict[str, Any]
+) -> None:
+    ids = installation["ids"]
+    chair, rack = ids["chair"], ids["rack"]
+    args = {**GRAPH, "--param": [f"item={chair}", f"location={rack}"], "--reason": "test"}
+    done = command(served, "do", mover, name="move_item", **args)
+    assert done.status == 200, done.json
+    assert moved(served, mover, chair) == rack  # it reads what it wrote
+    # the primitives are what a reader's grant says: no write by hand
+    by_hand = command(
+        served, "update", mover, ref=chair, **GRAPH, **{"--set": ["name=Other"], "--reason": "x"}
+    )
+    assert by_hand.status == 403 and by_hand.error["code"] == "access.denied", by_hand.json
+    # an action it is not granted is what it was for a reader: seen, not allowed, refused
+    other = command(
+        served, "do", mover, name="retire_item", **GRAPH, **{"--param": [f"item={chair}"]}
+    )
+    assert other.status == 403 and other.error["code"] == "access.denied", other.json
+    shown = command(served, "describe/action", mover, name="retire_item", **GRAPH)
+    assert shown.json["data"]["action"]["allowed"] is False
+    assert (
+        "allowed"
+        not in command(served, "describe/action", mover, name="move_item", **GRAPH).json["data"][
+            "action"
+        ]
+    )
+
+
+GRAPH_POLICIES = {
+    "type_limit": 'types:\n  "inv:Item": read\n',
+    "term_rule": (
+        "deny:\n  - {id: no_relocation, action: [write.link], type: [inv:Item],"
+        " relation: [inv:located_in]}\n"
+    ),
+    "obligation": "obligations:\n  - {action: [write.*], max_batch: 1}\n",
+}
+
+
+@pytest.mark.doc_claim("security_model.catalog_actions")
+@pytest.mark.parametrize("kind", sorted(GRAPH_POLICIES))
+def test_a_deny_rule_of_the_graph_refuses_a_granted_action(
+    run_cli: CliRunner,
+    served: ServerApp,
+    agent: str,
+    reader: str,
+    installation: dict[str, Any],
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    """A policy applied after the grant is decided again for the next call: whatever denies a
+    write of the action (a type limit, a rule on a relation, an obligation the two ops of
+    ``move_item`` break) refuses the whole action, and the item stays where it was."""
+    ids = installation["ids"]
+    text = "schema: graph_cli.policy/1\nid: graph\n" + GRAPH_POLICIES[kind]
+    policy = write_policy(tmp_path / "graph_policies", f"{kind}.yaml", text)
+    applied = admin(
+        run_cli, "policy", "apply", str(policy), "--graph", "example_graph", "--reason", kind
+    )
+    assert applied.code == 0, applied.envelope
+    args = {
+        **GRAPH,
+        "--param": [f"item={ids['chair']}", f"location={ids['rack']}"],
+        "--reason": "t",
+    }
+    refused = command(served, "do", agent, name="move_item", **args)
+    assert refused.status == 403 and refused.error["code"] in (
+        "access.denied",
+        "access.batch_too_large",
+    ), refused.json
+    assert moved(served, reader, ids["chair"]) == ids["shelf"]
+    # a dry run is refused the same way and the call of the tool too
+    dry = command(served, "do", agent, name="move_item", **args, **{"--dry-run": True})
+    assert dry.status == 403, dry.json
+    called = command(
+        served, "call", agent, tool="do_move_item",
+        input={"item": ids["chair"], "location": ids["rack"], "_reason": "t"}, **GRAPH,
+    )  # fmt: skip
+    assert called.status == 403, called.json
+    assert moved(served, reader, ids["chair"]) == ids["shelf"]
 
 
 @pytest.mark.doc_claim("security_model.catalog_grants")

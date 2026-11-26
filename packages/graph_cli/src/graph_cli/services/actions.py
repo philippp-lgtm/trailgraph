@@ -6,9 +6,10 @@ lock-free snapshot, and hands the action to the write service as a plan. The wri
 service expands the template and checks the preconditions under the graph lock, then
 authorizes, records and commits the expansion as any change set (``services.write``).
 
-An action is visible to an actor when every write right its ops need is allowed
-(``ReadService.visible_actions``): a hidden action does not exist for the caller, so it
-is ``action.not_found`` and ``did_you_mean`` names visible actions only; a hidden graph
+An action is allowed to an actor when every write right its ops need is allowed
+(``ReadService.visible_actions``), or when its grants name the action and no rule denies a write
+it needs (the entry path, ``services.write``): a hidden action does not exist for the caller, so
+it is ``action.not_found`` and ``did_you_mean`` names visible actions only; a hidden graph
 is ``graph.not_found`` as for every command. Nothing of the parameter values leaves this
 service except through the tx (the request digest covers them).
 """
