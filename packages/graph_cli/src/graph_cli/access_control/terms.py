@@ -22,7 +22,9 @@ collected, never raised, because a later release may add the term: the caller wa
   this grant can use (rights add up, so another grant may supply the marking).
 
 ``marking_resource`` builds the resource a marking is held on (``marking:<graph>/<curie>``) and
-``named_markings`` reads back which markings the installed documents grant for one graph.
+``named_markings`` reads back which markings the installed documents grant for one graph;
+``named_entries`` reads back which functions, actions and views the catalog grants of the
+documents name for one graph (``policy check|apply`` compare them with the published catalog).
 ``term_resource`` builds the resource a write of one term is decided on; ``named_terms``
 and ``named_read_types`` read back which types and terms, and which types a read rule
 names, the installed documents name for one graph (an ontology release checks them against
@@ -48,6 +50,7 @@ from graph_cli.access_control.documents import (
     rules,
     strings,
 )
+from graph_cli.kernel.actions import ENTRY_KINDS, ENTRY_NAME_RE
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.ids import GraphId
 
@@ -273,6 +276,33 @@ def named_markings(documents: Sequence[Mapping[str, JsonValue]], graph: GraphId)
                 if resource.startswith(prefix) and MARKING_RE.match(resource[len(prefix) :]):
                     found.add(resource[len(prefix) :])
     return tuple(sorted(found))
+
+
+_ENTRY_RULE_RE: Final = re.compile(r"^grant\.[0-9]+\.(functions|views|actions)$")
+
+
+def named_entries(
+    documents: Sequence[Mapping[str, JsonValue]], graph: GraphId
+) -> dict[str, tuple[str, ...]]:
+    """The entries the ``grant.<n>.functions|views|actions`` rules (installation layer) of
+    ``documents`` grant for ``graph`` (their ``graph:<id>/<kind>:<name>`` resources), as
+    ``{function|action|view: sorted unique names}`` with every kind present. A rule of another
+    shape (a hand-built document may name entry resources anywhere) is not a catalog grant."""
+    found: dict[str, set[str]] = {kind: set() for kind in ENTRY_KINDS}
+    for document in documents:
+        if layer_of(document) != INSTALLATION_LAYER:
+            continue
+        for rule in rules(document):
+            rule_id = rule.get("id")
+            if not isinstance(rule_id, str) or _ENTRY_RULE_RE.match(rule_id) is None:
+                continue
+            for resource in strings(rule, "resource"):
+                for kind in ENTRY_KINDS:
+                    prefix = f"graph:{graph}/{kind}:"
+                    name = resource[len(prefix) :]
+                    if resource.startswith(prefix) and ENTRY_NAME_RE.match(name):
+                        found[kind].add(name)
+    return {kind: tuple(sorted(names)) for kind, names in found.items()}
 
 
 @dataclass(frozen=True, slots=True, order=True)

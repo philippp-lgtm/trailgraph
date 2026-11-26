@@ -4235,7 +4235,8 @@
             "enum": [
               "none",
               "read",
-              "write"
+              "write",
+              "catalog"
             ]
           },
           "withheld": {
@@ -4395,6 +4396,45 @@
                 ]
               }
             }
+          },
+          "catalog": {
+            "type": "object",
+            "properties": {
+              "functions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "views": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "catalog_only": {
+                "type": "boolean"
+              },
+              "reader_rules": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "functions",
+              "actions",
+              "views",
+              "catalog_only",
+              "reader_rules"
+            ]
           }
         },
         "required": [
@@ -16777,6 +16817,33 @@
                       "--marking": {
                         "type": "string",
                         "description": "The inventory name of marking; never both.",
+                        "deprecated": true
+                      },
+                      "function": {
+                        "type": "string",
+                        "description": "Decide on one published function of the graph (read.function on the entry): does the caller's grant name it. Excludes --view, --entry-action, --action, --type, --attribute, --relation and --marking."
+                      },
+                      "--function": {
+                        "type": "string",
+                        "description": "The inventory name of function; never both.",
+                        "deprecated": true
+                      },
+                      "view": {
+                        "type": "string",
+                        "description": "Decide on one published view of the graph (read.view on the entry), as --function does."
+                      },
+                      "--view": {
+                        "type": "string",
+                        "description": "The inventory name of view; never both.",
+                        "deprecated": true
+                      },
+                      "entry_action": {
+                        "type": "string",
+                        "description": "Decide on one published action of the graph (write.action on the entry), as --function does; --action stays the policy action."
+                      },
+                      "--entry-action": {
+                        "type": "string",
+                        "description": "The inventory name of entry_action; never both.",
                         "deprecated": true
                       },
                       "file": {

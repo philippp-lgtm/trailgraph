@@ -14,7 +14,10 @@ warns with ``admin.policy_unknown_marking``, and a ``writes`` entry that names o
 attribute without the grant holding its markings warns with ``admin.policy_unusable_write``.
 An installation policy that names no grant for a marking some graph's pinned model uses warns
 with ``admin.marking_ungranted`` (``check``, ``diff``, ``apply`` and ``explain --file``; only
-maintainer surfaces show those attributes then).
+maintainer surfaces show those attributes then). Its catalog grants are checked against the
+published catalogs: a function, action or view a grant names that the graph has not published
+warns with ``policy.entry_unknown`` (it grants nothing until published), and a catalog grant
+that another grant of the same graph certainly covers warns with ``policy.catalog_widened``.
 Its ``id`` says which layer it is; a graph policy needs ``--graph``, an installation
 policy refuses it.
 
@@ -38,7 +41,9 @@ from no project, or a request with a given server token, or a server token that 
 given roles (with the project verified when one is named), would get: with the installed
 policy or with a file. Roles the policy used for the explanation does not declare warn
 with ``policy.role_unknown`` but are explained all the same, so that a policy file can be
-tried before it is applied.
+tried before it is applied. ``--function``, ``--view`` and ``--entry-action`` ask the decision on
+one published entry of the graph (``graph:<id>/<kind>:<name>``) instead of one on the graph, a
+type or a marking.
 
 ``for_graph`` is what the live view shows of one graph: the rules of both
 installed layers that can decide on it, the obligations, the graph's type
@@ -68,6 +73,7 @@ from graph_cli.access_control.documents import (
     strings,
 )
 from graph_cli.access_control.effective import (
+    catalog_grants,
     catalog_overlaps,
     graph_level,
     held_markings,
@@ -84,6 +90,7 @@ from graph_cli.access_control.terms import (
     TermModel,
     UnusableMarkedWrite,
     marking_resource,
+    named_entries,
     term_resource,
 )
 from graph_cli.audit import events
@@ -96,6 +103,8 @@ from graph_cli.audit.verify import (
 from graph_cli.catalog.policy_source import FilePolicySource
 from graph_cli.catalog.tokens import ADMIN_SCOPE, TokenRecord, parse_tokens
 from graph_cli.kernel.actions import (
+    ENTRY_KIND_ACTIONS,
+    ENTRY_NAME_RE,
     LEVEL_WRITE_ACTIONS,
     PROJECT_ADMIN_ACTIONS,
     is_known_action,
@@ -114,6 +123,7 @@ from graph_cli.kernel.authz import AuthzContext, Decision
 from graph_cli.kernel.canonical import JsonValue, hash_value
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import GraphId, parse_id
+from graph_cli.kernel.json_access import JsonShapeError, req_list
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditEventDraft, AuditReceipt
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.policy import PolicySet
@@ -335,9 +345,22 @@ def explain(
     attribute: str | None = None,
     relation: str | None = None,
     marking: str | None = None,
+    function: str | None = None,
+    view: str | None = None,
+    entry_action: str | None = None,
 ) -> Outcome:
     if marking is not None:
         _check_marking_question(marking, action, type_curie, attribute, relation)
+    entry_question = _entry_question(
+        {"function": function, "view": view, "action": entry_action},
+        {
+            "action": action,
+            "type": type_curie,
+            "attribute": attribute,
+            "relation": relation,
+            "marking": marking,
+        },
+    )
     if attribute is not None and relation is not None:
         raise GraphCliError(
             "usage.invalid_argument",
@@ -396,6 +419,9 @@ def explain(
     if record is not None:
         project = record.project
     resource = f"graph:{entry.id}" + (f"/type:{type_curie}" if type_curie is not None else "")
+    if entry_question is not None:
+        resource = f"graph:{entry.id}/{entry_question[0]}:{entry_question[1]}"
+        action = ENTRY_KIND_ACTIONS[entry_question[0]]
     if marking is not None:
         marked = marking_resource(entry.id, marking)
         if marked is None:
@@ -452,9 +478,54 @@ def explain(
     }
     if type_decision is not None:
         data["type_decision"] = _decision_json(type_decision)
+    granted = catalog_grants(caller, entry.id, policy)
+    if granted:
+        # the names the caller's grants say, published or not (step: published flags and hashes)
+        data["catalog"] = {
+            "functions": list(granted.functions),
+            "actions": list(granted.actions),
+            "views": list(granted.views),
+            "catalog_only": granted.catalog_only,
+            "reader_rules": list(granted.reader_rules),
+        }
     if action is None:
         data.update(_allowances(entry, caller, policy, data["level"], _pinned_model(ctx, entry)))
     return Outcome(data, (*warnings, *((warning,) if warning is not None else ())))
+
+
+def _entry_question(
+    asked: Mapping[str, str | None], others: Mapping[str, str | None]
+) -> tuple[str, str] | None:
+    """``--function``, ``--view`` or ``--entry-action`` asks one decision on one entry of the
+    graph (``graph:<id>/<kind>:<name>``, decided with the action of its kind: ``read.function``,
+    ``read.view`` or ``write.action``): the kind and the name, or ``None`` when none is asked.
+    The three exclude each other and every other question (``others``, by flag name)."""
+    flags = {"function": "--function", "view": "--view", "action": "--entry-action"}
+    named = [(kind, name) for kind, name in asked.items() if name is not None]
+    if not named:
+        return None
+    if len(named) > 1:
+        raise GraphCliError(
+            "usage.invalid_argument",
+            "--function, --view and --entry-action exclude each other: one decision on one entry",
+            details={"argument": "entry_action"},
+        )
+    kind, name = named[0]
+    for other, value in others.items():
+        if value is not None:
+            raise GraphCliError(
+                "usage.invalid_argument",
+                f"{flags[kind]} and --{other} exclude each other: an entry belongs to the graph,"
+                " not to a type, and its action is the one of its kind",
+                details={"argument": other},
+            )
+    if ENTRY_NAME_RE.match(name) is None:
+        raise GraphCliError(
+            "usage.invalid_argument",
+            f"{flags[kind]} {name}: not an entry name (lowercase letters, digits and _)",
+            details={"argument": "entry_action" if kind == "action" else kind},
+        )
+    return kind, name
 
 
 def _check_marking_question(
@@ -747,11 +818,20 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
     ungranted = (
         _ungranted(compiled, entries, model_of) if compiled.layer == INSTALLATION_LAYER else ()
     )
+    unpublished = (
+        _unpublished(ctx, compiled, entries) if compiled.layer == INSTALLATION_LAYER else ()
+    )
     widened = _widened(compiled, names) if compiled.layer == INSTALLATION_LAYER else ()
     return _Source(
         compiled,
         entry,
-        (*warnings, *ungranted, *widened, *(role_warning if compiled.unknown_roles else ())),
+        (
+            *warnings,
+            *ungranted,
+            *unpublished,
+            *widened,
+            *(role_warning if compiled.unknown_roles else ()),
+        ),
     )
 
 
@@ -794,6 +874,51 @@ def _widened(compiled: Compiled, names: Mapping[GraphId, str]) -> tuple[WarningR
         )
         for o in catalog_overlaps(future.documents)
     )
+
+
+_ENTRY_SLOTS: Final = (
+    ("function", "functions", "read_functions"),
+    ("action", "actions", "read_actions"),
+    ("view", "views", "read_views"),
+)
+
+
+def _unpublished(
+    ctx: AdminContext, compiled: Compiled, entries: Sequence[GraphEntry]
+) -> tuple[WarningRecord, ...]:
+    """``policy.entry_unknown`` for every function, action or view a catalog grant of the
+    installation policy ``compiled`` names that the graph's published catalog lacks (a name
+    grants nothing until the entry is published, and a later publish may add it, so it is a
+    warning like an unknown type). An archived graph and one whose catalogs cannot be read are
+    not checked."""
+    future = policy_set(compiled.document)
+    found: list[WarningRecord] = []
+    for graph in sorted(entries, key=lambda e: e.name):
+        if graph.state == "archived":
+            continue
+        named = named_entries(future.documents, graph.id)
+        if not any(named.values()):
+            continue
+        for kind, key, reader in _ENTRY_SLOTS:
+            if not named[kind]:
+                continue
+            try:
+                slot = getattr(ctx.catalog, reader)(graph.id)
+                items = [] if slot is None else req_list(slot.compiled, key)
+                published = {e.get("name") for e in items if isinstance(e, dict)}
+            except (GraphCliError, JsonShapeError):
+                continue
+            found += [
+                WarningRecord(
+                    "policy.entry_unknown",
+                    f"graph {graph.name} has published no {kind} {name}; the catalog grant"
+                    " gives nothing until it does",
+                    {"graph": graph.name, "kind": kind, "name": name},
+                )
+                for name in named[kind]
+                if name not in published
+            ]
+    return tuple(found)
 
 
 _KIND_TEXT: Final = {
