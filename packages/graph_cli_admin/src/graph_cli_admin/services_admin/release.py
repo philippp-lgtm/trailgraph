@@ -439,7 +439,8 @@ def plan(
         policy,
         entry,
         (followed_functions, followed_actions, followed_views),
-        current_catalog(session, "views"),
+        # a push that replaces the views judges the new ones itself (against the new functions)
+        None if views_replaced else current_catalog(session, "views"),
         only_project=granted_entries.only_project(ctx),
     )
     if bump == "excessive":

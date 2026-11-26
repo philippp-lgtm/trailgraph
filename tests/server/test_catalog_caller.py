@@ -7,7 +7,9 @@ them and through nothing else, over the server API as an agent harness meets it.
   ``view``) with the same answer.
 * ``COMMANDS`` is a table of every command the server's inventory lists, with the outcome for
   the catalog caller; the test fails for a command the table does not classify, so a future
-  primitive cannot slip through unnoticed.
+  primitive cannot slip through unnoticed. It covers commands only: the two routes that are no
+  command (the download ``/v1/graphs/{graph}/files/{ref}``, which delegates to ``file path``, and
+  ``/v1/graphs/{graph}/skill``) are not in it, and a new route is not caught by it.
 * No way to look names up enumerates entities (id suffixes, ambiguous suffixes, ids of other
   classes, prefix matches, offsets, inactive records, relation slots): each is refused with the
   one answer an unknown name gets.
@@ -33,8 +35,9 @@ from typing import Any
 import pytest
 from harness import CliRunner
 from support.admin import admin, init
-from support.app import app
+from support.app import app, create_graph
 from support.company_server import GRAPH, Installation, build
+from support.files import write_pdf
 from support.isolation import isolated, runner
 from support.markings import STAFF
 from support.policies import write_policy
@@ -290,6 +293,12 @@ COMMANDS: tuple[Row, ...] = (
         "the tool of a granted function",
     ),
     row(
+        "call",
+        lambda i: {"tool": "run_policies_for_unit", "input": {"unit": i.unit}},
+        unknown("tool.not_found"),
+        "the tool of a function outside the catalog does not exist",
+    ),
+    row(
         "lookup",
         lambda i: {"text": ["Engineering"], "--for": "members_of_unit.unit"},
         ALLOWED,
@@ -516,6 +525,23 @@ def test_the_table_classifies_every_command_the_server_serves(shared: Installati
     )
 
 
+def whole_strings(value: Any) -> set[str]:
+    """Every string of an answer that is a value or a key of its own (free text is one string, so a
+    sentence that mentions an entry is not one)."""
+    if isinstance(value, str):
+        return {value}
+    if isinstance(value, dict):
+        return set(value) | {t for v in value.values() for t in whole_strings(v)}
+    if isinstance(value, list):
+        return {t for v in value for t in whole_strings(v)}
+    return set()
+
+
+def named_others() -> set[str]:
+    """The entries outside the catalog by name, and as the tools of the manifest are named."""
+    return OTHERS | {f"{kind}_{name}" for name in OTHERS for kind in ("run", "do", "view")}
+
+
 @pytest.mark.parametrize("index", range(len(COMMANDS)), ids=lambda i: f"{COMMANDS[i].path}-{i}")
 def test_each_command_gives_the_catalog_caller_the_outcome_of_its_row(
     shared: Installation, index: int
@@ -531,6 +557,12 @@ def test_each_command_gives_the_catalog_caller_the_outcome_of_its_row(
     assert got == spec.expect, (spec.path, spec.why, reply.json)
     if got.code == "access.denied":  # a refusal names no entry outside the catalog
         assert not [name for name in OTHERS if name in json.dumps(error)], error
+    if got.status == 200:  # an answer names no entry outside the catalog as a name of its own
+        assert not whole_strings(reply.json["data"]) & named_others(), (spec.path, reply.json)
+    listed = {"describe/functions": "functions", "describe/actions": "actions"}.get(spec.path)
+    if listed or spec.path == "describe/views":
+        key = listed or "views"
+        assert {e["name"] for e in reply.json["data"][key]} <= GRANTED, (spec.path, reply.json)
 
 
 # ---- no way to enumerate entities -------------------------------------------------------------
@@ -671,6 +703,12 @@ def audit_events(inst: Installation) -> list[dict[str, Any]]:
 def assign(inst: Installation, who: str, i: Ids, *more: str, **options: Any) -> Reply:
     given = [f"person={i.person}", f"position={i.position}", f"since={SINCE}", *more]
     return command(inst, "do", who, name="assign_position", **{"--param": given}, **options)
+
+
+def assign_other(inst: Installation, who: str, i: Ids) -> Reply:
+    """``hand_over_position``, an action of the graph outside the catalog, with its parameters."""
+    given = [f"person={i.person}", f"position={i.position}", f"since={SINCE}"]
+    return command(inst, "do", who, name="hand_over_position", **{"--param": given})
 
 
 AGENT_GRANT = "grant.4"  # the grant of ``catalog_agent`` in ``POLICY`` (the fourth)
@@ -814,11 +852,18 @@ def test_the_audit_names_the_grant_of_every_entry_step(
     # a view the entry allows but a deny rule of the role keeps from finding: both decisions
     blind = command(fresh, "view", "denied", name="org_catalog")
     assert (blind.status, blind.error["code"]) == (403, "access.denied")
-    # what is not in the catalog is unknown, and the trail does not name it
-    command(fresh, "run", "agent", name="policies_for_unit", **{"--param": param(i)})
-    command(fresh, "do", "agent", name="hand_over_position", **{"--param": [f"person={i.person}"]})
-    command(fresh, "view", "agent", name="members_report")
-    command(fresh, "get", "agent", ref=i.unit)
+    # what is not in the catalog is unknown (checked: a reply of another kind would audit nothing
+    # and the check of the trail below would hold for nothing), and the trail does not name it
+    unknown_run = command(fresh, "run", "agent", name="policies_for_unit", **{"--param": param(i)})
+    unknown_do = assign_other(fresh, "agent", i)
+    unknown_view = command(fresh, "view", "agent", name="members_report")
+    for reply, code in (
+        (unknown_run, "function.not_found"),
+        (unknown_do, "action.not_found"),
+        (unknown_view, "view.not_found"),
+    ):
+        assert (reply.status, reply.error["code"]) == (404, code), reply.json
+    assert command(fresh, "get", "agent", ref=i.unit).status == 403
     events = audit_events(fresh)
 
     def of(token: str, command_name: str) -> list[dict[str, Any]]:
@@ -829,6 +874,15 @@ def test_the_audit_names_the_grant_of_every_entry_step(
             and e["request"]["command"] == command_name
         ]
 
+    # a name outside the catalog is the denial of the graph's own right: one event per ask, no
+    # entry in its resource (an unknown action records nothing, as for every caller)
+    for command_name, read in (("run", "read.function"), ("view", "read.get")):
+        (refusal,) = of("agent", command_name)
+        assert decisions(refusal) == {(read, "deny"): "default.deny"}, refusal["authz"]
+        (resource,) = {d["resource"] for d in refusal["authz"]["decisions"]}
+        assert "/" not in resource, resource
+        assert refusal["result"] == {"code": "access.denied", "status": "denied"}
+    assert [e["result"]["status"] for e in of("agent", "do")] == ["ok"]
     (wrote,) = [e for e in of("agent", "do") if e["result"]["status"] == "ok"]
     assert wrote["request"]["action"]["name"] == "assign_position"
     assert wrote["request"]["action"]["hash"].startswith("sha256:")
@@ -902,7 +956,7 @@ def test_policy_explain_explains_the_profile(run_cli: CliRunner, fresh: Installa
     # a project whose scope is read takes the action away, and the explanation says by which rule
     (scoped,) = explain("--entry-action", "assign_position", project="read_project")["decisions"]
     assert (scoped["effect"], scoped["rule"]) == ("deny", "scope.read_project.company")
-    # the maintainer's role is no catalog caller
+    # a reader is no catalog caller
     assert "catalog" not in explain(role="reader")
 
 
@@ -1000,3 +1054,71 @@ def test_the_markings_of_the_caller_still_filter_a_set_view(
         )  # fmt: skip
         assert (found.status, found.error["code"]) == (403, "access.denied")
     assert inst.tokens is tokens
+
+
+# ---- files: the commands the company example cannot show --------------------------------------
+
+FILES_POLICY = """\
+schema: graph_cli.policy/1
+id: installation
+roles:
+  scanner: {description: "Catalog caller on a graph that stores files"}
+grants:
+  - {entrypoint: app, graphs: "*", level: write}
+  - entrypoint: server
+    principal: {role: scanner}
+    graphs: [files_graph]
+    level: catalog
+    catalog: {functions: [scan_list]}
+    reads: [nas:Scan]
+scopes:
+  files_project: {files_graph: write}
+no_project: {"*": none}
+"""
+
+
+def test_a_catalog_caller_can_neither_add_nor_read_files(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> None:
+    """The ``company`` row of ``file add`` stops at the missing files module, so the rights of the
+    file commands are pinned here on a graph that stores files: adding one is ``write.create``,
+    checking, locating and downloading one is ``read.get``, and a catalog grant holds neither (the
+    name of the entry is not published: the caller still reads ``nas:Scan`` and nothing else)."""
+    init(run_cli, isolated_env)
+    create_graph(run_cli, "files_graph", "notes_and_sources", version="1.1.0")
+    # the file is stored before the policy is applied, as the seeds of the company example are
+    stored = app(
+        run_cli, "file", "add", str(write_pdf(tmp_path / "scan.pdf")), "--type", "nas:Scan",
+        "--no-origin", env={"GRAPH_CLI_GRAPH": "files_graph"},
+    )  # fmt: skip
+    assert stored.code == 0, stored.envelope
+    policy = write_policy(tmp_path / "policies", "installation.yaml", FILES_POLICY)
+    applied = admin(run_cli, "policy", "apply", str(policy), "--reason", "files")
+    assert applied.code == 0, applied.envelope
+    entity = stored.data["entity"]["id"]
+    token = new_token(run_cli, "app_scanner", "--project", "files_project", "--role", "scanner")
+    server = ServerApp(Settings.load(isolated_env, tmp_path), log=io.StringIO(), enroll=Enrollment)
+
+    def ask(command_path: str, /, **args: Any) -> Reply:
+        return call(
+            server, "POST", f"/v1/commands/{command_path}", token=token,
+            body={"args": {"graph": "files_graph", **args}},
+        )  # fmt: skip
+
+    content = write_pdf(tmp_path / "other.pdf", "other").read_bytes()
+    uploaded = call(server, "PUT", "/v1/uploads", token=token, raw=content)
+    assert uploaded.status == 200, uploaded.json
+    reference = {"upload": uploaded.json["upload"], "name": "other.pdf"}
+    refused = {
+        "file/add": ask("file/add", path=reference, **{"--type": "nas:Scan"}),
+        "file/check": ask("file/check", refs=[entity]),
+        "file/path": ask("file/path", ref=entity),
+    }
+    wanted = {"file/add": "write.create", "file/check": "read.get", "file/path": "read.get"}
+    for path, reply in refused.items():
+        assert (reply.status, reply.error["code"]) == (403, "access.denied"), (path, reply.json)
+        assert reply.error["details"]["action"] == wanted[path], (path, reply.json)
+    # the download route delegates to ``file path``: the same refusal, and no byte of the file
+    download = call(server, "GET", f"/v1/graphs/files_graph/files/{entity}", token=token)
+    assert (download.status, download.error["code"]) == (403, "access.denied"), download.body
+    assert content not in download.body and b"%PDF" not in download.body

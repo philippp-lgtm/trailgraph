@@ -337,3 +337,72 @@ def test_a_project_admin_is_told_which_grants_but_not_whose(
         {"grant": "grant.2", "principal": {"project": ["p1"], "role": ["own_agent"]}},
         {"grant": "grant.3", "principal": {"project": ["other_project"], "role": ["other_agent"]}},
     ]
+
+
+RELEASE_PROJECT_POLICY = """\
+schema: graph_cli.policy/1
+id: installation
+roles:
+  own_agent: {description: "Of the project that releases"}
+  other_agent: {description: "Of another project"}
+grants:
+  - entrypoint: server
+    principal: {role: own_agent, project: p1}
+    graphs: [example_graph]
+    level: catalog
+    catalog: {functions: [suppliers_by_name]}
+    reads: [inv:Item]
+  - entrypoint: server
+    principal: {role: other_agent, project: other_project}
+    graphs: [example_graph]
+    level: catalog
+    catalog: {functions: [suppliers_by_name]}
+    reads: [inv:Item]
+scopes:
+  p1: {example_graph: maintain}
+no_project: {"*": none}
+"""
+
+
+@pytest.mark.doc_claim("security_model.project_admin_ceiling")
+def test_a_project_admin_cannot_make_a_release_that_compiles_a_granted_entry_again(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> None:
+    """A release that compiles the catalogs again (it has renames or a migration) needs
+    ``maint.migrate``, which a project admin never holds: the warnings of such a release are only
+    ever shown to a maintainer, so they carry the principals of every grant."""
+    init(run_cli, isolated_env)
+    created = admin(
+        run_cli, "graph", "create", "example_graph", "--ontology", str(INVENTORY / "1.1.0")
+    )
+    assert created.code == 0, created.envelope
+    functions = write_folder(tmp_path, "functions", {"suppliers_by_name": BARE_FUNCTION})
+    assert (
+        admin(run_cli, "graph", "functions", "publish", "example_graph", str(functions)).code == 0
+    )
+    path = write_policy(tmp_path / "policies", "installation.yaml", RELEASE_PROJECT_POLICY)
+    assert admin(run_cli, "policy", "apply", str(path), "--reason", "release").code == 0
+    pa = admin(run_cli, "token", "create", "pa", "--scope", "admin", "--project", "p1")
+    root = admin(run_cli, "token", "create", "root", "--scope", "admin")
+    app = served({"env": isolated_env}, tmp_path)
+    source = moved_source(tmp_path)
+
+    def release(token: str) -> Any:
+        args = {
+            "graph": "example_graph",
+            "source": upload_tree(app, token, source),
+            "--module": "inventory",
+            "--dry-run": True,
+        }
+        return command(app, "ontology/release", token, args=args)
+
+    refused = release(pa.data["token"])
+    assert refused.status == 403, refused.json
+    assert "maint.migrate" in refused.error["message"]
+    assert not [w for w in refused.json["warnings"] if w["code"].startswith("catalog.")]
+    seen = release(root.data["token"])
+    (warning,) = [w for w in seen.json["warnings"] if w["code"].startswith("catalog.")]
+    assert [g["principal"]["role"] for g in warning["details"]["grants"]] == [
+        ["own_agent"],
+        ["other_agent"],
+    ]

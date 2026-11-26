@@ -182,3 +182,28 @@ def test_a_push_that_carries_the_release_warns_like_the_release(
     pushed = admin(run_cli, "graph", "push", "example_graph", str(work), "--reason", "move")
     assert pushed.code == 0, pushed.envelope
     assert [w["code"] for w in catalog_warnings(pushed)] == [CHANGED, CHANGED]
+
+
+def test_a_push_that_replaces_the_views_judges_the_new_views_against_the_release(
+    run_cli: CliRunner, scene: Path, tmp_path: Path
+) -> None:
+    """The release recompiles ``suppliers_by_name``; the pushed ``supplier_catalog`` no longer runs
+    it. The granted view is warned about as a changed view (its own hash), not through a function
+    it does not run any more: the published views are not the ones the graph will have."""
+    work = tmp_path / "work"
+    assert admin(run_cli, "graph", "pull", "example_graph", str(work)).code == 0
+    moved_source(work / "ontology", "2.0.0")
+    path = work / "views" / "supplier_catalog.yaml"
+    text = path.read_text()
+    rows = "  - kind: rows\n    id: names\n    function: suppliers_by_name\n"
+    assert rows in text
+    path.write_text(text.replace(rows, "", 1))
+    dry = admin(run_cli, "graph", "push", "example_graph", str(work), "--dry-run")
+    assert dry.code == 0, dry.envelope
+    found = catalog_warnings(dry)
+    assert sorted((w["details"]["kind"], w["details"]["name"]) for w in found) == [
+        ("function", "suppliers_by_name"),
+        ("view", "supplier_catalog"),
+    ]  # one warning per entry
+    (view,) = [w["details"] for w in found if w["details"]["kind"] == "view"]
+    assert "hash_before" in view and "functions" not in view, view

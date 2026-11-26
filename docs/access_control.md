@@ -558,7 +558,8 @@ no_project: {"*": write}
   is not warned about (`policy.entry_unknown` said that its grant gave nothing). An
   `ontology release` (and a `graph-admin graph push` that carries one, also on a dry run) that must compile
   the catalogs again for renamed terms republishes the same sources against the new model; a
-  granted entry that compiles to another hash warns `catalog.granted_entry_changed` as well, an
+  granted entry that compiles to another hash, or whose rows run a function that does, warns
+  `catalog.granted_entry_changed` as well, an
   entry no grant names does not. A recompile keeps every entry of a catalog, so the release
   has no `catalog.granted_entry_removed` of its own. A project admin may publish the graph's
   catalog but may not read the installation policy, so its warnings name the grants that name the
