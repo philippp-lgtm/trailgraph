@@ -665,10 +665,12 @@ before), `read.view` for a view and `write.action` for an action.
   An explicit deny therefore always wins: a token never gets through an entry what a
   deny rule, a scope, a type limit or a ceiling refuses it. The second decision is
   asked only with an allowed entry decision of the right kind made under the same
-  policy (a decision from before a policy change grants nothing) and only about what an
-  entry needs: `read.get`, `read.find`, `read.function` and `read.traverse` on the graph
-  itself, and the write actions of the levels on the graph, its types and their
-  terms. What the caller sees stays with the ordinary decision: the visibility of a
+  policy (a decision from before a policy change grants nothing) and for the same
+  caller (a decision is never carried across requests or callers), and only about what
+  an entry needs: `read.get`, `read.find`, `read.function` and `read.traverse` on the
+  graph itself, and, for an action only, the write actions of the levels on the graph,
+  its types and their terms. A function or a view never writes, even where a plain
+  `level: read` grant lets its holder run every function through the glob. What the caller sees stays with the ordinary decision: the visibility of a
   type (`read.get` on it) and the markings it holds are never decided deny-only.
 
 ### Decisions on attributes and relations
@@ -980,7 +982,8 @@ every graph whose ontology uses no marking, is answered as before.
 - **`level: catalog` and `catalog`.** For a caller whose grants on a graph are
   [catalog grants](#catalog-grants) only, `whoami` shows `level: catalog` (no rung of the
   ladder, so `withheld` is empty: the primitives were never granted, a deny rule took nothing
-  away) and `catalog`: the names `functions`, `actions` and `views` its grants give that it
+  away; a caller a scope or a deny rule takes the graph from, so that it cannot list and
+  describe it, is at `none` like a reader in the same position) and `catalog`: the names `functions`, `actions` and `views` its grants give that it
   sees (a name the graph has not published, or that names a type outside its `reads`, is
   absent), `catalog_only: true` and `reader_rules: []`. A caller that also holds a grant of
   the graph itself, or `catalog.actions` on a read grant, shows its level on the ladder
