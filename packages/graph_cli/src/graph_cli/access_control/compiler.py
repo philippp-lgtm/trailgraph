@@ -63,8 +63,8 @@ kind that names entries, ``grant.<n>.functions`` (``read.function`` on
 ``graph:<id>/function:<name>``), ``grant.<n>.views`` (``read.view``, ``.../view:<name>``) and
 ``grant.<n>.actions`` (``write.action``, ``.../action:<name>``), then ``grant.<n>.markings``;
 every resource list is sorted. ``catalog.actions`` may also stand on a ``level: read`` grant
-(a reader that writes only through these actions: the rule ``grant.<n>.actions`` joins the
-read rules); ``catalog.functions`` and ``catalog.views`` are refused there as redundant, and
+(a reader that may also write through these actions: the rule ``grant.<n>.actions`` joins
+the read rules); ``catalog.functions`` and ``catalog.views`` are refused there as redundant, and
 ``catalog`` is refused on ``level: write``. ``read.view`` and ``write.action`` are in no level,
 so a grant without ``catalog`` compiles as before, to the same hash.
 
@@ -133,7 +133,9 @@ from graph_cli.access_control.terms import (
 )
 from graph_cli.kernel.actions import (
     ACCESS_LEVELS,
+    ENTRY_KIND_ACTIONS,
     ENTRY_NAME_RE,
+    ENTRY_PLURALS,
     MAINTAIN_LEVEL,
     PROJECT_ADMIN_ACTIONS,
     SCOPE_LEVELS,
@@ -209,9 +211,8 @@ CATALOG_LEVEL: Final = "catalog"
 CATALOG_BASE_ACTIONS: Final = ("read.list", "read.describe")
 CATALOG_KINDS: Final = ("functions", "views", "actions")
 _CATALOG_ENTRIES: Final = {
-    "functions": ("function", "read.function"),
-    "views": ("view", "read.view"),
-    "actions": ("action", "write.action"),
+    ENTRY_PLURALS[kind]: (kind, str(ENTRY_KIND_ACTIONS[kind]))
+    for kind in ("function", "view", "action")
 }
 # One kind's names of a ``catalog`` key: sorted, without duplicates.
 type _Catalog = dict[str, tuple[str, ...]]

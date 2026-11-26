@@ -13,6 +13,7 @@ of ``authorize()`` calls.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Final
@@ -33,7 +34,9 @@ from graph_cli.access_control.documents import (
 from graph_cli.access_control.terms import TermModel, TypeTerms, marking_resource, term_resource
 from graph_cli.kernel.actions import (
     ACCESS_LEVELS,
+    ENTRY_KIND_ACTIONS,
     ENTRY_NAME_RE,
+    ENTRY_PLURALS,
     LEVEL_WRITE_ACTIONS,
     PROJECT_MAINT_ACTIONS,
     level_actions,
@@ -132,6 +135,9 @@ class CatalogGrants:
     actions: tuple[str, ...] = ()
     views: tuple[str, ...] = ()
     catalog_only: bool = False
+    # the ids of the allow rules that make the actor a reader of the graph (empty for a catalog-only
+    # actor): what a ``whoami`` or an ``explain`` shows to say why the catalog limits nothing
+    reader_rules: tuple[str, ...] = ()
 
     def names(self, kind: str) -> tuple[str, ...]:
         """The granted names of ``kind`` (``function``, ``action`` or ``view``)."""
@@ -147,7 +153,7 @@ class CatalogGrants:
         return bool(self.functions or self.actions or self.views)
 
 
-_ENTRY_KIND_OF: Final = {"function": "functions", "action": "actions", "view": "views"}
+_ENTRY_KIND_OF: Final = ENTRY_PLURALS
 
 
 def catalog_grants(actor: ActorContext, graph: GraphId, policy: PolicySet) -> CatalogGrants:
@@ -165,13 +171,17 @@ def catalog_grants(actor: ActorContext, graph: GraphId, policy: PolicySet) -> Ca
     resource = f"graph:{graph}"
     prefixes = {kind: f"{resource}/{kind}:" for kind in _ENTRY_KIND_OF}
     found: dict[str, set[str]] = {kind: set() for kind in _ENTRY_KIND_OF}
-    proper = False
+    proper: set[str] = set()
     for document in policy.documents:
         for rule in rules(document):
             if rule.get("effect") != "allow" or not allow_rule_holds(rule, actor):
                 continue
             patterns = strings(rule, "resource")
             for kind, prefix in prefixes.items():
+                # a rule grants the entry only through an action that covers the action of its
+                # kind (a hand-built rule may name another one, which authorize never allows)
+                if not any(glob(a, ENTRY_KIND_ACTIONS[kind]) for a in strings(rule, "action")):
+                    continue
                 for pattern in patterns:
                     name = pattern[len(prefix) :]
                     if pattern.startswith(prefix) and ENTRY_NAME_RE.match(name):
@@ -179,14 +189,86 @@ def catalog_grants(actor: ActorContext, graph: GraphId, policy: PolicySet) -> Ca
             if any(glob(p, resource) for p in patterns) and any(
                 a not in CATALOG_BASE_ACTIONS for a in strings(rule, "action")
             ):
-                proper = True
+                proper.add(str(rule.get("id")))
     names = {_ENTRY_KIND_OF[kind]: tuple(sorted(found[kind])) for kind in found}
     return CatalogGrants(
         functions=names["functions"],
         actions=names["actions"],
         views=names["views"],
         catalog_only=any(found.values()) and not proper,
+        reader_rules=tuple(sorted(proper)) if any(found.values()) else (),
     )
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class CatalogOverlap:
+    """A catalog grant (``catalog`` rule id, say ``grant.2``) on ``graph`` whose callers are
+    certainly also covered by a rule that grants the graph itself (``other``)."""
+
+    graph: str
+    catalog: str
+    other: str
+
+
+_CATALOG_RULE_RE: Final = re.compile(r"^(grant\.[0-9]+)\.(?:functions|views|actions)$")
+
+
+def catalog_overlaps(documents: Iterable[Mapping[str, JsonValue]]) -> tuple[CatalogOverlap, ...]:
+    """The catalog grants of the installation layer of ``documents`` that another grant of the
+    same graph certainly covers: an allow rule that covers ``graph:<id>`` with an action beyond
+    listing and describing, whose principal matches every actor the catalog grant's does (it
+    names no fact the catalog grant lacks and each of its values contains the grant's). Rights
+    add up, so for those callers the grant limits nothing: its ``reads`` and ``markings`` count
+    for every read, not only inside its entries. Only certain cases are found (a rule with an
+    ``unless`` condition is skipped; whether two different roles meet in one token is a question
+    of tokens, not of the policy). Pure over the documents; sorted."""
+    found: set[CatalogOverlap] = set()
+    for document in documents:
+        if layer_of(document) != INSTALLATION_LAYER:
+            continue
+        allows = [r for r in rules(document) if r.get("effect") == "allow"]
+        for rule in allows:
+            matched = _CATALOG_RULE_RE.match(str(rule.get("id")))
+            if matched is None:
+                continue
+            graphs = {
+                m.group(1)
+                for p in strings(rule, "resource")
+                if (m := _ENTRY_GRAPH_RE.match(p)) is not None
+            }
+            for graph in graphs:
+                for other in allows:
+                    other_id = str(other.get("id"))
+                    if other_id == matched.group(1) or other_id.startswith(f"{matched.group(1)}."):
+                        continue
+                    if (
+                        "unless" not in other
+                        and any(glob(p, f"graph:{graph}") for p in strings(other, "resource"))
+                        and any(a not in CATALOG_BASE_ACTIONS for a in strings(other, "action"))
+                        and _principal_implies(rule.get("principal"), other.get("principal"))
+                    ):
+                        found.add(CatalogOverlap(graph, matched.group(1), other_id))
+    return tuple(sorted(found))
+
+
+_ENTRY_GRAPH_RE: Final = re.compile(r"^graph:([^/]+)/(?:function|action|view):")
+
+
+def _principal_implies(narrow: JsonValue, wide: JsonValue) -> bool:
+    """Whether every actor whose facts match the principal ``narrow`` also matches ``wide``:
+    ``wide`` names no fact ``narrow`` lacks, and each value of ``narrow`` is among those of
+    ``wide``."""
+    near = narrow if isinstance(narrow, Mapping) else {}
+    far = wide if isinstance(wide, Mapping) else {}
+    for key, expected in far.items():
+        if key not in near:
+            return False
+        found = near[key]
+        have = found if isinstance(found, list) else [found]
+        wanted = expected if isinstance(expected, list) else [expected]
+        if not all(value in wanted for value in have):
+            return False
+    return True
 
 
 def write_obligations(

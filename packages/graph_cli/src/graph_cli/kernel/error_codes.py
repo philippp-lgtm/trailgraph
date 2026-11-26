@@ -955,6 +955,12 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec(
         "policy.role_unknown", _C.WARNING, False, "A policy rule names a role that is not declared."
     ),
+    ErrorSpec(
+        "policy.catalog_widened",
+        _C.WARNING,
+        False,
+        "A grant of the whole graph also covers the callers of a catalog grant.",
+    ),
     ErrorSpec("entity.superseded", _C.WARNING, False, "The entity is superseded."),
     ErrorSpec("entity.retracted", _C.WARNING, False, "The entity is retracted."),
     ErrorSpec("entity.alias_renamed", _C.WARNING, False, "The alias was renamed."),

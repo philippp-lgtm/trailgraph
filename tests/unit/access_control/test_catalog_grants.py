@@ -31,6 +31,7 @@ from graph_cli.access_control.documents import (
 from graph_cli.access_control.effective import (
     CatalogGrants,
     catalog_grants,
+    catalog_overlaps,
     effective_level,
     graph_level,
     withheld_actions,
@@ -564,11 +565,10 @@ VIEW = f"graph:{EXAMPLE}/view:ticket_overview"
         (["read.function"], FUNCTION),
         (["read.view"], VIEW),
         (["write.action"], ACTION),
-        (["read.function", "read.view", "write.action"], [FUNCTION, VIEW, ACTION]),
         (["read.*"], FUNCTION),  # an area glob covers the entries
         (["write.*"], ACTION),
         (["*"], VIEW),
-        (["read.function"], f"graph:{EXAMPLE}/function:*"),
+        (["read.*", "write.*"], [FUNCTION, VIEW, ACTION]),
         # on a graph the three are decided too (today's read.function on the graph)
         (["read.function", "read.view", "write.action"], f"graph:{EXAMPLE}"),
         (["read.function", "read.view", "write.action"], f"graph:{EXAMPLE}*"),
@@ -581,6 +581,45 @@ def test_entry_resources_and_actions_that_belong_together_are_valid(
 ) -> None:
     assert document_problems(doc(allow(actions, resource))) == []
     deny = {"id": "d", "effect": "deny", "action": actions, "resource": resource}
+    assert document_problems(doc(deny)) == []
+
+
+@pytest.mark.parametrize(
+    ("action", "resource"),
+    [
+        ("read.function", VIEW),
+        ("read.function", ACTION),
+        ("read.view", FUNCTION),
+        ("read.view", ACTION),
+        ("write.action", FUNCTION),
+        ("write.action", VIEW),
+        ("read.function", f"graph:{EXAMPLE}/view:*"),
+        ("write.action", f"graph:{EXAMPLE}/function:*"),
+    ],
+)
+def test_an_entry_resource_takes_the_action_of_its_kind(action: str, resource: str) -> None:
+    """``read.function`` on a view or ``write.action`` on a function can never be decided by
+    ``authorize`` as a grant of that entry; the grammar refuses the pairing."""
+    # an allow rule may not cover a kind at all (see the next test): only a deny rule is asked
+    for effect in ("deny",) if resource.endswith(":*") else ("allow", "deny"):
+        rule = {"id": "r", "effect": effect, "action": [action], "resource": resource}
+        problems = document_problems(doc(rule))
+        assert [p.path for p in problems] == ["rules[0].action"], (effect, action, resource)
+        assert "no other action is decided on an entry" in problems[0].message
+
+
+@pytest.mark.parametrize("kind", ["function", "action", "view"])
+def test_an_allow_rule_names_entries_one_by_one_and_a_deny_rule_may_cover_a_kind(
+    kind: str,
+) -> None:
+    action = {"function": "read.function", "action": "write.action", "view": "read.view"}[kind]
+    covering = f"graph:{EXAMPLE}/{kind}:*"
+    problems = document_problems(doc(allow([action], covering)))
+    assert [p.path for p in problems] == ["rules[0].resource"]
+    assert "one by one" in problems[0].message
+    # an area glob does not make it a wildcard grant either, and a list is checked per pattern
+    assert document_problems(doc(allow(["read.*", "write.*"], [covering, GRAPH])))
+    deny = {"id": "d", "effect": "deny", "action": [action], "resource": covering}
     assert document_problems(doc(deny)) == []
 
 
@@ -865,10 +904,66 @@ def test_a_grant_of_the_graph_itself_makes_the_caller_no_catalog_caller() -> Non
     assert only_reader == CatalogGrants()
 
 
+@pytest.mark.parametrize(
+    "grant",
+    [
+        # a grant of the graph itself, whatever its shape: the glob of every graph, a
+        # reads-limited reader (exact graph resource), a write level, a read grant with
+        # writes, a principal-less server grant
+        "  - {entrypoint: server, principal: {role: reader}, graphs: '*', level: read}\n",
+        "  - {entrypoint: server, principal: {role: reader}, graphs: [example_graph],"
+        ' level: read, reads: ["ex:Ticket"]}\n',
+        WRITER,
+        "  - {entrypoint: server, principal: {role: reader}, graphs: [example_graph],"
+        " level: read, writes: {ex:Ticket: {update: true}}}\n",
+        "  - {entrypoint: server, graphs: [example_graph], level: read}\n",
+    ],
+)
+def test_a_grant_of_the_graph_in_any_shape_makes_the_caller_no_catalog_caller(
+    grant: str,
+) -> None:
+    both = catalog_grants(token("support", "reader"), EXAMPLE, policy(SUPPORT, grant))
+    assert both.functions == ("customer_summary", "open_tickets")
+    assert not both.catalog_only
+    assert both.reader_rules  # and the rules that make it a reader are named
+    assert all(r.startswith("grant.") for r in both.reader_rules)
+
+
+def test_the_rules_that_make_a_caller_a_reader_are_named_and_sorted() -> None:
+    installed = policy(SUPPORT, READER, WRITER)
+    both = catalog_grants(token("support", "reader"), EXAMPLE, installed)
+    assert both.reader_rules == ("grant.2", "grant.3")
+    assert catalog_grants(token("support"), EXAMPLE, installed).reader_rules == ()
+
+
+def test_a_catalog_name_needs_the_action_of_its_kind_in_a_rule_that_names_it() -> None:
+    """A hand-built allow rule that names an entry with the wrong action grants nothing
+    (``authorize`` would never allow it); an area glob that covers the right one does."""
+    who = token("support")
+    for action, listed in (
+        ("read.function", False),  # on a view entry
+        ("read.*", True),
+        ("*", True),
+        ("write.*", False),
+    ):
+        rule = {
+            "id": "grant.1.views",
+            "effect": "allow",
+            "principal": {"role": "support"},
+            "action": [action],
+            "resource": [VIEW],
+        }
+        found = catalog_grants(who, EXAMPLE, policy_set(doc(rule)))
+        assert (found.views == ("ticket_overview",)) is (action in ("*", "read.*")), action
+        assert bool(found) is listed or action == "read.function", action
+
+
 def test_a_read_grant_with_catalog_actions_is_no_catalog_caller() -> None:
     installed = policy(CLOSER)
     found = catalog_grants(token("closer"), EXAMPLE, installed)
-    assert found == CatalogGrants(actions=("close_ticket",), catalog_only=False)
+    assert found == CatalogGrants(
+        actions=("close_ticket",), catalog_only=False, reader_rules=("grant.1",)
+    )
     assert found  # it names an action
 
 
@@ -969,3 +1064,70 @@ def test_a_write_level_grant_allows_write_action_only_through_the_glob() -> None
     assert decide(who, "write.action", ACTION, installed) == "allow:grant.1"
     assert decide(who, "read.view", VIEW, installed) == "deny:default.deny"
     assert decide(who, "read.function", FUNCTION, installed) == "allow:grant.1"
+
+
+# ---- a catalog grant that another grant of the graph certainly covers ------------------
+
+
+def overlaps(*grants: str, tail: str = TAIL) -> list[tuple[str, str, str]]:
+    return [
+        ((o.graph == str(EXAMPLE) and "example_graph") or o.graph, o.catalog, o.other)
+        for o in catalog_overlaps([compiled(*grants, tail=tail)])
+    ]
+
+
+def test_a_read_grant_of_the_same_role_widens_a_catalog_grant() -> None:
+    assert overlaps(SUPPORT, READER.replace("reader", "support")) == [
+        ("example_graph", "grant.1", "grant.2")
+    ]
+    # a write level counts as a grant of the graph too
+    assert overlaps(SUPPORT, WRITER.replace("reader", "support")) == [
+        ("example_graph", "grant.1", "grant.2")
+    ]
+
+
+def test_a_principal_less_grant_of_the_graph_covers_every_catalog_caller() -> None:
+    open_read = "  - {entrypoint: server, graphs: [example_graph], level: read}\n"
+    assert overlaps(SUPPORT, open_read) == [("example_graph", "grant.1", "grant.2")]
+    # and so does a grant of every graph for the same role
+    everywhere = "  - {entrypoint: server, principal: {role: support}, graphs: '*', level: read}\n"
+    assert overlaps(SUPPORT, everywhere) == [("example_graph", "grant.1", "grant.2")]
+
+
+def test_only_certain_overlaps_are_found() -> None:
+    # another role: the two meet only in a token that holds both
+    assert overlaps(SUPPORT, READER) == []
+    # a narrower principal than the catalog grant's: not every catalog caller matches it
+    narrow = (
+        "  - {entrypoint: server, principal: {role: support, project: p1},"
+        " graphs: [example_graph], level: read}\n"
+    )
+    assert (
+        overlaps(
+            SUPPORT,
+            narrow,
+            tail='scopes:\n  p1: {example_graph: write}\nno_project: {"*": write}\n',
+        )
+        == []
+    )
+    # another graph, another entrypoint
+    other = (
+        "  - {entrypoint: server, principal: {role: support}, graphs: [other_graph], level: read}\n"
+    )
+    assert overlaps(SUPPORT, other) == []
+    app = "  - {entrypoint: app, graphs: [example_graph], level: read}\n"
+    assert overlaps(SUPPORT, app) == []
+    # a second catalog grant of the same role grants no more than entries
+    assert overlaps(SUPPORT, TRIAGE.replace("triage", "support")) == []
+    # a read grant that only adds catalog.actions overlaps (it is a reader)
+    assert overlaps(SUPPORT, CLOSER.replace("closer", "support")) == [
+        ("example_graph", "grant.1", "grant.2")
+    ]
+
+
+def test_catalog_overlaps_is_sorted_and_reports_every_graph() -> None:
+    open_read = "  - {entrypoint: server, graphs: '*', level: read}\n"
+    both = TRIAGE.replace("triage", "support")
+    found = catalog_overlaps([compiled(both, open_read)])
+    assert [(o.catalog, o.other) for o in found] == [("grant.1", "grant.2")] * 2
+    assert found == tuple(sorted(found))

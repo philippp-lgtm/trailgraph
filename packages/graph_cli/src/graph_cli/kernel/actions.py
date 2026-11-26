@@ -78,9 +78,10 @@ ACTIONS: Final[frozenset[Action]] = READ_ACTIONS | WRITE_ACTIONS | MAINT_ACTIONS
 
 # Catalog entries (a published function, action or view) are resources of their own,
 # ``graph:<id>/<kind>:<name>``. ``read.view`` and ``write.action`` are decided on them and on no
-# other resource, and belong to no level: only a ``catalog`` grant names them, so a policy
-# written before them keeps its document and its hash. ``read.function`` is a level action that
-# is also decided on a function entry.
+# other resource, and no level expands to them, so a policy written before them keeps its
+# document and its hash. A ``catalog`` grant names them one by one; a rule whose glob covers them
+# (``write.*`` of a write level or the built-in app rule, ``*`` of the maintainers) allows them
+# too. ``read.function`` is a level action that is also decided on a function entry.
 ENTRY_ACTIONS: Final = frozenset({Action("read.view"), Action("write.action")})
 ENTRY_KINDS: Final = ("function", "action", "view")
 ENTRY_KIND_ACTIONS: Final = {
@@ -88,6 +89,8 @@ ENTRY_KIND_ACTIONS: Final = {
     "action": Action("write.action"),
     "view": Action("read.view"),
 }
+# The key a kind of entry has in a ``catalog`` of a grant and in the answers that list it.
+ENTRY_PLURALS: Final = {"function": "functions", "action": "actions", "view": "views"}
 # The names of functions, actions and views (one name space for functions and actions, one for
 # views): the pattern of the catalog formats and of the entry resources of a policy.
 ENTRY_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{1,62}$")

@@ -68,6 +68,7 @@ from graph_cli.access_control.documents import (
     strings,
 )
 from graph_cli.access_control.effective import (
+    catalog_overlaps,
     graph_level,
     held_markings,
     maintains,
@@ -112,7 +113,7 @@ from graph_cli.kernel.actor import (
 from graph_cli.kernel.authz import AuthzContext, Decision
 from graph_cli.kernel.canonical import JsonValue, hash_value
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
-from graph_cli.kernel.ids import GraphId
+from graph_cli.kernel.ids import GraphId, parse_id
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditEventDraft, AuditReceipt
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.policy import PolicySet
@@ -746,10 +747,11 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
     ungranted = (
         _ungranted(compiled, entries, model_of) if compiled.layer == INSTALLATION_LAYER else ()
     )
+    widened = _widened(compiled, names) if compiled.layer == INSTALLATION_LAYER else ()
     return _Source(
         compiled,
         entry,
-        (*warnings, *ungranted, *(role_warning if compiled.unknown_roles else ())),
+        (*warnings, *ungranted, *widened, *(role_warning if compiled.unknown_roles else ())),
     )
 
 
@@ -768,6 +770,30 @@ def _ungranted(
         if model is not None and model.used_markings():
             found += marking_warnings.ungranted_warnings(future, graph, model)
     return tuple(found)
+
+
+def _widened(compiled: Compiled, names: Mapping[GraphId, str]) -> tuple[WarningRecord, ...]:
+    """``policy.catalog_widened`` for every catalog grant of the installation policy ``compiled``
+    that another grant of the same graph certainly covers (``catalog_overlaps``): rights add up,
+    so for those callers the catalog grant limits nothing and its ``reads`` and ``markings`` count
+    for every read."""
+    future = policy_set(compiled.document)
+    return tuple(
+        WarningRecord(
+            "policy.catalog_widened",
+            f"catalog grant {o.catalog} on graph {names.get(GraphId(parse_id(o.graph)), o.graph)}"
+            f" is also covered by {o.other}, which grants the graph to every caller the catalog"
+            " grant applies to: those callers read the graph as that grant allows, and the"
+            " reads and markings of the catalog grant count for every read, not only inside"
+            " its entries",
+            {
+                "graph": names.get(GraphId(parse_id(o.graph)), o.graph),
+                "catalog_grant": o.catalog,
+                "covered_by": o.other,
+            },
+        )
+        for o in catalog_overlaps(future.documents)
+    )
 
 
 _KIND_TEXT: Final = {

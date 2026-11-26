@@ -502,7 +502,8 @@ no_project: {"*": write}
   action writes through its own entry. `markings` work as for any grant. Every
   refusal is `policy.invalid` and names the key.
 - **Actions on a read grant.** `catalog.actions` may also stand on a `level: read`
-  grant: a reader that writes only through these actions. `catalog.functions` and
+  grant: a reader that may also write through these actions (it may carry `writes`
+  too). `catalog.functions` and
   `catalog.views` are refused there (a read grant runs every function and view
   already), and `catalog` is refused on `level: write` (which allows everything). A
   grant with `catalog` of either level needs `entrypoint: server` and named graphs.
@@ -521,10 +522,18 @@ no_project: {"*": write}
   compiles to the same document and hash as before.
 - **Rights add up.** A token that holds a catalog grant and another grant of the
   graph (a `level: read` grant of its role, say) has the rights of both, so the
-  catalog limits only a token that holds nothing else on the graph. Scopes and
-  deny rules narrow the result, and an explicit deny wins: a deny rule on
-  `read.function`, `read.view` or `write.action` takes the entries away like any
-  other right.
+  catalog limits only a token that holds nothing else on the graph. Then the catalog
+  grant's `reads` and `markings` count for every read of the token, not only inside
+  its entries: a read grant on other types plus a catalog grant on `ex:B` lets the
+  token `get` and `find` `ex:B` by hand, although neither grant alone does. A
+  principal-less read grant of the graph covers every catalog token. `graph whoami`
+  and `graph-admin policy explain` show it: `catalog.catalog_only` is `false` and
+  `catalog.reader_rules` names the rules that make the caller a reader; `policy check`
+  and `policy apply` warn `policy.catalog_widened` for the certain cases (a grant of
+  the graph that matches every caller the catalog grant matches: no principal, the
+  same role, token or project). Scopes and deny rules narrow the result, and an
+  explicit deny wins: a deny rule on `read.function`, `read.view` or `write.action`
+  takes the entries away like any other right.
 
 ## Roles
 
@@ -628,26 +637,37 @@ before), `read.view` for a view and `write.action` for an action.
 - **No level expands to the new actions.** `read.view` and `write.action` are in
   the taxonomy, but `level: read` and `level: write` expand to the actions they
   always did, so a policy written before them keeps its document and hash and needs
-  no `policy apply`. Only a [catalog grant](#catalog-grants) names them, or a rule
-  written with them. The area globs cover them (`read.*`, `write.*`): a scope
-  `read` takes `write.action` away with the other writes and a scope `none` takes
-  every entry, and the globs `graph:<id>*` and `graph:*` cover entry resources. The
-  exact `graph:<id>` of a grant with `reads` does not.
-- **Where a rule may name them.** A rule on an entry resource names only
-  `read.function`, `read.view`, `write.action` or an area such as `read.*`, and
+  no `policy apply`. A [catalog grant](#catalog-grants) names them one by one. The
+  area globs cover them too (`read.*`, `write.*`) and the globs `graph:<id>*` and
+  `graph:*` cover entry resources, so a `level: write` grant, the built-in app rule
+  and the maintainers' rule allow `write.action` on every action, and a `level: read`
+  grant allows `read.function` on every function: those callers can write and run by
+  hand what the entries do, so nothing widens. A scope `read` takes `write.action`
+  away with the other writes and a scope `none` takes every entry. The exact
+  `graph:<id>` of a grant with `reads` does not cover entries.
+- **Where a rule may name them.** A rule on an entry resource names the action of
+  its kind (`read.function` on a function, `read.view` on a view, `write.action` on
+  an action) or an area such as `read.*`, an allow rule names entries one by one
+  (only a deny rule may cover every entry of a kind with `/<kind>:*`), and
   these three actions are named on graphs and entries only: not on `installation`,
   a type, an attribute, a relation, a marking or every resource. Type limits,
   `writes` lists and deny rules on types, attributes and relations never name
   `write.action` (their `write.*` still covers it, and is never decided there).
   An obligation may name it. A rule that breaks this is `policy.invalid`.
 - **Two decisions.** What a token may do through an entry is decided in two steps.
-  The entry itself is an ordinary decision on its resource: the grant names it or
-  it does not. What the entry then needs, the reads and writes its definition
-  stands for, is decided *deny-only*: the ceiling, the first matching deny rule of
-  every layer and the obligations are applied, and no allow rule is looked up; the
-  decision names the grant that allowed the entry as its rule. An explicit deny
-  therefore always wins: a token never gets through an entry what a deny rule, a
-  scope, a type limit or a ceiling refuses it.
+  The entry itself is an ordinary decision on its resource: some rule allows it (a
+  grant that names it, say) or it does not. What the entry then needs, the reads and
+  writes its definition stands for, is decided *deny-only*: the ceiling, the first
+  matching deny rule of every layer and the obligations are applied, and no allow
+  rule is looked up; the decision names the rule that allowed the entry as its rule.
+  An explicit deny therefore always wins: a token never gets through an entry what a
+  deny rule, a scope, a type limit or a ceiling refuses it. The second decision is
+  asked only with an allowed entry decision of the right kind made under the same
+  policy (a decision from before a policy change grants nothing) and only about what an
+  entry needs: `read.get`, `read.find`, `read.function` and `read.traverse` on the graph
+  itself, and the write actions of the levels on the graph, its types and their
+  terms. What the caller sees stays with the ordinary decision: the visibility of a
+  type (`read.get` on it) and the markings it holds are never decided deny-only.
 
 ### Decisions on attributes and relations
 
@@ -1055,8 +1075,8 @@ own action, `read.function`, in the `read` level.
 
 Named write actions of a graph ([Actions](cli_graph.md#actions)) have no
 action of their own in a level: nothing to apply again after an update. The one
-taxonomy entry for actions, `write.action`, is named by
-[catalog grants](#catalog-grants) only
+taxonomy entry for actions, `write.action`, is decided on the action's own resource and
+named by [catalog grants](#catalog-grants)
 ([Decisions on catalog entries](#decisions-on-catalog-entries)).
 
 - **Running.** `graph do` expands the action to ops and authorizes each one
