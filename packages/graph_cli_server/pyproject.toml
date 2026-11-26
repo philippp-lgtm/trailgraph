@@ -1,6 +1,6 @@
 [project]
 name = "graph_cli_server"
-version = "0.30.0"
+version = "0.31.0"
 license = "PolyForm-Noncommercial-1.0.0"
 description = "Domain-agnostic knowledge graph shell: HTTP API server (graph-server)."
 requires-python = ">=3.12"
