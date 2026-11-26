@@ -34,7 +34,7 @@ from typing import Final
 
 from graph_cli.access_control.authorize import authorize
 from graph_cli.access_control.documents import declared_roles
-from graph_cli.access_control.effective import graph_level, maintains
+from graph_cli.access_control.effective import catalog_grants, graph_level, maintains
 from graph_cli.audit import events
 from graph_cli.catalog.identity.request import TOKEN_SOURCE, token_principal
 from graph_cli.catalog.tokens import (
@@ -153,6 +153,7 @@ def create(
         warnings = () if maintains_any(ctx, record) else (_not_maintainer(record),)
     else:
         warnings = () if granted(ctx, record) else (_not_granted(name),)
+        warnings = (*warnings, *not_catalog_only(ctx, record))
     data: dict[str, JsonValue] = {**_listed(record, today), "token": secret}
     text = f"Token {name} created. It is shown only now; keep it secret:\n{secret}\n"
     return Outcome(data, warnings, text)
@@ -248,6 +249,7 @@ def update_roles(
                 tokens_document([updated if r is found else r for r in records]), receipt
             )
     warnings = () if granted(ctx, updated) else (_not_granted(name),)
+    warnings = (*warnings, *not_catalog_only(ctx, updated))
     data: dict[str, JsonValue] = {
         "name": name,
         "roles": list(after),
@@ -289,6 +291,21 @@ def granted(ctx: AdminContext, record: TokenRecord) -> bool:
         decision = authorize(actor, "read.get", _ANY_GRAPH, _PROBE, ctx.policy.current(None))
         return decision.effect == "allow"
     return any(graph_level(actor, g.id, ctx.policy.current(g.id)) != "none" for g in graphs)
+
+
+def not_catalog_only(ctx: AdminContext, record: TokenRecord) -> tuple[WarningRecord, ...]:
+    """``admin.token_not_catalog_only`` for each graph where the grants of this token name
+    functions or views of a catalog grant and yet another grant lets the token read the graph
+    (a token given a catalog role and a reader role): the catalog does not limit it there.
+    ``policy.catalog_widened`` finds what the principals of two grants imply; this is what the
+    roles of one token add up to."""
+    actor = server_actor(record, ctx.actor.client.version)
+    found: list[WarningRecord] = []
+    for graph in ctx.catalog.list_graphs():
+        names = catalog_grants(actor, graph.id, ctx.policy.current(graph.id))
+        if (names.functions or names.views) and not names.catalog_only:
+            found.append(_not_catalog_only(record.name, graph.name, names.reader_rules))
+    return tuple(found)
 
 
 def maintains_any(ctx: AdminContext, record: TokenRecord) -> bool:
@@ -381,6 +398,16 @@ def _not_granted(name: str) -> WarningRecord:
         f"the installed policy grants token {name} nothing on any graph; add a grant with"
         " entrypoint: server and apply the policy",
         {"name": name},
+    )
+
+
+def _not_catalog_only(name: str, graph: str, reader_rules: Sequence[str]) -> WarningRecord:
+    return WarningRecord(
+        "admin.token_not_catalog_only",
+        f"token {name} holds a catalog grant on graph {graph} and also reads it through"
+        f" {', '.join(reader_rules) or 'another grant'}: the catalog does not limit it there;"
+        " give it one role, or take the reader grant away from the roles it holds",
+        {"name": name, "graph": graph, "reader_rules": list(reader_rules)},
     )
 
 

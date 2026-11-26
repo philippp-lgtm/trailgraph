@@ -80,6 +80,7 @@ from graph_cli_admin.services_admin.tokens import (
     check_roles,
     granted,
     maintains_any,
+    not_catalog_only,
     server_actor,
 )
 
@@ -153,6 +154,8 @@ def create(
     probe = _probe(record)
     usable = maintains_any(ctx, probe) if scope == ADMIN_SCOPE else granted(ctx, probe)
     warnings = () if usable else (_unusable(project, scope),)
+    if scope != ADMIN_SCOPE:
+        warnings = (*warnings, *not_catalog_only(ctx, probe))
     data: dict[str, JsonValue] = {**_listed(record, now), "code": code}
     text = (
         f"Enrollment {record.id} for project {project} (scope {scope}) created, valid until"

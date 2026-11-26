@@ -1100,7 +1100,11 @@ every graph whose ontology uses no marking, is answered as before.
   `.views` and `.actions` show as the grant that named the entry.
 - **Tokens and enrollment.** A catalog grant counts as granted: `token create`, `token role
   add` and `enroll create` do not warn `admin.token_not_granted` for a token whose roles hold
-  one, and an enrollment code lists the graph.
+  one, and an enrollment code lists the graph. They warn `admin.token_not_catalog_only` (graph
+  and `reader_rules` named) when the roles of the token also read the graph through another
+  grant, such as a token given a catalog role and a reader role: the catalog limits nothing
+  there (rights add up). A reader whose grant only names `catalog.actions`
+  is no catalog caller and is not warned about.
 - The [live view](live_view.md) shows `reads` and `markings` next to the level
   of a caller, and for a catalog caller `level: catalog` with the entries its grants name
   (a name the graph has not published is marked). `token list` shows no level, since a level

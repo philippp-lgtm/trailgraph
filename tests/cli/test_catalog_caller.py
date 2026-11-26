@@ -551,6 +551,49 @@ def test_token_creation_and_enrollment_count_a_catalog_grant_as_granted(
     assert nothing.warning_codes == ["admin.token_not_granted"]
 
 
+def test_a_token_that_holds_a_catalog_role_and_a_reader_role_is_warned_about(
+    run_cli: CliRunner, installation: dict[str, Any]
+) -> None:
+    """Rights add up: the reader grant lets the token read what the catalog grant limits, which
+    no principal of the policy shows (``policy.catalog_widened`` cannot), only the roles one
+    token holds. ``token create``, ``token role add`` and ``enroll create`` say so."""
+    both = admin(
+        run_cli, "token", "create", "both_one", "--project", "example_project",
+        "--role", "catalog_agent", "--role", "reader",
+    )  # fmt: skip
+    assert both.code == 0, both.envelope
+    assert both.warning_codes == ["admin.token_not_catalog_only"]
+    (warning,) = both.warnings
+    assert (
+        warning["details"]["name"] == "both_one" and warning["details"]["graph"] == "example_graph"
+    )
+    assert warning["details"]["reader_rules"], warning
+    assert "example_graph" in warning["message"] and "both_one" in warning["message"]
+    # a role added later widens it the same way; a reader that only holds an action does not
+    plain = admin(
+        run_cli, "token", "create", "plain_one", "--project", "example_project",
+        "--role", "catalog_agent",
+    )  # fmt: skip
+    assert plain.warning_codes == []
+    added = admin(run_cli, "token", "role", "add", "plain_one", "reader")
+    assert added.warning_codes == ["admin.token_not_catalog_only"]
+    removed = admin(run_cli, "token", "role", "remove", "plain_one", "reader")
+    assert removed.warning_codes == []
+    mover = admin(
+        run_cli, "token", "create", "mover_one", "--project", "example_project", "--role", "mover"
+    )
+    assert mover.warning_codes == []  # a reader with catalog.actions is no catalog caller
+    code = admin(
+        run_cli, "enroll", "create", "--project", "example_project",
+        "--role", "catalog_agent", "--role", "reader",
+    )  # fmt: skip
+    assert code.warning_codes == ["admin.token_not_catalog_only"]
+    only = admin(
+        run_cli, "enroll", "create", "--project", "example_project", "--role", "catalog_agent"
+    )
+    assert only.warning_codes == []
+
+
 def test_policy_explain_shows_the_level_the_names_and_the_decision_on_an_entry(
     run_cli: CliRunner, installation: dict[str, Any]
 ) -> None:

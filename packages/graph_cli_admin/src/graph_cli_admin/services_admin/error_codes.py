@@ -106,6 +106,12 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ),
     ErrorSpec("admin.token_not_granted", _C.WARNING, False, "The policy grants the token nothing."),
     ErrorSpec(
+        "admin.token_not_catalog_only",
+        _C.WARNING,
+        False,
+        "A token with a catalog grant also reads the graph by another grant.",
+    ),
+    ErrorSpec(
         "admin.token_not_maintainer", _C.WARNING, False, "The policy lets the token not maintain."
     ),
     ErrorSpec(

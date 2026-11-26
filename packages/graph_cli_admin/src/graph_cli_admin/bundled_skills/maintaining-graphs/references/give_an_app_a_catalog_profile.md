@@ -56,7 +56,9 @@ grants:
 2. A token bound to the app's project, so the project is verified and its scope applies:
    `graph-admin token create <name> --project <project> --role <role>`, or `graph-admin enroll
    create --project <project> --role <role>`. `admin.token_not_granted` means the policy gives
-   the token nothing on any graph (a scope that takes the graph away, a role no grant names).
+   the token nothing on any graph (a scope that takes the graph away, a role no grant names);
+   `admin.token_not_catalog_only` means another role of the token reads the graph too, so the catalog
+   limits nothing: give the app one role.
 3. `graph-admin policy explain --graph <graph> --project <project> --role <role>` shows `level:
    catalog` and `catalog`: each granted name with `published` and the entry's current `hash`
    (`published: false` grants nothing yet), `catalog_only` and, when it is false, the
