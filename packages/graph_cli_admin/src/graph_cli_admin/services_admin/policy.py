@@ -95,8 +95,8 @@ from graph_cli.audit.verify import (
 from graph_cli.catalog.policy_source import FilePolicySource
 from graph_cli.catalog.tokens import ADMIN_SCOPE, TokenRecord, parse_tokens
 from graph_cli.kernel.actions import (
+    LEVEL_WRITE_ACTIONS,
     PROJECT_ADMIN_ACTIONS,
-    WRITE_ACTIONS,
     is_known_action,
     level_actions,
 )
@@ -977,7 +977,10 @@ def _token(ctx: AdminContext, name: str) -> TokenRecord:
 
 
 def _app_actions() -> list[str]:
-    return [*(a for a in level_actions("read") if not a.endswith("*")), *sorted(WRITE_ACTIONS)]
+    return [
+        *(a for a in level_actions("read") if not a.endswith("*")),
+        *sorted(LEVEL_WRITE_ACTIONS),
+    ]
 
 
 def _decision_json(decision: Decision) -> dict[str, JsonValue]:

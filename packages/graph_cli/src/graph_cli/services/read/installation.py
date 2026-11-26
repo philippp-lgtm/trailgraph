@@ -18,7 +18,12 @@ from graph_cli.access_control.effective import (
     write_obligations,
 )
 from graph_cli.access_control.terms import TermModel
-from graph_cli.kernel.actions import READ_ACTIONS, RESERVED_ACTIONS, WRITE_ACTIONS
+from graph_cli.kernel.actions import (
+    ENTRY_ACTIONS,
+    READ_ACTIONS,
+    RESERVED_ACTIONS,
+    WRITE_ACTIONS,
+)
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext
 from graph_cli.kernel.canonical import JsonValue
@@ -67,7 +72,7 @@ class ReadInstallation(ReadAccess):
         ctx = AuthzContext(op_count=1, has_reason=False, dry_run=False)
         actions: list[JsonValue] = []
         obligations: dict[str, JsonValue] = {}
-        for action in sorted((READ_ACTIONS | WRITE_ACTIONS) - RESERVED_ACTIONS):
+        for action in sorted((READ_ACTIONS | WRITE_ACTIONS) - RESERVED_ACTIONS - ENTRY_ACTIONS):
             decision = authorize(actor, action, _NO_GRAPH, ctx, policy)
             if decision.effect == "allow":
                 actions.append(action)

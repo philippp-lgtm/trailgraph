@@ -14,15 +14,17 @@ of ``authorize()`` calls.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from typing import Final
 
 from graph_cli.access_control.authorize import allow_rule_holds, authorize
-from graph_cli.access_control.compiler import WRITE_VERBS
+from graph_cli.access_control.compiler import CATALOG_BASE_ACTIONS, WRITE_VERBS
 from graph_cli.access_control.documents import (
     CURIE_RE,
     INSTALLATION_LAYER,
     fine_types,
-    is_write_glob,
+    glob,
+    is_term_write_glob,
     layer_of,
     read_limited,
     rules,
@@ -31,8 +33,9 @@ from graph_cli.access_control.documents import (
 from graph_cli.access_control.terms import TermModel, TypeTerms, marking_resource, term_resource
 from graph_cli.kernel.actions import (
     ACCESS_LEVELS,
+    ENTRY_NAME_RE,
+    LEVEL_WRITE_ACTIONS,
     PROJECT_MAINT_ACTIONS,
-    WRITE_ACTIONS,
     level_actions,
 )
 from graph_cli.kernel.actor import ActorContext, Assurance
@@ -55,7 +58,7 @@ def graph_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> str:
     for level in ACCESS_LEVELS[1:]:
         actions = [a for a in level_actions(level) if not a.endswith("*")]
         if level == "write":
-            actions += sorted(WRITE_ACTIONS)
+            actions += sorted(LEVEL_WRITE_ACTIONS)
         if not all(
             authorize(actor, a, resource, _PROBE, policy).effect == "allow" for a in actions
         ):
@@ -82,7 +85,7 @@ def effective_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> s
     reads = [a for a in level_actions("read") if not a.endswith("*")]
     if not holds(reads):
         return reached
-    return "write" if holds(sorted(WRITE_ACTIONS)) else "read"
+    return "write" if holds(sorted(LEVEL_WRITE_ACTIONS)) else "read"
 
 
 def maintains(actor: ActorContext, graph: GraphId, policy: PolicySet) -> bool:
@@ -101,7 +104,9 @@ def withheld_actions(actor: ActorContext, graph: GraphId, policy: PolicySet) -> 
     ``graph_level`` alone cannot show (a denied ``read.history`` leaves the level at
     ``none`` while the graph stays readable)."""
     resource = f"graph:{graph}"
-    ladder = [a for a in level_actions("write") if not a.endswith("*")] + sorted(WRITE_ACTIONS)
+    ladder = [a for a in level_actions("write") if not a.endswith("*")] + sorted(
+        LEVEL_WRITE_ACTIONS
+    )
     withheld: list[str] = []
     for area in ("read.", "write."):
         actions = [a for a in ladder if a.startswith(area)]
@@ -111,6 +116,77 @@ def withheld_actions(actor: ActorContext, graph: GraphId, policy: PolicySet) -> 
         if len(denied) < len(actions):
             withheld += denied
     return sorted(withheld)
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogGrants:
+    """What the allow rules that match an actor name of the entries of one graph.
+
+    ``functions``, ``actions`` and ``views`` are the granted names, sorted and unique;
+    ``catalog_only`` tells that every grant the actor has on the graph is a catalog grant
+    (``level: catalog``): the actor holds no right on the graph itself beyond listing and
+    describing it, so what its grants do not name does not exist for it. Names are the
+    grants', whether the entries are published or a deny rule takes a right away."""
+
+    functions: tuple[str, ...] = ()
+    actions: tuple[str, ...] = ()
+    views: tuple[str, ...] = ()
+    catalog_only: bool = False
+
+    def names(self, kind: str) -> tuple[str, ...]:
+        """The granted names of ``kind`` (``function``, ``action`` or ``view``)."""
+        if kind == "function":
+            return self.functions
+        if kind == "action":
+            return self.actions
+        if kind == "view":
+            return self.views
+        raise ValueError(f"unknown entry kind {kind!r}")
+
+    def __bool__(self) -> bool:
+        return bool(self.functions or self.actions or self.views)
+
+
+_ENTRY_KIND_OF: Final = {"function": "functions", "action": "actions", "view": "views"}
+
+
+def catalog_grants(actor: ActorContext, graph: GraphId, policy: PolicySet) -> CatalogGrants:
+    """The catalog entries of ``graph`` that the grants of ``actor`` name, and whether it is
+    *catalog-only* there.
+
+    Decided from the compiled allow rules whose principal matches the actor as ``authorize``
+    matches it (``allow_rule_holds``), never from a decision: a rule that names an entry
+    resource of the graph (``graph:<id>/function:<name>``, ``/action:`` or ``/view:``) grants
+    that name, and a rule that covers ``graph:<id>`` itself with any action beyond listing and
+    describing it is a grant of the graph proper (a ``read`` or ``write`` level, the
+    maintainers' rule). The actor is catalog-only when it has entry grants and no grant of the
+    graph proper. A deny rule is no grant, so a ``read.get`` deny never turns a reader into a
+    catalog caller. Pure and cheap (no decision is made): cache it per policy hash and actor."""
+    resource = f"graph:{graph}"
+    prefixes = {kind: f"{resource}/{kind}:" for kind in _ENTRY_KIND_OF}
+    found: dict[str, set[str]] = {kind: set() for kind in _ENTRY_KIND_OF}
+    proper = False
+    for document in policy.documents:
+        for rule in rules(document):
+            if rule.get("effect") != "allow" or not allow_rule_holds(rule, actor):
+                continue
+            patterns = strings(rule, "resource")
+            for kind, prefix in prefixes.items():
+                for pattern in patterns:
+                    name = pattern[len(prefix) :]
+                    if pattern.startswith(prefix) and ENTRY_NAME_RE.match(name):
+                        found[kind].add(name)
+            if any(glob(p, resource) for p in patterns) and any(
+                a not in CATALOG_BASE_ACTIONS for a in strings(rule, "action")
+            ):
+                proper = True
+    names = {_ENTRY_KIND_OF[kind]: tuple(sorted(found[kind])) for kind in found}
+    return CatalogGrants(
+        functions=names["functions"],
+        actions=names["actions"],
+        views=names["views"],
+        catalog_only=any(found.values()) and not proper,
+    )
 
 
 def write_obligations(
@@ -123,7 +199,7 @@ def write_obligations(
     sees its ``require_reason`` and ``max_batch`` too."""
     found: dict[str, JsonValue] = {}
     granted = write_grant_types(actor, graph, policy)
-    for action in sorted(WRITE_ACTIONS):
+    for action in sorted(LEVEL_WRITE_ACTIONS):
         resources = [f"graph:{graph}", *(f"graph:{graph}/type:{t}" for t in granted)]
         decision = None
         for resource in resources:
@@ -156,7 +232,7 @@ def write_grant_types(actor: ActorContext, graph: GraphId, policy: PolicySet) ->
         for rule in rules(document):
             if (
                 rule.get("effect") != "allow"
-                or not any(is_write_glob(a) for a in strings(rule, "action"))
+                or not any(is_term_write_glob(a) for a in strings(rule, "action"))
                 or not allow_rule_holds(rule, actor)
             ):
                 continue

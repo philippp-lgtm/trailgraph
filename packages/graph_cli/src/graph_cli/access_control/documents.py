@@ -17,7 +17,14 @@ one) or ``graph`` (one graph's own policy, ``graph`` names it). Keys:
 
 Resources (B6.9): ``installation``, ``graph:<id>``, a type ``graph:<id>/type:<curie>`` and,
 below a type, one attribute ``.../attr:<name>`` or one relation ``.../rel:<curie>`` (the
-terms a write touches). A rule on a type names write actions, ``read.get`` or ``read.*``:
+terms a write touches). A published catalog entry is a resource of its own below the graph:
+``graph:<id>/function:<name>``, ``.../action:<name>`` and ``.../view:<name>`` (the entry
+resources; ``.../function:*`` is the glob of every function). ``read.function``, ``read.view``
+and ``write.action`` are decided on them: a rule that names an entry resource names only these
+actions or an area glob, and these actions are named on entry and graph resources only.
+``read.view`` and ``write.action`` are in no level, a type or term rule never names
+``write.action``, and only a ``catalog`` grant allows them. A rule on a type names write
+actions (not ``write.action``), ``read.get`` or ``read.*``:
 ``read.get`` on a type is the type's visibility, the one read decision below a graph (every
 other read is decided on ``graph:<id>`` itself); a rule on a term names write actions only.
 A marking (field visibility) is the exact resource ``marking:<graph uuid>/<curie>``, outside
@@ -45,7 +52,12 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from graph_cli.kernel.actions import EXT_ACTION_RE, is_known_action
+from graph_cli.kernel.actions import (
+    ENTRY_ACTIONS,
+    ENTRY_NAME_RE,
+    EXT_ACTION_RE,
+    is_known_action,
+)
 from graph_cli.kernel.actor import (
     ActorContext,
     Assurance,
@@ -75,17 +87,28 @@ NAME_RE: Final = re.compile(rf"^{_NAME}$")
 CURIE_RE: Final = re.compile(rf"^{_CURIE}$")
 MARKING_RE: Final = re.compile(rf"^{_MARKING}$")
 MARKING_RESOURCE_PREFIX: Final = "marking:"
+# The name of a catalog entry, as in ``kernel.actions`` without its anchors.
+_ENTRY: Final = ENTRY_NAME_RE.pattern.strip("^$")
+_ENTRY_KIND: Final = r"(?:function|action|view)"
 RESOURCE_RE: Final = re.compile(
-    rf"^installation$|^graph:{_UUID}(/type:{_CURIE}(/attr:{_NAME}|/rel:{_CURIE})?)?$"
+    rf"^installation$|^graph:{_UUID}(/type:{_CURIE}(/attr:{_NAME}|/rel:{_CURIE})?"
+    rf"|/{_ENTRY_KIND}:{_ENTRY})?$"
     rf"|^marking:{_UUID}/{_MARKING}$"
 )
 TYPE_GLOB_RE: Final = re.compile(rf"^(?:{_CURIE}|[a-z][a-z0-9_]*:\*)$")
 _RESOURCE_GLOB_RE: Final = re.compile(
     rf"^(?:\*|installation|graph:\*|graph:{_UUID}(?:\*|/type:\*|/type:[a-z][a-z0-9_]*:\*"
-    rf"|/type:{_CURIE}(?:/attr:(?:{_NAME}|\*)|/rel:(?:{_CURIE}|\*))?)?"
+    rf"|/type:{_CURIE}(?:/attr:(?:{_NAME}|\*)|/rel:(?:{_CURIE}|\*))?"
+    rf"|/{_ENTRY_KIND}:(?:{_ENTRY}|\*))?"
     rf"|marking:{_UUID}/{_MARKING})$"
 )
+# A resource pattern that names an entry resource, and one that is a graph or below it only
+# through an entry (what the entry-only actions are named on).
+_ENTRY_PATTERN_RE: Final = re.compile(rf"^graph:{_UUID}/{_ENTRY_KIND}:(?:{_ENTRY}|\*)$")
+_GRAPH_PATTERN_RE: Final = re.compile(rf"^graph:(?:\*|{_UUID}\*?)$")
 _AREA_GLOBS: Final = frozenset({"*", "read.*", "write.*", "maint.*", "ext.*"})
+# What a rule on an entry resource may name: the actions decided on entries, or an area glob.
+_ENTRY_RESOURCE_ACTIONS: Final = frozenset({"read.function", *ENTRY_ACTIONS}) | _AREA_GLOBS
 _EXT_GLOB_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.\*$")
 
 _DOCUMENT_KEYS: Final = frozenset(
@@ -127,10 +150,17 @@ def is_write_glob(pattern: str) -> bool:
     return pattern == "write.*" or (pattern.startswith("write.") and is_known_action(pattern))
 
 
+def is_term_write_glob(pattern: str) -> bool:
+    """``is_write_glob`` without the entry-only ``write.action``: a write the types and terms
+    of a graph decide (``write.*`` covers it, but is never decided there)."""
+    return is_write_glob(pattern) and pattern not in ENTRY_ACTIONS
+
+
 def is_type_action_glob(pattern: str) -> bool:
-    """What a rule on a type may name: a write glob, ``read.get`` (the visibility of the type)
-    or ``read.*``, which covers it. Any other read action is never decided on a type."""
-    return is_write_glob(pattern) or pattern in ("read.get", "read.*")
+    """What a rule on a type may name: a write glob but ``write.action`` (decided on entries
+    only), ``read.get`` (the visibility of the type) or ``read.*``, which covers it. Any other
+    read action is never decided on a type."""
+    return is_term_write_glob(pattern) or pattern in ("read.get", "read.*")
 
 
 def is_resource_glob(pattern: str) -> bool:
@@ -360,23 +390,55 @@ def _rules_problems(value: JsonValue, graph_layer: bool, add: _Add) -> None:
                     "a rule on a marking names read.get only: a marking is held or not",
                 )
             elif _names_terms(resource):
-                if not all(isinstance(p, str) and is_write_glob(p) for p in actions):
+                if not all(isinstance(p, str) and is_term_write_glob(p) for p in actions):
                     add(
                         f"{path}.action",
                         "a rule on attributes or relations applies to writes only; name write"
-                        " actions",
+                        " actions (not write.action, which is decided on entries)",
                     )
             elif _names_types(resource) and not all(
                 isinstance(p, str) and is_type_action_glob(p) for p in actions
             ):
                 add(
                     f"{path}.action",
-                    "a rule on types names write actions, read.get or read.*; no other read"
-                    " is decided on a type",
+                    "a rule on types names write actions (not write.action), read.get or"
+                    " read.*; no other read is decided on a type",
                 )
+            _entry_problems(actions, resource, path, add)
         _resource_problems(rule.get("resource"), f"{path}.resource", add)
         if "unless" in rule:
             _unless_problems(rule["unless"], effect, f"{path}.unless", add)
+
+
+def _entry_problems(actions: list[JsonValue], resource: JsonValue, path: str, add: _Add) -> None:
+    """The entry resources (``graph:<id>/function:<name>`` and its siblings) are decided with
+    ``read.function``, ``read.view`` and ``write.action`` only, and those three are decided on
+    a graph or an entry only: never on ``installation``, a type, a term, a marking or ``*``."""
+    patterns = [resource] if isinstance(resource, str) else resource
+    if not isinstance(patterns, list):
+        return
+    if any(isinstance(p, str) and _ENTRY_PATTERN_RE.match(p) for p in patterns) and not all(
+        isinstance(p, str) and p in _ENTRY_RESOURCE_ACTIONS for p in actions
+    ):
+        add(
+            f"{path}.action",
+            "a rule on a function, action or view names read.function, read.view or"
+            " write.action (or an area such as read.*); no other action is decided on an entry",
+        )
+    named = sorted(p for p in actions if isinstance(p, str) and _is_entry_action(p))
+    if named and not all(
+        isinstance(p, str) and (_ENTRY_PATTERN_RE.match(p) or _GRAPH_PATTERN_RE.match(p))
+        for p in patterns
+    ):
+        add(
+            f"{path}.action",
+            f"{named[0]} is decided on a graph or on one of its entries, not on installation,"
+            " a type, an attribute, a relation, a marking or every resource",
+        )
+
+
+def _is_entry_action(pattern: str) -> bool:
+    return pattern == "read.function" or pattern in ENTRY_ACTIONS
 
 
 def _names_types(resource: JsonValue) -> bool:

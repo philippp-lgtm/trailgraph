@@ -52,6 +52,22 @@ resource lies outside ``graph:`` so that no grant, scope or deny rule that names
 it: a marked attribute is hidden from everybody until a grant names its marking. A grant
 without ``markings`` compiles as before, to the same hash.
 
+``level: catalog`` limits a server grant to named catalog entries: a ``catalog`` key lists the
+``functions``, ``actions`` and ``views`` (names of the entry pattern) the grant runs and nothing
+else of the graph is granted. It needs ``entrypoint: server`` (locally an agent with a shell reads
+the files, so the profile would only pretend), named graphs, a ``reads`` list (the types its
+entries may read, so a later release's new types never widen it) and refuses ``writes`` (an
+action writes through its own entry). Its rules: ``grant.<n>`` (``read.list`` and
+``read.describe`` on the exact ``graph:<id>``), ``grant.<n>.reads`` as above, then one rule per
+kind that names entries, ``grant.<n>.functions`` (``read.function`` on
+``graph:<id>/function:<name>``), ``grant.<n>.views`` (``read.view``, ``.../view:<name>``) and
+``grant.<n>.actions`` (``write.action``, ``.../action:<name>``), then ``grant.<n>.markings``;
+every resource list is sorted. ``catalog.actions`` may also stand on a ``level: read`` grant
+(a reader that writes only through these actions: the rule ``grant.<n>.actions`` joins the
+read rules); ``catalog.functions`` and ``catalog.views`` are refused there as redundant, and
+``catalog`` is refused on ``level: write``. ``read.view`` and ``write.action`` are in no level,
+so a grant without ``catalog`` compiles as before, to the same hash.
+
 ``types: {T: none}`` of a graph layer hides ``T`` from the app and server entrypoints: the deny
 rule ``type.<T>`` names ``read.get`` and ``write.*`` on the exact type and carries
 ``principal: {entrypoint: [app, server]}``, so a maintainer is not hit. A graph deny rule with
@@ -117,6 +133,7 @@ from graph_cli.access_control.terms import (
 )
 from graph_cli.kernel.actions import (
     ACCESS_LEVELS,
+    ENTRY_NAME_RE,
     MAINTAIN_LEVEL,
     PROJECT_ADMIN_ACTIONS,
     SCOPE_LEVELS,
@@ -185,6 +202,19 @@ _MATCHERS: Final = ("entrypoint", "principal_id", "principal_name", *ASSERTED_KE
 _DENY_ID_RE: Final = re.compile(r"^[a-z][a-z0-9_]*$")
 # The entrypoints a grant may name; the maintenance entrypoint is for maintainers only.
 GRANT_ENTRYPOINTS: Final = ("app", "server")
+# ``level: catalog``: the actions its base rule ``grant.<n>`` allows on the graph itself, the
+# kinds of entry a ``catalog`` key lists in the order their rules are compiled, and the entry
+# kind and the action each of them is decided with.
+CATALOG_LEVEL: Final = "catalog"
+CATALOG_BASE_ACTIONS: Final = ("read.list", "read.describe")
+CATALOG_KINDS: Final = ("functions", "views", "actions")
+_CATALOG_ENTRIES: Final = {
+    "functions": ("function", "read.function"),
+    "views": ("view", "read.view"),
+    "actions": ("action", "write.action"),
+}
+# One kind's names of a ``catalog`` key: sorted, without duplicates.
+type _Catalog = dict[str, tuple[str, ...]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -402,7 +432,9 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
         return []
     _unknown_keys(
         node,
-        frozenset({"principal", "entrypoint", "graphs", "level", "writes", "reads", "markings"}),
+        frozenset(
+            {"principal", "entrypoint", "graphs", "level", "writes", "reads", "markings", "catalog"}
+        ),
         path,
         ctx,
     )
@@ -424,7 +456,12 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
                 "a grant to a role needs entrypoint: server (only a server token carries roles)",
             )
     resources = _graph_resources(entry.get("graphs"), f"{path}.graphs", ctx, required=True)
-    level = _level(entry.get("level"), f"{path}.level", ctx, allowed=("read", "write"))
+    level = _level(
+        entry.get("level"), f"{path}.level", ctx, allowed=("read", "write", CATALOG_LEVEL)
+    )
+    catalog = _catalog(entry["catalog"], f"{path}.catalog", ctx) if "catalog" in entry else None
+    if level == CATALOG_LEVEL or "catalog" in entry:
+        _catalog_problems(entry, level, catalog, resources, entrypoints, path, ctx)
     writes = _writes(entry["writes"], f"{path}.writes", ctx) if "writes" in entry else None
     if "writes" in entry:
         if level == "write":
@@ -470,7 +507,9 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
             "id": f"grant.{number}",
             "effect": "allow",
             "principal": principal,
-            "action": list(level_actions(level)),
+            "action": list(
+                CATALOG_BASE_ACTIONS if level == CATALOG_LEVEL else level_actions(level)
+            ),
             # A glob would cover every type resource, whose visibility ``reads`` decides.
             "resource": [f"graph:{g}" for g in graphs] if limited else resources,
         }
@@ -478,12 +517,132 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
     if reads and limited:
         _check_reads(reads, graphs, f"{path}.reads", ctx)
         rules.append(_reads_rule(number, principal, graphs, reads))
+    if catalog and named:
+        rules += _catalog_rules(number, principal, graphs, catalog)
     if markings and named:
         _check_markings(markings, graphs, ctx)
         rules.append(_markings_rule(number, principal, graphs, markings))
     if writes and named:
         _check_writes(writes, graphs, reads, frozenset(markings or ()), f"{path}.writes", ctx)
         rules += _write_rules(number, principal, graphs, writes)
+    return rules
+
+
+def _catalog(node: YamlNode, path: str, ctx: _Context) -> _Catalog | None:
+    """The ``catalog`` of a grant: per kind (``functions``, ``views``, ``actions``) the entry
+    names, sorted and without duplicates; a kind without names is left out."""
+    entry = _map(node, path, ctx)
+    if entry is None:
+        return None
+    _unknown_keys(node, frozenset(CATALOG_KINDS), path, ctx)
+    found: _Catalog = {}
+    valid = True
+    for kind in CATALOG_KINDS:
+        if kind not in entry:
+            continue
+        names = _texts(entry[kind], f"{path}.{kind}", ctx)
+        if names is None:
+            valid = False
+            continue
+        for index, name in enumerate(names):
+            if not ENTRY_NAME_RE.match(name):
+                ctx.add(
+                    f"{path}.{kind}[{index}]",
+                    f"{name!r} is not an entry name (lowercase letters, digits and _, 2 to 63"
+                    " characters, starting with a letter)",
+                )
+                valid = False
+        found[kind] = tuple(sorted(set(names)))
+    if not entry:
+        ctx.add(path, "must name at least one function, action or view")
+        valid = False
+    return found if valid else None
+
+
+def _catalog_problems(
+    entry: Mapping[str, YamlNode],
+    level: str | None,
+    catalog: _Catalog | None,
+    resources: list[str] | None,
+    entrypoints: JsonValue,
+    path: str,
+    ctx: _Context,
+) -> None:
+    """What a ``catalog`` key and ``level: catalog`` need and refuse: where each may stand
+    (see the module documentation) and the keys they require."""
+    served = entrypoints == "server"
+    if level == CATALOG_LEVEL:
+        if "catalog" not in entry:
+            ctx.add(
+                f"{path}.catalog",
+                "is required for level: catalog: name the functions, actions and views the"
+                " grant runs",
+            )
+        if "reads" not in entry:
+            ctx.add(
+                f"{path}.reads",
+                "is required for level: catalog: name the types its entries may read, so that a"
+                " later release's new types never widen the grant",
+            )
+        if "writes" in entry:
+            ctx.add(
+                f"{path}.writes",
+                "level: catalog takes no writes; an action writes through its own entry"
+                " (catalog.actions)",
+            )
+    if "catalog" in entry and not served:
+        ctx.add(
+            f"{path}.entrypoint",
+            "a grant with catalog needs entrypoint: server (locally an agent with a shell reads"
+            " the files, so the limit would only pretend)",
+        )
+    if "catalog" in entry and resources == ["graph:*"]:
+        ctx.add(
+            f"{path}.graphs",
+            'must name graphs, not "*", when catalog is given: entries belong to a graph',
+        )
+    if level == "write" and "catalog" in entry:
+        ctx.add(
+            f"{path}.catalog",
+            "needs level: catalog or read; level write already runs every function, view"
+            " and action",
+        )
+    if level == "read" and catalog:
+        for kind in ("functions", "views"):
+            if kind in catalog:
+                ctx.add(
+                    f"{path}.catalog.{kind}",
+                    f"is redundant with level: read, which already runs every {kind[:-1]}; a"
+                    " read grant lists actions only",
+                )
+
+
+def _catalog_rules(
+    number: int,
+    principal: Mapping[str, JsonValue],
+    graphs: Sequence[GraphId],
+    catalog: _Catalog,
+) -> list[JsonValue]:
+    """``grant.<n>.functions``, ``.views`` and ``.actions`` (in this order, a kind without
+    names has no rule): the kind's action on the entry resource of every name in every named
+    graph, sorted."""
+    rules: list[JsonValue] = []
+    for kind in CATALOG_KINDS:
+        names = catalog.get(kind)
+        if not names:
+            continue
+        entry_kind, action = _CATALOG_ENTRIES[kind]
+        rules.append(
+            {
+                "id": f"grant.{number}.{kind}",
+                "effect": "allow",
+                "principal": dict(principal),
+                "action": [action],
+                "resource": sorted(
+                    f"graph:{g}/{entry_kind}:{name}" for g in graphs for name in names
+                ),
+            }
+        )
     return rules
 
 
@@ -998,7 +1157,8 @@ def _deny_rules(node: YamlNode | None, graph: GraphId | None, ctx: _Context) -> 
             ):
                 ctx.add(
                     f"{path}.action",
-                    "a deny rule on types names write actions, read.get or read.*",
+                    "a deny rule on types names write actions (not write.action), read.get or"
+                    " read.*",
                 )
                 actions = None
             names = (

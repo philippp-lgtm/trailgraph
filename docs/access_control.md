@@ -99,6 +99,8 @@ project comes from the pointer and is only asserted, so a local
   what its subject may write, down to attributes and relations
   ([Write allow lists](#write-allow-lists)), and **`reads`**, an allow list of
   the types its subject sees ([Read limits](#read-limits)).
+- A grant with `level: catalog` limits a server token to named published
+  functions, actions and views of a graph ([Catalog grants](#catalog-grants)).
 
 ```yaml
 schema: graph_cli.policy/1
@@ -455,6 +457,75 @@ sees everything, because rights add up.
   marked name through a reused name is refused (`ontology.marking_name_reused`);
   the ontology skill explains when a name counts as reused.
 
+### Catalog grants
+
+A **catalog grant** lets a server token run exactly some published entries of a
+graph, its functions, actions and views, and nothing else of it. The token lists
+the graph, reads its model and sees the types its grant names; it holds no right
+to `get`, `find`, `search`, `neighbors`, `query` or read history by hand. What an
+entry reads or writes is decided with the entry's rights
+([Decisions on catalog entries](#decisions-on-catalog-entries)), so an action may
+write what its token could not write by hand and a view may list what its token
+could not `find`. Deny rules, type limits, scopes and obligations still hold
+inside an entry.
+
+```yaml
+schema: graph_cli.policy/1
+id: installation
+roles:
+  support_agent: {description: "Support agents: the ticket entries of example_graph"}
+grants:
+  - entrypoint: server
+    principal: {role: support_agent}
+    graphs: [example_graph]
+    level: catalog
+    catalog:
+      functions: [open_tickets, customer_summary]
+      actions: [close_ticket]
+      views: [ticket_overview]
+    reads: ["ex:Ticket", "ex:Customer"]
+    markings: ["ex:personal"]
+scopes:
+  example_project: {example_graph: write}
+no_project: {"*": write}
+```
+
+- **Grammar.** `level: catalog` needs `catalog`, a mapping from `functions`,
+  `actions` and `views` to lists of entry names (lowercase letters, digits and
+  `_`, starting with a letter, as for the published entries), with at least one
+  name. A name the graph does not publish grants nothing until it is published.
+  The grant also needs `entrypoint: server` (locally a caller with a shell reads
+  the files, so the limit would only pretend), graphs named one by one (`"*"` is
+  refused: entries belong to a graph) and `reads`, the types its entries may read
+  (required, so that a type a later release adds never widens the grant; the
+  checks are those of [Read limits](#read-limits)). It takes no `writes`: an
+  action writes through its own entry. `markings` work as for any grant. Every
+  refusal is `policy.invalid` and names the key.
+- **Actions on a read grant.** `catalog.actions` may also stand on a `level: read`
+  grant: a reader that writes only through these actions. `catalog.functions` and
+  `catalog.views` are refused there (a read grant runs every function and view
+  already), and `catalog` is refused on `level: write` (which allows everything). A
+  grant with `catalog` of either level needs `entrypoint: server` and named graphs.
+- **Compiled rules.** The grant becomes `grant.<n>`, which allows `read.list` and
+  `read.describe` on the exact `graph:<id>` (the graph and its model, not the glob
+  that would cover its entries), `grant.<n>.reads` (`read.get` on the type
+  resources, which makes the graph read-limited for everyone and the types visible
+  to this grant without `read.get` on the graph, so `get` and the other primitives
+  stay refused), one rule per kind that names entries, `grant.<n>.functions`
+  (`read.function` on `graph:<id>/function:<name>`), `grant.<n>.views` (`read.view`
+  on `.../view:<name>`) and `grant.<n>.actions` (`write.action` on
+  `.../action:<name>`), and `grant.<n>.markings`. Resources are sorted and names
+  deduplicated, so the order a policy lists them in never changes its hash. A read
+  grant with `catalog.actions` keeps its read rule and gains `grant.<n>.actions`.
+  The compiled document never depends on a model, and a policy without `catalog`
+  compiles to the same document and hash as before.
+- **Rights add up.** A token that holds a catalog grant and another grant of the
+  graph (a `level: read` grant of its role, say) has the rights of both, so the
+  catalog limits only a token that holds nothing else on the graph. Scopes and
+  deny rules narrow the result, and an explicit deny wins: a deny rule on
+  `read.function`, `read.view` or `write.action` takes the entries away like any
+  other right.
+
 ## Roles
 
 Roles make two apps of one project differ, and one set of rights apply across
@@ -544,6 +615,31 @@ does not exist, and the refusal is audited; on a visible graph a refusal is
 `access.denied` with the rule. A broken installed policy stops every
 `graph` call (`policy.invalid`); `graph-admin` warns and decides without
 it, so the policy can be replaced.
+
+### Decisions on catalog entries
+
+A published function, action or view is a resource of its own below its graph:
+`graph:<id>/function:<name>`, `graph:<id>/action:<name>` and
+`graph:<id>/view:<name>`, and a rule may name all of a kind with
+`graph:<id>/function:*` (or `/action:*`, `/view:*`). Three actions are decided on
+them: `read.function` for a function (it is also decided on the graph itself, as
+before), `read.view` for a view and `write.action` for an action.
+
+- **No level expands to the new actions.** `read.view` and `write.action` are in
+  the taxonomy, but `level: read` and `level: write` expand to the actions they
+  always did, so a policy written before them keeps its document and hash and needs
+  no `policy apply`. Only a [catalog grant](#catalog-grants) names them, or a rule
+  written with them. The area globs cover them (`read.*`, `write.*`): a scope
+  `read` takes `write.action` away with the other writes and a scope `none` takes
+  every entry, and the globs `graph:<id>*` and `graph:*` cover entry resources. The
+  exact `graph:<id>` of a grant with `reads` does not.
+- **Where a rule may name them.** A rule on an entry resource names only
+  `read.function`, `read.view`, `write.action` or an area such as `read.*`, and
+  these three actions are named on graphs and entries only: not on `installation`,
+  a type, an attribute, a relation, a marking or every resource. Type limits,
+  `writes` lists and deny rules on types, attributes and relations never name
+  `write.action` (their `write.*` still covers it, and is never decided there).
+  An obligation may name it. A rule that breaks this is `policy.invalid`.
 
 ### Decisions on attributes and relations
 
@@ -950,8 +1046,10 @@ own action, `read.function`, in the `read` level.
 ## Actions
 
 Named write actions of a graph ([Actions](cli_graph.md#actions)) have no
-action of their own: no new entry in the taxonomy and nothing to apply again
-after an update.
+action of their own in a level: nothing to apply again after an update. The one
+taxonomy entry for actions, `write.action`, is named by
+[catalog grants](#catalog-grants) only
+([Decisions on catalog entries](#decisions-on-catalog-entries)).
 
 - **Running.** `graph do` expands the action to ops and authorizes each one
   as `apply` does: one decision per (`write.*` op action, type), with the

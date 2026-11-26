@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Final
 
+from graph_cli.kernel.actions import ENTRY_NAME_RE
 from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.errors import EMPTY
 from graph_cli.kernel.json_access import (
@@ -45,7 +46,8 @@ FUNCTION_SCHEMA: Final = "graph_cli.function/1"
 CATALOG_SCHEMA: Final = "graph_cli.functions/1"
 FILE_SUFFIX: Final = ".yaml"
 
-NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{1,62}$")
+# Also the name an entry resource of a policy carries (``kernel.actions``).
+NAME_RE: Final = ENTRY_NAME_RE
 MODULE_REF_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 
 MAX_SUMMARY: Final = 100
