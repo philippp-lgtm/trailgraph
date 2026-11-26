@@ -111,7 +111,8 @@ def describe_tools(
         actions=found.actions or (),
         views=found.views or (),
         obligations=obligations,
-        find=context(state).reader.may(view.actor, view.entry, "read.find"),
+        find=context(state).reader.lookup_served(view.actor, view.entry),
+        exact_ids=view.catalog_only,
         rows=context(state).reader.view_row_functions(view.actor, view.entry),
         selection=Selection(
             tools=tool,
@@ -136,9 +137,9 @@ SPECS: Final = (
             "function, action and view you may use, each with a JSON Schema (2020-12) of its "
             "input and of its answer, what it reads or writes, and the error codes it may "
             "return; errors tells what to do about each code. When a tool takes a reference "
-            "and you may find entities, the lookup tool is listed too: it finds the entity a "
-            "name stands for. Enum values and classes are the ones you see. Deprecated entries "
-            "are listed (status, replaced_by) unless "
+            "and you may find entities (or your token is limited to a catalog), the lookup tool "
+            "is listed too: it finds the entity a name stands for. Enum values and classes are "
+            "the ones you see. Deprecated entries are listed (status, replaced_by) unless "
             "--exclude-deprecated. --tool names the tools you want and refuses a name that is "
             "none of yours (tool.not_found with did_you_mean). version changes when anything "
             "listed changes; each tool's hash when that tool does."

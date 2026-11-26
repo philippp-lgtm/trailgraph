@@ -2,7 +2,8 @@
 manifest: the graph with its seeds, every function, action and view of the example plus the
 fixtures a test needs on top (a function that takes a list and a date, set views), and three
 callers: ``maintainer`` writes, ``reader`` only reads (every action is visible but not allowed to
-it) and ``narrow`` reads a few types only (the entries that name other types are hidden from it).
+it), ``narrow`` reads a few types only (the entries that name other types are hidden from it) and
+``catalog`` works through two entries (a function and an entity view) and holds nothing else.
 """
 
 import io
@@ -33,6 +34,7 @@ roles:
   maintainer: {{description: "Reads and writes the graph"}}
   reader: {{description: "Reads the graph"}}
   narrow: {{description: "Reads some types of the graph"}}
+  catalog: {{description: "Works through one function and one view only"}}
 grants:
   - {{entrypoint: app, graphs: "*", level: write}}
   - {{entrypoint: server, principal: {{role: maintainer}}, graphs: [{GRAPH}], level: write}}
@@ -42,6 +44,12 @@ grants:
     graphs: [{GRAPH}]
     level: read
     reads: [{", ".join(NARROW_TYPES)}]
+  - entrypoint: server
+    principal: {{role: catalog}}
+    graphs: [{GRAPH}]
+    level: catalog
+    catalog: {{functions: [members_of_unit], views: [unit_overview]}}
+    reads: [org:*, ppl:*, ops:*]
 scopes:
   company_project: {{{GRAPH}: write}}
 no_project: {{"*": none}}
@@ -132,7 +140,7 @@ def build(run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path) -> I
     assert policy.code == 0, policy.envelope
     tokens = {
         role: new_token(run_cli, f"app_{role}", "--project", "company_project", "--role", role)
-        for role in ("maintainer", "reader", "narrow")
+        for role in ("maintainer", "reader", "narrow", "catalog")
     }
     server = ServerApp(Settings.load(isolated_env, tmp_path), log=io.StringIO(), enroll=Enrollment)
     return Installation(server, tokens)

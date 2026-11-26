@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from graph_cli.access_control.effective import CatalogGrants
 from graph_cli.kernel.actor import ActorContext
-from graph_cli.kernel.canonical import JsonObject, JsonValue
+from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_value
 from graph_cli.kernel.errors import WarningRecord
 from graph_cli.kernel.json_access import req_list
 from graph_cli.kernel.ports.catalog import GraphEntry, SkillSlot
@@ -63,8 +64,26 @@ class ReadSkills(ReadCatalogs):
         """A digest of what the actor sees (``ReadView.digest``), recorded in the claim of an
         installed graph skill so a policy change makes the copy stale; ``None`` for an actor
         without a read limit, whose claims stay as they were. Without an attribute half it is
-        the digest of the visible types, as before markings existed."""
-        return self.read_view(actor, entry).digest
+        the digest of the visible types, as before markings existed.
+
+        A caller limited to its catalog sees what its grants name, so the digest also covers
+        the entry list: two callers with the same read view and different catalogs never share
+        one, and a change of the grants makes a copy stale. Every other caller's digest is the
+        read view's, as it was."""
+        digest = self.read_view(actor, entry).digest
+        scope = self.catalog_scope(actor, entry)
+        if scope is None:
+            return digest
+        return hash_value(
+            {
+                "reader": digest,
+                "catalog": {
+                    "functions": list(scope.functions),
+                    "actions": list(scope.actions),
+                    "views": list(scope.views),
+                },
+            }
+        )
 
     def skill_featured(self, actor: ActorContext, entry: GraphEntry) -> str:
         """The digest of what a generated skill shows of the graph's catalogs for ``actor``
@@ -107,7 +126,11 @@ class ReadSkills(ReadCatalogs):
         that fit a reader with ``view``) and the action catalog narrowed to the
         actions ``actor`` may run (within its read limits when ``limits``)."""
         functions, actions, views = self._skill_catalogs(actor, entry, view, limits=limits)
-        return describe_model(entry, model, functions, actions, views)
+        documents = describe_model(entry, model, functions, actions, views)
+        if limits and self.catalog_scope(actor, entry) is not None:
+            # the reader works through the entries its grants name: one line of the skill says so
+            documents["catalog_only"] = True
+        return documents
 
     def _skill_catalogs(
         self, actor: ActorContext, entry: GraphEntry, view: ReadView, *, limits: bool
@@ -145,7 +168,7 @@ class ReadSkills(ReadCatalogs):
                     isinstance(e, dict) and e.get("status") != "deprecated"
                     for e in req_list(document, "functions")
                 )
-                if sees and limits and self._function_denials(actor, entry):
+                if sees and limits and not self._may_run_one(actor, entry, scope):
                     document = {**document, "functions": [], "withheld": True}
             functions = document
         return (
@@ -153,6 +176,17 @@ class ReadSkills(ReadCatalogs):
             self._visible_catalog(actor, entry, limits=limits),
             self._views_catalog(actor, entry, view),
         )
+
+    def _may_run_one(
+        self, actor: ActorContext, entry: GraphEntry, scope: CatalogGrants | None
+    ) -> bool:
+        """Whether the caller may run a function of the document its skill is rendered with: it
+        holds ``read.function`` on the graph, or (a caller limited to its catalog) the policy
+        lets it run at least one of the functions its grants name, so the skill lists them
+        instead of saying functions are withheld."""
+        if not self._function_denials(actor, entry):
+            return True
+        return scope is not None and any(c.allowed for c in self.classified_functions(actor, entry))
 
     def _views_catalog(
         self, actor: ActorContext, entry: GraphEntry, view: ReadView

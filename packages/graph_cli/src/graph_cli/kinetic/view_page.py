@@ -89,14 +89,23 @@ def decode_cursor(text: str) -> Cursor:
     return Cursor(int(found[1]), int(found[2]), int(found[3]), found[4])
 
 
-def check_cursor(cursor: Cursor, *, seq: int, key: str, sections: int) -> None:
+def check_cursor(
+    cursor: Cursor, *, seq: int, key: str, sections: int, restart_only: bool = False
+) -> None:
     """The cursor must belong to this view and these parameters (``view.cursor_invalid``), to
-    this graph state (``view.cursor_stale``) and point into the view."""
+    this graph state (``view.cursor_stale``) and point into the view. ``restart_only``: the
+    caller cannot read an earlier state (no ``--as-of``), so a stale cursor says to start again
+    and names no sequence number."""
     if cursor.key != key or cursor.section >= sections:
         raise GraphCliError(
             "view.cursor_invalid",
             "the cursor belongs to another view or other parameters; start without --cursor",
             details={"reason": "view_or_parameters"},
+        )
+    if cursor.seq != seq and restart_only:
+        raise GraphCliError(
+            "view.cursor_stale",
+            "the graph changed since the cursor was issued; start again without --cursor",
         )
     if cursor.seq != seq:
         raise GraphCliError(
@@ -152,6 +161,7 @@ def render_set(
     cursor: Cursor | None = None,
     key: str = "",
     page_loads: int = PAGE_LOADS,
+    restart_only: bool = False,
 ) -> ViewModel:
     """One page of the set view ``spec``: from the start, or from ``cursor`` (which is checked
     against ``snapshot.seq``, ``key`` and the view). ``rows`` are the results of the functions
@@ -165,7 +175,13 @@ def render_set(
         )
     start_index, start_offset = 0, 0
     if cursor is not None:
-        check_cursor(cursor, seq=snapshot.seq, key=key, sections=len(spec.sections))
+        check_cursor(
+            cursor,
+            seq=snapshot.seq,
+            key=key,
+            sections=len(spec.sections),
+            restart_only=restart_only,
+        )
         start_index, start_offset = cursor.section, cursor.offset
     paged = _Paging(spec, snapshot, model, language, rows or {}, limit, page_loads, key)
     return paged.run(start_index, start_offset)

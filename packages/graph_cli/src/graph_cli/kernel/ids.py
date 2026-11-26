@@ -38,10 +38,15 @@ _URN_PREFIX: Final = "urn:uuid:"
 # variant, as ``parse_id`` requires), with or without ``urn:uuid:``, an alias, or 8 to 32 trailing
 # hex digits of the id. Stricter than ``parse_entity_ref(..., allow_abbrev=True)`` (lower-case
 # ``urn:uuid:``, no surrounding blanks): every text that matches parses.
-ENTITY_REF_PATTERN: Final = (
-    r"^(?:(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}"
-    r"-[0-9a-fA-F]{12}|[A-Z][A-Z0-9]{0,7}-[0-9]{4,}|[0-9a-fA-F]{8,32})$"
+_FULL_ID_PATTERN: Final = (
+    r"(?:urn:uuid:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[89abAB][0-9a-fA-F]{3}"
+    r"-[0-9a-fA-F]{12}"
 )
+_ALIAS_PATTERN: Final = r"[A-Z][A-Z0-9]{0,7}-[0-9]{4,}"
+ENTITY_REF_PATTERN: Final = rf"^(?:{_FULL_ID_PATTERN}|{_ALIAS_PATTERN}|[0-9a-fA-F]{{8,32}})$"
+# The same without the trailing hex digits: what a reference is for a caller that may not find
+# entities (it names an entity by its id or alias, never by a suffix).
+EXACT_ENTITY_REF_PATTERN: Final = rf"^(?:{_FULL_ID_PATTERN}|{_ALIAS_PATTERN})$"
 
 _COUNTER_MAX: Final = 0xFFF
 

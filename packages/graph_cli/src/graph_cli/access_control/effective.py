@@ -97,8 +97,11 @@ def effective_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> s
     tell that caller, with ``withheld_actions`` naming what is missing below it. A caller whose
     grants are catalog grants only is at ``catalog`` (see ``graph_level``)."""
     reached = graph_level(actor, graph, policy)
-    if reached in (ACCESS_LEVELS[-1], CATALOG_LEVEL):
-        return reached
+    if (
+        reached in (ACCESS_LEVELS[-1], CATALOG_LEVEL)
+        or catalog_grants(actor, graph, policy).catalog_only
+    ):
+        return reached  # a catalog-only caller was never granted a read to count
     resource = f"graph:{graph}"
 
     def holds(actions: Iterable[str]) -> bool:
@@ -124,11 +127,18 @@ def withheld_actions(actor: ActorContext, graph: GraphId, policy: PolicySet) -> 
     """The ladder actions denied on ``graph:<id>`` in a class (read, write) of which at
     least one action is allowed: what deny rules take away from a granted level, which
     ``graph_level`` alone cannot show (a denied ``read.history`` leaves the level at
-    ``none`` while the graph stays readable). Nothing is withheld from a catalog-only caller: the
-    primitives were never granted to it, so a deny rule took nothing away."""
-    if _catalog_level(actor, graph, policy):
-        return []
+    ``none`` while the graph stays readable). A catalog-only caller was never granted the
+    primitives, so a deny rule took nothing of them away: only a denied ``read.list`` or
+    ``read.describe`` (what its grant does allow) is withheld from it, and, as in a class of
+    the ladder, only while the other one is still allowed."""
     resource = f"graph:{graph}"
+    if catalog_grants(actor, graph, policy).catalog_only:
+        denied = [
+            a
+            for a in CATALOG_BASE_ACTIONS
+            if authorize(actor, a, resource, _PROBE, policy).effect != "allow"
+        ]
+        return sorted(denied) if len(denied) < len(CATALOG_BASE_ACTIONS) else []
     ladder = [a for a in level_actions("write") if not a.endswith("*")] + sorted(
         LEVEL_WRITE_ACTIONS
     )

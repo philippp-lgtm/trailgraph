@@ -135,7 +135,6 @@ def lookup(
         "limit": limit,
         "offset": offset,
     }
-    view = open_graph(state, graph, "read.find", "lookup", args, point)
     spec = LookupSpec(
         text=text[0],
         types=type,
@@ -146,9 +145,20 @@ def lookup(
         offset=offset,
         lang=lang,
     )
-    data, page = context(state).reader.lookup(
-        view, spec, text, for_use=for_use, for_source=for_source
+    reader = context(state).reader
+    view = open_graph(
+        state,
+        graph,
+        "read.find",
+        "lookup",
+        args,
+        point,
+        # a caller that may not find entities may look up for the parameter of an entry it may use
+        through=lambda entry: reader.lookup_path(
+            context(state).actor, entry, spec, for_use=for_use, for_source=for_source
+        ),
     )
+    data, page = reader.lookup(view, spec, text, for_use=for_use, for_source=for_source)
     page_json = page.to_json()
     switches = tuple(
         flag
@@ -183,6 +193,18 @@ def lookup(
     counts = data["texts"]
     assert isinstance(counts, list)
     missing = tuple(str(c["text"]) for c in counts if isinstance(c, Mapping) and not c["total"])
+    if view.through is not None:
+        # through an entry: no hint may name another way to look names up (a prefix, another
+        # class, free text), and there is no next page
+        spelling: tuple[dict[str, JsonValue], ...] = (
+            {"text": "No exact match; check the spelling of the name", "command": None},
+        )
+        return Result(
+            data=data,
+            graph=view.envelope_graph(),
+            page=page_json,
+            hints=spelling if missing else (),
+        )
     hints = next_page(page_json, lambda next_offset: line(text, match, next_offset))
     if missing and match == "exact":
         hints += (

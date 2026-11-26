@@ -201,6 +201,7 @@ class _Resolver:
 
 
 REF_FORMS: Final = "a full id, an alias or 8-32 trailing hex digits"
+REF_FORMS_EXACT: Final = "a full id or an alias"
 
 
 def invalid_ref(
@@ -210,6 +211,7 @@ def invalid_ref(
     lookup_for: str | None = None,
     lookup_for_source: str | None = None,
     of_class: str | None = None,
+    suffixes: bool = True,
 ) -> GraphCliError:
     """A CLI argument that is not an entity reference (a name, say). ``details.expected`` is
     ``entity_ref`` (the forms are in the message), which makes the hint ``graph lookup`` for the
@@ -225,10 +227,11 @@ def invalid_ref(
         details["for_source"] = lookup_for_source
     if of_class is not None:
         details["class"] = of_class
+    forms = REF_FORMS if suffixes else REF_FORMS_EXACT
     message = (
-        f"{argument}: expected {REF_FORMS}"
+        f"{argument}: expected {forms}"
         if argument is not None
-        else f"not an entity reference: {text!r}; expected {REF_FORMS}"
+        else f"not an entity reference: {text!r}; expected {forms}"
     )
     return GraphCliError("usage.invalid_argument", message, details=details)
 
@@ -241,13 +244,16 @@ def resolve_ref(
     lookup_for: str | None = None,
     lookup_for_source: str | None = None,
     of_class: str | None = None,
+    suffixes: bool = True,
 ) -> tuple[EntityId, tuple[WarningRecord, ...]]:
     """One reference from a CLI argument: full id, alias or abbreviation (B1.9).
 
     A full id is returned as given (the caller checks existence where it matters). Anything
-    else is ``usage.invalid_argument`` (``invalid_ref``): a name is not resolved.
+    else is ``usage.invalid_argument`` (``invalid_ref``): a name is not resolved. Without
+    ``suffixes`` an abbreviation is no reference: it names no entity, so the answer cannot tell
+    how many ids end in it.
     """
-    ref = parse_entity_ref(text, allow_abbrev=True)
+    ref = parse_entity_ref(text, allow_abbrev=suffixes)
     if ref is None:
         raise invalid_ref(
             text,
@@ -255,8 +261,9 @@ def resolve_ref(
             lookup_for=lookup_for,
             lookup_for_source=lookup_for_source,
             of_class=of_class,
+            suffixes=suffixes,
         )
-    resolver = _Resolver(snapshot, NO_BINDINGS, True, {})
+    resolver = _Resolver(snapshot, NO_BINDINGS, suffixes, {})
     found = resolver.ref(ref, "", subject=False)
     assert not isinstance(found, LocalRef | AbbrevRef)
     entity = resolver.refs[found.alias] if isinstance(found, AliasRef) else found
@@ -270,11 +277,18 @@ def entity_params(
     name: str,
     param: ParamDef,
     bound: Mapping[str, Value],
+    *,
+    exact_ids: bool = False,
 ) -> tuple[Value, list[WarningRecord]]:
     """The canonical ids for the reference texts of a ``ref`` parameter of a function, an
     action or a view, each checked to exist and to be of the declared class or a subclass (no name
     resolution). Errors name the function, action or view under ``details[kind]``;
-    ``<kind>.parameter_type`` is the wrong class."""
+    ``<kind>.parameter_type`` is the wrong class.
+
+    ``exact_ids`` is for a caller that may not find entities (a catalog-only caller): only a full
+    id or an alias is a reference, and an entity of another class is ``entity.not_found`` exactly
+    like one that does not exist (or that the caller does not see) and names no id, so no answer
+    tells an id's class, whether an alias is taken or how many ids share a suffix."""
     assert param.of_class is not None
     given = bound[param.name]
     texts = given if isinstance(given, list) else [given]
@@ -282,9 +296,23 @@ def entity_params(
     ids: list[Value] = []
     for text in texts:
         assert isinstance(text, str)
-        entity, found = resolve_ref(text, snapshot)  # ``bind`` refused any name before
+        unknown = GraphCliError(
+            "entity.not_found",
+            f"no entity {text} (parameter {param.name!r} of {name})",
+            details={"ref": text, kind: name},
+        )
+        try:
+            entity, found = resolve_ref(
+                text, snapshot, suffixes=not exact_ids
+            )  # bind refused names
+        except GraphCliError as exc:
+            if exact_ids and exc.code == "entity.not_found":
+                raise unknown from None  # one answer, whichever way the id is not an entity here
+            raise
         warnings += found
         revision = snapshot.get(entity)
+        if exact_ids and (revision is None or not model.is_a(revision.type, param.of_class)):
+            raise unknown
         if revision is None:
             raise GraphCliError(
                 "entity.not_found",
@@ -319,6 +347,7 @@ def bind_params(
     model: CompiledModel,
     snapshot: Snapshot,
     shown: CompiledModel | None = None,
+    exact_ids: bool = False,
 ) -> tuple[dict[str, Value], list[WarningRecord]]:
     """The values of a function, an action or a view call, ready to run: ``given`` is read by
     the declared types (``name=value`` pairs of the CLI, or the JSON object of a typed call with
@@ -326,16 +355,17 @@ def bind_params(
     ``ref`` parameter that has a value is resolved on ``snapshot`` and class-checked against
     ``shown`` (``model`` by default: a type limited caller binds enums on the full model but
     names entities among those it sees). The one place that binds a call's parameters, so the
-    CLI forms and the typed call refuse and resolve alike."""
+    CLI forms and the typed call refuse and resolve alike. ``exact_ids``: see ``entity_params``
+    (also, a reference is not accepted as trailing hex digits)."""
     if isinstance(given, Mapping):
-        bound = kinetic_params.bind_input(kind, name, params, given, model)
+        bound = kinetic_params.bind_input(kind, name, params, given, model, suffixes=not exact_ids)
     else:
-        bound = kinetic_params.bind_cli(kind, name, params, given, model)
+        bound = kinetic_params.bind_cli(kind, name, params, given, model, suffixes=not exact_ids)
     warnings: list[WarningRecord] = []
     for param in params:
         if param.type == "ref" and param.name in bound:
             bound[param.name], found = entity_params(
-                snapshot, shown or model, kind, name, param, bound
+                snapshot, shown or model, kind, name, param, bound, exact_ids=exact_ids
             )
             warnings += found
     return bound, warnings

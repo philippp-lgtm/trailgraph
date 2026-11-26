@@ -11,6 +11,7 @@ from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.query_ast import AsOf
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.services import migration_state
+from graph_cli.services.catalog_access import EntryPath
 from graph_cli.services.names import (
     GraphNames,
     MappedSnapshot,
@@ -20,8 +21,8 @@ from graph_cli.services.names import (
     unknown_term_of,
     with_hints,
 )
-from graph_cli.services.read.access import ReadAccess
 from graph_cli.services.read.as_of import snapshot_as_of
+from graph_cli.services.read.catalogs import ReadCatalogs
 from graph_cli.services.read.graph_read import GraphRead, graph_json
 from graph_cli.services.visibility import VisibleSnapshot
 
@@ -36,7 +37,7 @@ def _mismatched(warnings: Sequence[WarningRecord]) -> bool:
     return any(w.code == "ontology.pin_mismatch_read" for w in warnings)
 
 
-class ReadOpen(ReadAccess):
+class ReadOpen(ReadCatalogs):
     def open(
         self,
         actor: ActorContext,
@@ -45,10 +46,19 @@ class ReadOpen(ReadAccess):
         request: RequestMeta,
         *,
         as_of: AsOf | None = None,
+        through: EntryPath | None = None,
     ) -> GraphRead:
         """The graph's model and one snapshot: the head, or the state ``as_of`` names;
-        an earlier state is history, so it also needs ``read.history``."""
-        self.authorize(actor, action, f"graph:{entry.id}", request, entry)
+        an earlier state is history, so it also needs ``read.history``.
+
+        ``through`` names the entries the command works through (``run F``, ``view --name V``):
+        when the caller's rights on the graph do not allow ``action``, an entry its grants name
+        may (``authorize_through``) and the opened graph says which (``GraphRead.through``)."""
+        opened = None
+        if through is None:
+            self.authorize(actor, action, f"graph:{entry.id}", request, entry)
+        else:
+            opened = self.authorize_through(actor, entry, action, through, request)
         if as_of is not None and action != "read.history":
             self.authorize(actor, "read.history", f"graph:{entry.id}", request, entry)
         model, warnings = self._models.load_for_read(entry)
@@ -108,7 +118,17 @@ class ReadOpen(ReadAccess):
         warnings = (*warnings, *snapshot.warnings)
         self.usage.graph = graph_json(entry, snapshot.seq)
         return GraphRead(
-            entry, model, snapshot, warnings, actor, request.command, view, mapping, request.via
+            entry,
+            model,
+            snapshot,
+            warnings,
+            actor,
+            request.command,
+            view,
+            mapping,
+            request.via,
+            opened,
+            self.catalog_scope(actor, entry) is not None,
         )
 
     def rename_hint(

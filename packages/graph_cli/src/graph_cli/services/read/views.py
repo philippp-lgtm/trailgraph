@@ -18,7 +18,8 @@ from graph_cli.kinetic.view_format import ENTITY, RowsSection, placeholder_name
 from graph_cli.kinetic.view_page import decode_cursor, render_set
 from graph_cli.kinetic.view_rows import RowsResult
 from graph_cli.query.cypher.values import Value
-from graph_cli.services.read.entities import ReadEntities, current_entity
+from graph_cli.services.read.entities import ReadEntities, current_entity, unknown_entity
+from graph_cli.services.read.finding import ENTITY_SLOT
 from graph_cli.services.read.graph_read import GraphRead
 from graph_cli.services.read.json_shapes import edges_in, entities_in, value_json
 from graph_cli.services.read.queries import ReadQueries
@@ -34,6 +35,8 @@ from graph_cli.services.view_call import (
 )
 
 MISSING_REF: Final = "Missing argument 'REF'."  # what the required REF of 0.27 said
+
+type Resolved = tuple[EntityId, Revision, list[WarningRecord], list[str], list[str]]
 
 
 class ReadViews(ReadEntities, ReadQueries):
@@ -63,36 +66,76 @@ class ReadViews(ReadEntities, ReadQueries):
         if ref is None and name is None:
             raise GraphCliError("usage.missing_argument", MISSING_REF)
         chosen: ViewEntry | None = None
-        resolved: tuple[EntityId, Revision, list[WarningRecord], list[str], list[str]] | None = None
+        resolved: Resolved | None = None
         notes: list[WarningRecord] = []
-        if name is not None and name != CARD:
-            chosen = self._named_view(view, name)
-        elif name is None and ref is not None:
-            published = self._published_views(view.entry)
-            if published is not None and any(v.defn.default for v in published[0]):
-                resolved = current_entity(view, ref)
-                found = str(resolved[1].type)
-                # judge what the reader sees only when some default fits the entity's class
-                if has_default_for(published[0], view.model, found):
-                    visible = self._visible_views(view.actor, view.entry, view.read_view)
-                    chosen = default_view(visible or (), view.model, found)
-                if chosen is not None:
-                    problem = self._stale_view(view.entry, published, chosen.name)
-                    if problem is not None:  # the card answers; asking by name refuses
-                        notes.append(
-                            WarningRecord(
-                                "view.default_stale",
-                                f"the default view {chosen.name} no longer fits the graph's "
-                                f"ontology ({problem.code}); the generated card is shown; "
-                                "tell the maintainer of this graph",
-                                {"view": chosen.name, "hash": chosen.hash, "cause": problem.code},
-                            )
-                        )
-                        chosen = None
+        # opened through a catalog entry without a name: only a default view of the entity's class
+        # that the caller's grants name may answer, the card never (``read.get`` is not allowed)
+        guarded = view.through is not None and name is None
+        try:
+            if name is not None and name != CARD:
+                chosen = self._named_view(view, name)
+            elif name is None and ref is not None:
+                chosen, resolved = self._default_view(view, ref, notes)
+        except GraphCliError:
+            if not guarded:
+                raise
+            # Any error of the resolution, not only the entity's own (unknown, hidden or ambiguous
+            # id): an unreadable catalog or a storage fault is refused as the card is too. That
+            # fails closed: the answer never tells which step failed.
+            chosen = None
+        if guarded and chosen is None:
+            raise self._card_refused(view, ref)
         if chosen is None:
             data, warnings = self._card(view, ref, pairs, cursor, page_bytes, resolved)
             return data, [*warnings, *notes]
         return self._authored_view(view, chosen, ref, pairs, cursor, page_bytes, as_of, resolved)
+
+    def _default_view(
+        self, view: GraphRead, ref: str, notes: list[WarningRecord]
+    ) -> tuple[ViewEntry | None, Resolved | None]:
+        """The default view of the class of the entity ``ref`` names, if the graph published one
+        the caller may use, and the entity it resolved on the way (``None`` for none); a default
+        view that no longer fits the ontology adds ``view.default_stale`` to ``notes`` and the
+        card answers."""
+        chosen: ViewEntry | None = None
+        resolved: Resolved | None = None
+        published = self._published_views(view.entry)
+        if published is not None and any(v.defn.default for v in published[0]):
+            resolved = current_entity(view, ref)
+            found = str(resolved[1].type)
+            # judge what the reader sees only when some default fits the entity's class
+            if has_default_for(published[0], view.model, found):
+                visible = self._visible_views(view.actor, view.entry, view.read_view)
+                chosen = default_view(visible or (), view.model, found)
+            if chosen is not None:
+                problem = self._stale_view(view.entry, published, chosen.name)
+                if problem is not None:  # the card answers; asking by name refuses
+                    notes.append(
+                        WarningRecord(
+                            "view.default_stale",
+                            f"the default view {chosen.name} no longer fits the graph's "
+                            f"ontology ({problem.code}); the generated card is shown; "
+                            "tell the maintainer of this graph",
+                            {"view": chosen.name, "hash": chosen.hash, "cause": problem.code},
+                        )
+                    )
+                    chosen = None
+        return chosen, resolved
+
+    def _card_refused(self, view: GraphRead, ref: str | None) -> GraphCliError:
+        """The refusal of the card (and of everything that is not a view the caller's grants name)
+        for a graph opened through a catalog entry: the ``read.get`` denial on the graph, audited.
+        The same answer whether the entity exists, is seen or has a default view, so the call
+        tells nothing about the entity."""
+        args: dict[str, JsonValue] = {"graph": view.entry.name}
+        if ref is not None:
+            args["ref"] = ref
+        request = RequestMeta.of(view.command, args, via=view.via)
+        try:
+            self.authorize(view.actor, "read.get", f"graph:{view.entry.id}", request, view.entry)
+        except GraphCliError as exc:
+            return exc
+        return GraphCliError("internal.error", "the card was refused although read.get allows it")
 
     def _named_view(self, view: GraphRead, name: str) -> ViewEntry:
         """The view ``name`` asked for: ``view.not_found`` unless the caller sees it, and a
@@ -116,7 +159,7 @@ class ReadViews(ReadEntities, ReadQueries):
         pairs: Given,
         cursor: str | None,
         page_bytes: int | None,
-        resolved: tuple[EntityId, Revision, list[WarningRecord], list[str], list[str]] | None,
+        resolved: Resolved | None,
     ) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
         """The generated entity card (stage 1): key fields, relations with counts and the first
         neighbours, files with pages, what applies next, in one bounded answer built from the
@@ -166,7 +209,7 @@ class ReadViews(ReadEntities, ReadQueries):
         cursor: str | None,
         page_bytes: int | None,
         as_of: bool,
-        resolved: tuple[EntityId, Revision, list[WarningRecord], list[str], list[str]] | None,
+        resolved: Resolved | None,
     ) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
         """A published view: the flavour and the class are checked, the view is checked against
         the current model when it was published against another, the parameters are bound, and
@@ -194,13 +237,19 @@ class ReadViews(ReadEntities, ReadQueries):
                         details={"argument": option},
                     )
         warnings: list[WarningRecord] = []
-        entity: tuple[EntityId, Revision, list[WarningRecord], list[str], list[str]] | None = None
+        entity: Resolved | None = None
         if chosen.entity:
             assert ref is not None and chosen.takes is not None
-            entity = resolved if resolved is not None else current_entity(view, ref)
+            entity = (
+                resolved
+                if resolved is not None
+                else current_entity(view, ref, lookup_for=f"view:{name}.{ENTITY_SLOT}")
+            )
             warnings += entity[2]
             found = str(entity[1].type)
             if not view.model.is_a(found, chosen.takes):
+                if view.catalog_only or view.through is not None:
+                    raise unknown_entity(ref)  # an id of another class is no entity of the one
                 raise GraphCliError(
                     "view.class_mismatch",
                     f"view {name} takes {chosen.takes}; {ref} is a {found}",
@@ -226,6 +275,7 @@ class ReadViews(ReadEntities, ReadQueries):
             pairs,
             model=view.model,
             snapshot=view.snapshot,
+            exact_ids=view.catalog_only,
         )
         warnings += found_warnings
         spec = spec_of(chosen, view.model, bound)
@@ -289,6 +339,7 @@ class ReadViews(ReadEntities, ReadQueries):
                 page_bytes=page_bytes,
                 cursor=None if cursor is None else decode_cursor(cursor),
                 key=key,
+                restart_only=view.through is not None,  # --as-of needs read.history
             )
             shown = list(card.shown())
         self._signal(view, shown)
@@ -393,12 +444,23 @@ class ReadViews(ReadEntities, ReadQueries):
                 values[key] = json_value(bound[holder])
         with self.timings.phase("query"):
             call = kinetic_params.bind_json(
-                "function", function.name, function.defn.params, values, view.model
+                "function",
+                function.name,
+                function.defn.params,
+                values,
+                view.model,
+                suffixes=not view.catalog_only,
             )
             for param in function.defn.params:
                 if param.type == "ref":
                     call[param.name], _found = entity_params(
-                        view.snapshot, view.model, "function", function.name, param, call
+                        view.snapshot,
+                        view.model,
+                        "function",
+                        function.name,
+                        param,
+                        call,
+                        exact_ids=view.catalog_only,
                     )
         resolved = self._resolve_function(view, function, call)
         result = self._execute(view, resolved, False, budget)

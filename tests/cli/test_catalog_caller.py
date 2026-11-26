@@ -1,8 +1,10 @@
-"""C: a server token limited to the catalog (catalog callers plan, step 1): the commands that
-list, describe and count entries show exactly the entries its grant names (as not allowed until a
-later step lets them run) and nothing else; the answers for an entry outside the catalog are those
-for an entry that does not exist; ``whoami`` shows the level ``catalog`` and the names it sees;
-token creation and enrollment count the grant as granted.
+"""C: a server token limited to the catalog (catalog callers plan, steps 1 and 2): the commands
+that list, describe and count entries show exactly the entries its grant names and nothing else;
+the answers for an entry outside the catalog are those for an entry that does not exist; a granted
+function or view runs (``run``, ``view --name``, ``call``) although the token holds neither
+``read.function`` nor ``read.get`` on the graph, an action waits for a later step; ``whoami``
+shows the level ``catalog`` and the names it sees; token creation and enrollment count the grant
+as granted.
 
 The role ``catalog_agent`` is granted ``items_by_condition``, ``move_item`` and ``item_catalog`` of
 ``example_graph`` (inventory), ``reader`` reads everything, ``idle`` is granted nothing. The server
@@ -132,8 +134,8 @@ def test_start_counts_the_catalog_only_and_says_level_catalog(
     assert started.status == 200, started.json
     (graph,) = started.json["data"]["graphs"]
     assert graph["level"] == "catalog" and graph["withheld"] == []
-    assert graph["counts"]["functions"] == 0 and graph["counts"]["views"] == 0
-    assert graph["not_allowed"] == {"functions": 1, "actions": 1, "views": 1}
+    assert graph["counts"]["functions"] == 1 and graph["counts"]["views"] == 1
+    assert graph["not_allowed"] == {"actions": 1}  # an action is written through its grant later
     full = command(served, "start", reader).json["data"]["graphs"][0]
     assert full["counts"]["functions"] == 2 and full["level"] == "read"
 
@@ -173,24 +175,24 @@ def test_every_listing_names_the_granted_entries_only(
     for answer in answers:
         assert_hidden_absent(answer["data"], OTHERS)
     modules = command(served, "describe/modules", agent, **GRAPH).json["data"]["modules"]
-    assert [m["not_allowed"] for m in modules if "not_allowed" in m] == [
-        {"functions": 1, "actions": 1, "views": 1}
-    ]
-    # nothing is allowed yet: the manifest lists no tool
-    assert command(served, "describe/tools", agent, **GRAPH).json["data"]["tools"] == []
+    assert [m["not_allowed"] for m in modules if "not_allowed" in m] == [{"actions": 1}]
+    # the manifest is exactly the tools the token may use: its function and its view
+    tools = command(served, "describe/tools", agent, **GRAPH).json["data"]["tools"]
+    assert sorted(t["name"] for t in tools) == ["run_items_by_condition", "view_item_catalog"]
 
 
 KINDS = ("function", "action", "view")
 GRANTED_OF = {"function": "items_by_condition", "action": "move_item", "view": "item_catalog"}
 
 
-def test_a_granted_entry_is_described_as_not_allowed_and_another_is_unknown(
+def test_a_granted_entry_is_described_as_allowed_and_another_is_unknown(
     served: ServerApp, agent: str
 ) -> None:
     shown = command(served, "describe/function", agent, name="items_by_condition", **GRAPH)
     assert shown.status == 200, shown.json
-    function = shown.json["data"]["function"]
-    assert function["allowed"] is False and function["missing"]
+    assert "allowed" not in shown.json["data"]["function"]  # allowed entries carry no mark
+    action = command(served, "describe/action", agent, name="move_item", **GRAPH)
+    assert action.json["data"]["action"]["allowed"] is False  # step 3 lets it write
     for path, hidden, missing, swap in (
         ("describe/function", "items_in_location", "items_in_nowhere", "function"),
         ("describe/action", "retire_item", "retire_itemm", "action"),
@@ -226,18 +228,65 @@ def test_do_of_a_granted_action_is_denied_and_of_another_is_not_found(
     assert_hidden_absent(unnamed.json["error"]["details"]["did_you_mean"], OTHERS)
 
 
-def test_run_and_view_are_refused_the_same_for_every_name(served: ServerApp, agent: str) -> None:
-    """The graph itself is not open for ``run`` and ``view`` yet (that is a later step), so a
-    granted and an unnamed entry are answered alike: nothing tells them apart."""
-    for path, key, granted, unnamed in (
-        ("run", "name", "items_by_condition", "items_in_location"),
-        ("view", "name", "item_catalog", "location_overview"),
+@pytest.mark.doc_claim("security_model.catalog_grants")
+def test_a_granted_function_and_view_run_and_an_unnamed_one_is_not_found(
+    served: ServerApp, agent: str, reader: str
+) -> None:
+    ran = command(served, "run", agent, name="items_by_condition", **GRAPH,
+                  **{"--param": ["condition=damaged"]})  # fmt: skip
+    assert ran.status == 200, ran.json
+    assert ran.json["data"]["function"]["name"] == "items_by_condition"
+    assert ran.json["data"]["columns"] == ["item", "condition"]
+    shown = command(served, "view", agent, name="item_catalog", **GRAPH)
+    assert shown.status == 200, shown.json
+    assert shown.json["data"]["view"]["name"] == "item_catalog"
+    # what the reader gets of the same call is the same
+    again = command(served, "run", reader, name="items_by_condition", **GRAPH,
+                    **{"--param": ["condition=damaged"]})  # fmt: skip
+    assert again.json["data"] == ran.json["data"]
+    for path, granted, unnamed, missing, code in (
+        ("run", "items_by_condition", "items_in_location", "items_in_nowhere", "function"),
+        ("view", "item_catalog", "location_overview", "location_overviewz", "view"),
     ):
-        first = command(served, path, agent, **{key: granted}, **GRAPH)
-        second = command(served, path, agent, **{key: unnamed}, **GRAPH)
-        assert first.status == second.status == 403, (first.json, second.json)
-        assert first.error["code"] == second.error["code"] == "access.denied"
-        assert str(first.json["error"]["details"]) == str(second.json["error"]["details"])
+        first = command(served, path, agent, name=unnamed, **GRAPH)
+        second = command(served, path, agent, name=missing, **GRAPH)
+        assert first.status == second.status == 404, (first.json, second.json)
+        assert first.error["code"] == second.error["code"] == f"{code}.not_found"
+        one, two = first.json, second.json
+        for body in (one, two):
+            assert body["error"]["details"].pop("did_you_mean") in ([], [granted])
+        assert str(one).replace(unnamed, "X") == str(two).replace(missing, "X")
+        assert_hidden_absent(two, OTHERS)
+
+
+@pytest.mark.doc_claim("security_model.catalog_grants")
+def test_the_primitives_and_the_card_stay_refused_whatever_is_asked(
+    served: ServerApp, agent: str
+) -> None:
+    """Granting entries opens no primitive: ``get``, ``find``, ``query``, the card of ``view``,
+    and ``view --name card`` are the same ``access.denied`` as before, for an id that exists or
+    not, with a default view or not."""
+    missing = "0192f0aa-0000-7000-8000-000000000000"
+    for path, args in (
+        ("get", {"ref": missing}),
+        ("find", {"--type": ["inv:Item"]}),
+        ("query", {"text": "MATCH (i:Item) RETURN i.name"}),
+        ("view", {"ref": missing}),
+        ("view", {"ref": missing, "name": "card"}),
+        ("view", {"ref": "abcdef12"}),
+        ("neighbors", {"ref": missing}),
+        ("lookup", {"text": ["x"]}),
+        ("lookup", {"text": ["x"], "--for": "part_of"}),
+        ("lookup", {"text": ["x"], "--match": "prefix", "--for": "items_by_condition.condition"}),
+        ("search", {"text": "x"}),
+    ):
+        reply = command(served, path, agent, **args, **GRAPH)
+        assert reply.status == 403 and reply.error["code"] == "access.denied", (path, reply.json)
+        assert reply.error["details"]["action"].startswith("read.")
+        assert reply.error["details"]["resource"].count("/") == 0  # the graph, never an entry
+    first = command(served, "view", agent, ref=missing, **GRAPH)
+    second = command(served, "view", agent, ref="abcdef12", **GRAPH)
+    assert first.json["error"] == second.json["error"]
 
 
 def test_call_of_an_unnamed_tool_is_tool_not_found(served: ServerApp, agent: str) -> None:
@@ -245,6 +294,53 @@ def test_call_of_an_unnamed_tool_is_tool_not_found(served: ServerApp, agent: str
         reply = command(served, "call", agent, tool=tool, input={}, **GRAPH)
         assert reply.status == 404 and reply.error["code"] == "tool.not_found", reply.json
         assert_hidden_absent(reply.json["error"]["details"].get("did_you_mean", []), OTHERS)
+
+
+def test_call_runs_the_granted_function_and_view_through_the_manifest(
+    served: ServerApp, agent: str
+) -> None:
+    ran = command(served, "call", agent, tool="run_items_by_condition",
+                  input={"condition": "damaged"}, **GRAPH)  # fmt: skip
+    assert ran.status == 200, ran.json
+    assert ran.json["data"]["function"]["name"] == "items_by_condition"
+    assert ran.json["data"]["page"]["total"] == 0  # the graph holds no item
+    shown = command(served, "call", agent, tool="view_item_catalog", input={}, **GRAPH)
+    assert shown.status == 200, shown.json
+    assert shown.json["data"]["view"]["name"] == "item_catalog"
+    # a tool of the manifest runs through its own hash too
+    tools = {
+        t["name"]: t
+        for t in command(served, "describe/tools", agent, **GRAPH).json["data"]["tools"]
+    }
+    stamped = command(
+        served, "call", agent, tool="run_items_by_condition", input={"condition": "damaged"},
+        **{"--expect-hash": tools["run_items_by_condition"]["hash"]}, **GRAPH,
+    )  # fmt: skip
+    assert stamped.status == 200, stamped.json
+    # an action is not a tool until step 3 lets the token write through its grant
+    assert "do_move_item" not in tools
+    refused = command(served, "call", agent, tool="do_move_item", input={}, **GRAPH)
+    assert refused.status in (403, 404), refused.json
+
+
+def test_the_lookup_tool_is_listed_only_when_a_tool_has_a_reference_input(
+    served: ServerApp, agent: str
+) -> None:
+    """The entries of this role take no reference, so the manifest has no lookup tool and a call
+    of it is an unknown tool, whatever it asks for."""
+    tools = command(served, "describe/tools", agent, **GRAPH).json["data"]["tools"]
+    assert "lookup" not in {t["name"] for t in tools}
+    given = {"text": "x", "for": "run_items_by_condition.condition"}
+    reply = command(served, "call", agent, tool="lookup", input=given, **GRAPH)
+    assert reply.status == 404 and reply.error["code"] == "tool.not_found", reply.json
+    assert reply.error["details"]["did_you_mean"] in ([], ["run_items_by_condition"])
+    assert_hidden_absent(reply.json["error"]["details"], OTHERS)
+    # the way a name is looked up for a parameter that is no reference: a mistake of the call
+    asked = command(
+        served, "lookup", agent, text=["x"], **{"--for": "items_by_condition.condition"}, **GRAPH
+    )
+    assert asked.status == 400, asked.json
+    assert asked.error["code"] == "usage.invalid_argument"
 
 
 # ---- tokens and enrollment ----------------------------------------------------------------

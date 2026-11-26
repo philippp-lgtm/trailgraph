@@ -14,16 +14,18 @@ from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry
 from graph_cli.kernel.read_view import UNLIMITED, ReadView
 from graph_cli.kernel.records import RequestMeta
-from graph_cli.kinetic.action_entries import ActionEntry, load_action_entries
+from graph_cli.kinetic.action_entries import ActionEntry, find_action, load_action_entries
 from graph_cli.kinetic.action_needs import NeedOptions
 from graph_cli.kinetic.action_needs import action_needs as derive_needs
-from graph_cli.kinetic.entries import FunctionEntry, load_entries
+from graph_cli.kinetic.entries import FunctionEntry, Named, find_entry, load_entries
 from graph_cli.kinetic.params import Problem
-from graph_cli.kinetic.view_entries import ViewEntry, load_view_entries
+from graph_cli.kinetic.view_entries import ViewEntry, find_view, load_view_entries
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.action_rights import need_decisions
 from graph_cli.services.catalog_access import (
     Classified,
+    EntryPath,
+    EntryRef,
     allowed_entries,
     first_denial,
     narrow,
@@ -40,9 +42,10 @@ class ReadCatalogs(ReadAccess):
         nothing and records nothing (no denial event, like ``graphs``). A type limited actor
         sees only the functions that fit its model view (``services.visible_catalog``); the
         parsed catalog is cached by the hash of the compiled document. The allowed half of
-        ``classified_functions``."""
+        ``classified_functions``: a caller whose own rights do not allow functions may still
+        run those its catalog grants name (``allowed_entries`` of the classification)."""
         if self._function_denials(actor, entry):
-            return None
+            return allowed_entries(self.classified_functions(actor, entry)) or None
         return self.callable_functions(actor, entry, self.read_view(actor, entry))
 
     def callable_functions(
@@ -121,8 +124,31 @@ class ReadCatalogs(ReadAccess):
         denials = self._function_denials(actor, entry)
         view = self.read_view(actor, entry)
         return tuple(
-            Classified(e, denials) for e in self.callable_functions(actor, entry, view) or ()
+            self._through_grant(actor, entry, "function", e, denials, ("read.function",))
+            for e in self.callable_functions(actor, entry, view) or ()
         )
+
+    def _through_grant[Entry: Named](
+        self,
+        actor: ActorContext,
+        entry: GraphEntry,
+        kind: str,
+        item: Entry,
+        denials: tuple[Decision, ...],
+        needs: tuple[str, ...],
+    ) -> Classified[Entry]:
+        """``item`` classified: allowed by the caller's rights on the graph (``denials`` empty),
+        else, when its grants name the entry, by the entry decision with what the entry needs
+        checked deny-only (``needs``); an entry it is not granted keeps the graph's ``denials``.
+        A granted entry that the policy still denies (a deny rule on it or on what it needs) is
+        not allowed and names that denial, not the missing right of the graph."""
+        if not denials:
+            return Classified(item)
+        granted = self._catalog_filter.grants(actor, entry.id, self._policy.current(entry.id))
+        if item.name not in granted.names(kind):
+            return Classified(item, denials)
+        decision, refused = self.entry_decisions(actor, entry, EntryRef(kind, item.name), needs)
+        return Classified(item, refused, None if refused and refused[0] is decision else decision)
 
     def _function_denials(self, actor: ActorContext, entry: GraphEntry) -> tuple[Decision, ...]:
         """The decisions that deny every function of the graph to the actor (a probe)."""
@@ -333,6 +359,97 @@ class ReadCatalogs(ReadAccess):
             if isinstance(item, Mapping) and item.get("require_reason") is True
         )
 
+    def default_views_path(self, actor: ActorContext, entry: GraphEntry) -> EntryPath | None:
+        """The default views of the graph that ``actor``'s grants name and that it sees, for
+        ``view`` without a name (the class of the entity decides which one answers, once the graph
+        is open): ``None`` when there are none. Built from what the caller sees (the classified
+        views are narrowed to the catalog, hidden ones left out, and empty for a graph it cannot
+        see), so a refusal never names a view it may not see. The path is ``uniform``: when every
+        name on it is refused, the answer is the graph's own ``read.get`` refusal, the one the
+        card gets. Records nothing."""
+        granted = self._catalog_filter.grants(actor, entry.id, self._policy.current(entry.id))
+        if not granted.views:
+            return None
+        names = tuple(
+            c.entry.name
+            for c in self.classified_views(actor, entry)
+            if c.entry.defn.default and c.entry.name in frozenset(granted.views)
+        )
+        return EntryPath("view", names, uniform=True) if names else None
+
+    def authorize_through(
+        self,
+        actor: ActorContext,
+        entry: GraphEntry,
+        action: str,
+        path: EntryPath,
+        request: RequestMeta,
+    ) -> EntryRef | None:
+        """The decision before a command opens a graph for one entry (``run``, ``view --name``):
+        ``action`` on the graph, as for any command, and when the caller's rights do not allow
+        it, the entry decision of an entry its grants name (``path.names``, in order), with
+        ``action`` itself asked deny-only on the graph. ``None`` when the graph's own right
+        allowed it; else the entry it works through. Nothing is recorded for an allow.
+
+        A refusal is audited and raised: for a graph the caller does not see, as ``graph.not_found``
+        (as ``authorize``); for an entry of a caller limited to its catalog that its grants do not
+        name, as the ``not_found`` of that kind of entry (it does not exist for the caller; the
+        audited decision is the graph's, which names no entry); for a named entry that a rule
+        denies, as ``access.denied``, the event naming the entry decision that let it get so far
+        next to the denial."""
+        own = self._probe(actor, entry, action)
+        if own.effect == "allow" or not self.visible(actor, entry):
+            self.authorize(actor, action, f"graph:{entry.id}", request, entry)
+            return None  # an allow records nothing; a denial was raised
+        granted = self._catalog_filter.grants(actor, entry.id, self._policy.current(entry.id))
+        named = [r for r in path.refs() if r.name in granted.names(r.kind)]
+        if not named:
+            if granted.catalog_only:
+                # no entry of that name exists for this caller
+                raise self._record_denial(
+                    actor, own, request, entry, self.entry_not_found(actor, entry, path.kind, path)
+                )
+            self.authorize(actor, action, f"graph:{entry.id}", request, entry)  # raises
+            return None  # unless the policy changed on the way: then it allows
+        first: tuple[Decision, tuple[Decision, ...]] | None = None
+        for ref in named:
+            found = self.entry_decisions(actor, entry, ref, (action,))
+            if not found[1]:
+                return ref
+            first = first or found
+        assert first is not None
+        decision, refused = first
+        if path.uniform:  # the graph's own refusal, which names no entry and no grant
+            raise self._record_denial(actor, own, request, entry, denial_error(own))
+        before = () if refused[0] is decision else (decision,)
+        error = denial_error(refused[0])
+        raise self._record_denial(actor, refused[0], request, entry, error, before)
+
+    def entry_not_found(
+        self, actor: ActorContext, entry: GraphEntry, kind: str, path: EntryPath
+    ) -> GraphCliError:
+        """The error for an entry of ``path`` the caller does not see: what the lookup of a name
+        among the entries it sees raises (``function.not_found``, ``action.not_found`` or
+        ``view.not_found``, with suggestions among those entries only), so an entry outside its
+        catalog and one that does not exist are answered alike."""
+        name = path.names[0] if path.names else ""
+        try:
+            if kind == "function":
+                seen = self.callable_functions(actor, entry, self.read_view(actor, entry))
+                find_entry(seen, name)
+            elif kind == "action":
+                published = self.published_actions(entry)
+                found = (
+                    () if published is None else self.classified_actions(actor, entry, published)
+                )
+                find_action([c.entry for c in found], name)
+            else:
+                shown = self._classified_views(actor, entry, self.read_view(actor, entry))
+                find_view([c.entry for c in shown], name)
+        except GraphCliError as exc:
+            return exc
+        return GraphCliError("internal.error", f"{kind} {name!r} is hidden but listed")
+
     def refuse_not_allowed(
         self,
         actor: ActorContext,
@@ -353,7 +470,8 @@ class ReadCatalogs(ReadAccess):
                 f"{rights} are not permitted; {ACCESS_DENIED_HINT}",
                 details=error.details,
             )
-        return self._record_denial(actor, decision, request, entry, error)
+        before = () if item.granted is None else (item.granted,)
+        return self._record_denial(actor, decision, request, entry, error, before)
 
     # ---- views (object views stage 2) -----------------------------------
 
@@ -436,12 +554,20 @@ class ReadCatalogs(ReadAccess):
         )
         classified: list[Classified[ViewEntry]] = []
         for e in entries:
-            denials = [
+            denials = tuple(
                 d
                 for d, needed in ((get, True), (find, not e.entity), (run, bool(e.functions)))
                 if d is not None and needed and d.effect != "allow"
-            ]
-            classified.append(Classified(e, tuple(denials)))
+            )
+            # a view the caller's grants name is also allowed through its entry decision, its own
+            # needs (the graph, a set view's listing, the functions of its rows) checked
+            # deny-only: the caller need not hold them as rights of its own
+            needs = (
+                "read.get",
+                *(("read.find",) if not e.entity else ()),
+                *(("read.function",) if e.functions else ()),
+            )
+            classified.append(self._through_grant(actor, entry, "view", e, denials, needs))
         return tuple(classified)
 
     def _visible_views(

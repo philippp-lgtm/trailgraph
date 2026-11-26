@@ -35,10 +35,13 @@ def manifest(
     obligations: frozenset[str] = NO_OBLIGATIONS,
     *,
     find: bool = False,
+    rows: Any = None,
+    exact_ids: bool = False,
     **selection: Any,
 ) -> dict[str, Any]:
-    """The manifest of ``scene``; ``find``: the caller holds ``read.find``, which lists the
-    ``lookup`` tool (off here unless a test is about it)."""
+    """The manifest of ``scene``; ``find``: the caller is served a lookup, which lists the
+    ``lookup`` tool (off here unless a test is about it); ``exact_ids`` and ``rows``: a caller
+    limited to its catalog (references are ids and aliases, a view's row functions are all)."""
     found = tm.build_manifest(
         scene.entry,
         scene.model,
@@ -48,6 +51,8 @@ def manifest(
         obligations=obligations,
         selection=tm.Selection(**selection),
         find=find,
+        rows=rows,
+        exact_ids=exact_ids,
     )
     return json.loads(json.dumps(found))
 
@@ -516,6 +521,21 @@ def test_goldens_of_a_reader_of_items() -> None:
     # the release in which items have a label: a lookup tool for the one reference it may use
     named = tools.inventory(version="1.1.0")
     golden("limited_inventory_1.1.0_items", manifest(named.reader(ITEMS), find=True))
+
+
+def test_golden_of_a_caller_limited_to_its_catalog() -> None:
+    """Next to the limited readers: the caller of a catalog grant names two entries; its
+    references are ids and aliases and its lookup tool is the narrow one."""
+    scene = replace(
+        COMPANY.scene(),
+        functions=tuple(f for f in COMPANY.functions if f.name == "members_of_unit"),
+        actions=(),
+        views=tuple(v for v in COMPANY.views if v.name == "unit_overview"),
+    )
+    golden(
+        "catalog_company_1.1.0_entries",
+        manifest(scene, find=True, rows=COMPANY.functions, exact_ids=True),
+    )
 
 
 @pytest.mark.parametrize(

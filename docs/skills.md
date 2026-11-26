@@ -157,6 +157,13 @@ uses, so a featured entry it cannot see changes nothing for its copy (it stays `
 no digest of hidden content appears in a warning), a featured entry it sees makes it stale,
 and a change of its rights that changes the render does too.
 
+A reader whose grants on the graph are [catalog grants](access_control.md#catalog-grants) only
+works through the entries they name: its skill lists the functions it may run among those (a
+deprecated one only when named), the views it may use, and has one line in the start block saying that
+the token works through named entries and that the primitives are not for it. The digest recorded in
+its claim covers the entry list, so two readers with the same read limits and different catalogs
+never share one, and a change of the grants makes the copy stale.
+
 A field that carries [markings](access_control.md#markings) is listed only for
 a reader who holds all of them, and then with a short mark naming them (`marked
 ex:personal`, several joined by `+`; they are conjunctive). The mark costs a few

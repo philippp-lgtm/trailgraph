@@ -670,8 +670,9 @@ before), `read.view` for a view and `write.action` for an action.
   an entry needs: `read.get`, `read.find`, `read.function` and `read.traverse` on the
   graph itself, and, for an action only, the write actions of the levels on the graph,
   its types and their terms. A function or a view never writes, even where a plain
-  `level: read` grant lets its holder run every function through the glob. What the caller sees stays with the ordinary decision: the visibility of a
-  type (`read.get` on it) and the markings it holds are never decided deny-only.
+  `level: read` grant lets its holder run every function through the glob. What the caller
+  sees stays with the ordinary decision: the visibility of a type (`read.get` on it) and the
+  markings it holds are never decided deny-only.
 
 ### Decisions on attributes and relations
 
@@ -761,9 +762,10 @@ exactly as before. The graph itself stays as visible as the grant makes it
   `run` return entities of visible types only, and totals count what is left. A
   hidden entity is `entity.not_found` in every form of reference: id, alias and
   the end of an id (a suffix that matches only hidden ids is unknown, and the
-  candidates an ambiguous suffix lists are visible ones). A filter with a hidden
-  id (`find --rel <relation>=<id>`) is an empty page, as with an id that is not
-  there.
+  candidates an ambiguous suffix lists are visible ones; a caller limited to its
+  catalog takes no suffix at all, see [References and names](#references-and-names-for-a-caller-limited-to-its-catalog)).
+  A filter with a hidden id (`find --rel <relation>=<id>`) is an empty page, as with an id
+  that is not there.
 - **Edges.** An entity is shown without its edges into hidden entities, and
   `get --full` shows a content hash computed over what is shown, so nothing
   marks an entity as having hidden edges. Edges from hidden entities are not
@@ -868,18 +870,22 @@ Every published function, action and view is, for one caller, in one of three st
   do not name is hidden too, however harmless it is, because for that caller the catalog is part
   of what it sees. A hidden entry does not exist: not listed, counted, found by `describe
   search`, suggested or named as the replacement of another, and its name, authored text or hints
-  are never in an answer or an error; `run`, `do`, `view --name`, `call` and `describe` of it
-  answer as for a name that was never published (`function.not_found`, `action.not_found`,
-  `view.not_found`, `tool.not_found`). Hidden depends on what the caller sees and never on the
+  are never in an answer or an error (but a view names the function its `rows` section runs, as
+  its definition says: a caller of a granted view reads that name there, see below); `run`, `do`,
+  `view --name`, `call` and `describe` of it answer as for a name that was never published
+  (`function.not_found`, `action.not_found`, `view.not_found`, `tool.not_found`). Hidden depends on what the caller sees and never on the
   rights it holds: a caller who loses a right does not see more or fewer hidden entries. A
   caller that holds a read grant next to its catalog grant, or only `catalog.actions` on a read
   grant, is not limited to a catalog, and unnamed entries stay what the read view makes them.
 - **Allowed.** The caller sees everything the entry names and holds the rights it needs.
 - **Not allowed.** The caller sees everything the entry names but lacks a right. Only such an entry
   is named as unusable, so nothing hidden can leak through it. A catalog caller sees exactly the
-  entries its grants name, classified like any entry by the rights below, which it does not hold
-  on the graph itself: until `run`, `view --name` and `do` decide it through its entry grants,
-  a named entry is not allowed. The rights are `read.function` on the
+  entries its grants name, classified like any entry by the rights below. It holds none of them on
+  the graph itself, so a named function or view is allowed through its entry decision, with what it
+  needs checked deny-only ([Decisions on catalog entries](#decisions-on-catalog-entries)): it is
+  not allowed only when a deny rule takes the entry or one of its needs, and `missing` names that
+  right. A named action is still classified by the write rights it needs, which only `do` by hand
+  would use. The rights are `read.function` on the
   graph (a function, and a view with a `rows` section), `read.get` on the graph (every view),
   `read.find` (a set view) and, for an action,
   per unmet need the first denied write decision: the write action on the type, or on the attribute
@@ -900,7 +906,7 @@ What each command does with a not-allowed entry:
 | `describe modules`, `describe module M` | counts of the allowed entries per kind (`functions`, `actions`, `views`) and, per kind, the number not allowed in `not_allowed`; `describe module` lists them with `--include-not-allowed` |
 | `describe search` | finds them like allowed ones, marked `allowed: false` with `missing`, ranked after the allowed hits of the same tier; they match on name, summary and what they are for (`use_when`, parameter names) only, not on example texts, section titles or touched terms |
 | `describe function\|action\|view NAME` | what the entry is for and how it is called, with `allowed: false` and `missing`: name, module, summary, `use_when`, signature, status and the parameters (name, type, class or enum, `many`, summary, `required`), `replaced_by` only when the caller may use the replacement. Not the query, the operations, conditions, sections, example texts or values, parameter defaults, touched terms, needed rights, hash or call command: a definition can carry literals of the maintainer's, and the right that is missing is the one that protects them |
-| `run`, `do`, `view --name` | `access.denied`, recorded as a denial (the first denying decision, so the audit event names the right), message naming the missing right and the hint to ask the maintainer for a role |
+| `run`, `do`, `view --name` | `access.denied`, recorded as a denial (the first denying decision, so the audit event names the right; for a catalog caller also the entry decision, so it names the grant), message naming the missing right and the hint to ask the maintainer for a role |
 
 `missing` is a list of `{action, resource}`; the resource is graph-relative (`graph`,
 `type:<curie>`, `type:<curie>/attr:<name>`, `type:<curie>/rel:<curie>`) and always names something
@@ -908,6 +914,54 @@ the caller sees. It is what the caller is told, not the complete list: for an ac
 write of each unmet need, so a right granted may reveal the next one missing. Listing, counting, describing and
 searching record no decision, like `graph graphs`.
 The graph skill still lists the allowed featured entries only ([Skills](skills.md#per-reader)).
+
+### References and names for a caller limited to its catalog
+
+A caller whose grants on a graph are [catalog grants](#catalog-grants) only may not `find`,
+`search` or `get` entities, so the only way to an entity it needs is a `ref` parameter of an entry
+it may use (the entity of an entity view included) and the narrow `lookup` that serves that
+parameter. Both are shaped so that neither lists the ids a suffix matches, tells an id's class or
+counts what it does not serve; aliases are the exception (see the end of this section).
+
+- **References.** A `ref` parameter takes a full id (with or without `urn:uuid:`) or an
+  alias, never the trailing hex digits of an id: a suffix is `function.parameter_invalid`
+  (`action.`, `view.`), whether it ends no id, one or several, so no answer lists the ids a suffix
+  matches (`entity.ambiguous_ref` is never answered). An id of another class than the parameter's
+  and an id of a type the caller does not see are `entity.not_found`, with the message and details
+  of an id that does not exist: no class, no id. The same holds for the entity of an entity view
+  (`view.class_mismatch` is not answered to such a caller) and for the parameters a view passes
+  to its `rows` functions. Every other caller keeps the forms it had. The tool manifest says it:
+  the pattern of a reference input of such a caller is an id or an alias, and its description
+  leaves the trailing digits out.
+- **Narrow lookup.** `lookup TEXT --for NAME.PARAM` (`kind:NAME.PARAM` to name a function, action
+  or view, `view:NAME._entity` for the entity of an entity view) is allowed for the parameter of an
+  entry the caller may use: the entry is decided as `run` or `view --name` decide it, with
+  `read.find` on the graph asked deny-only, so a deny rule on it takes the lookup away. The answer
+  is the exact matches of the text (in any language of the labels), the first page, records that
+  are active, of the class of the parameter (and its subclasses) among the types the caller sees.
+  A match of another class is neither listed nor counted (`excluded` is always zero), there is no
+  next page (`next_offset` is `null`) and no hint names another way to look a name up. A candidate
+  shows `id`, `alias`, `type`, `label`, `record_status`, `match` and `facts`: when a text has
+  several candidates, the labels of the neighbours that tell them apart, only of the types and
+  attributes the caller sees. Every other shape stays refused (`access.denied` on `read.find` of
+  the graph, audited): a plain lookup, `--for <relation>`, `--for-source`, `--match prefix`,
+  `--offset`, `--include-inactive`, `--type`, `--lang` and `--ignore-accents`; so do `search` and
+  `find`. `--as-of` opens through the entry and is refused on `read.history`, which such a caller
+  does not hold. A parameter of an entry that is outside the catalog is as unknown as the entry
+  (`function.not_found`, `action.not_found` or `view.not_found`).
+- **The lookup tool.** The tool manifest lists `lookup` for such a caller when one of its tools has
+  a reference input that has a name to look up and nothing denies `read.find`; `call lookup`
+  opens through the entry the input belongs to, so the entry decision at open is the gate (with
+  no such input the tool does not exist: `tool.not_found`). The manifest, `describe tools` and the
+  `--expect-hash` check of `call` share one predicate for the listing. The error codes the
+  manifest lists for such a caller leave out the ones it is never answered (`entity.ambiguous_ref`,
+  `<kind>.parameter_type`, `view.class_mismatch`).
+
+What this leaves open: an alias it tries is accepted or `entity.not_found`, and aliases are minted
+in sequence, so such a caller can walk the aliases of the class of a reference parameter (a list per
+call for a `many` parameter) and read through the entry what it returns for each entity of that
+class that it sees; allowed reads are not audited. The facts of homonyms show their neighbours'
+labels ([Type read limits](security_model.md#type-read-limits)).
 
 ### Attributes a caller lacks a marking for
 
@@ -981,10 +1035,11 @@ every graph whose ontology uses no marking, is answered as before.
   marking.
 - **`level: catalog` and `catalog`.** For a caller whose grants on a graph are
   [catalog grants](#catalog-grants) only, `whoami` shows `level: catalog` (no rung of the
-  ladder, so `withheld` is empty: the primitives were never granted, a deny rule took nothing
-  away; a caller a scope or a deny rule takes the graph from, so that it cannot list and
-  describe it, is at `none` like a reader in the same position) and `catalog`: the names `functions`, `actions` and `views` its grants give that it
-  sees (a name the graph has not published, or that names a type outside its `reads`, is
+  ladder, so `withheld` names no primitive: they were never granted, a deny rule took nothing
+  away, and only a denied `read.list` or `read.describe` is withheld; a caller a scope or a
+  deny rule takes the graph from, so that it cannot list and describe it, is at `none` like a
+  reader in the same position) and `catalog`: the names `functions`, `actions` and `views`
+  its grants give that it sees (a name the graph has not published, or that names a type outside its `reads`, is
   absent), `catalog_only: true` and `reader_rules: []`. A caller that also holds a grant of
   the graph itself, or `catalog.actions` on a read grant, shows its level on the ladder
   (`read` or `write`) and `catalog_only: false` with the ids of the rules that make it a
@@ -1041,6 +1096,17 @@ Published views add three rules.
 
 - **A view needs `read.get`, a set view `read.find` as well**, because it lists entities as `find` does;
   a view with a `rows` section needs `read.function`, and the function must be one the caller sees.
+  A caller whose [catalog grant](#catalog-grants) names the view needs none of these on the graph:
+  `read.view` on the view (`graph:<id>/view:<name>`) allows it, and the needs above are then asked
+  deny-only, so an explicit deny on `read.get`, `read.find` or `read.function` still makes the view
+  not allowed (`missing` names it). The functions of its `rows` sections run without being granted
+  themselves (the view is the reviewed boundary) over the caller's own snapshot and model, so read
+  limits and markings filter rows, neighbours and counts as for every caller. The card is not a
+  published view: `graph view REF` without `--name` and `--name card` stay refused (`read.get`) for a
+  caller limited to its catalog, except that the default view of the entity's class answers when the
+  grant names it (the class is resolved with the entity, so the refusal is the same whether the id
+  exists, is seen or has such a view). A stale `--cursor` says to start again; `--as-of` needs
+  `read.history`, which such a caller does not hold.
 - **A view is visible exactly when everything it names is**: its classes, attributes, relations and
   enums, and the functions it runs. Otherwise it does not exist for the caller: `view.not_found`
   (a hidden view is never `access.denied`), absent from `describe views`, `describe search` and the affordances, and
@@ -1076,12 +1142,17 @@ Named functions of a graph ([Functions](cli_graph.md#functions)) have their
 own action, `read.function`, in the `read` level.
 
 - **Running.** `graph run` is decided by `read.function` on the graph, before
-  any storage is read. A denial is audited like that of any other read (the
+  any storage is read, or, for a caller whose [catalog grant](#catalog-grants) names the function,
+  by `read.function` on `graph:<id>/function:<name>` (the entry decision; the right on the graph is
+  then asked deny-only, so a deny rule on it still wins). A caller limited to its catalog that asks
+  for another name gets `function.not_found`, audited as a refusal on the graph, like a name that
+  was never published. A denial is audited like that of any other read (the
   `args_digest` covers the function name and the parameters; the values
   themselves are never written).
 - **Listing.** `describe functions`, `describe module`, `describe modules`
   and `describe search` show functions as usable only to callers who may
-  `read.function` on the graph. For everyone else they are *not allowed*
+  `read.function` on the graph, or on the function through a catalog grant. For everyone else they
+  are *not allowed*
   ([Functions, actions and views you may not use](#functions-actions-and-views-you-may-not-use)):
   counted in `not_allowed`, listed with `--include-not-allowed`, found by
   search and shown by `describe function` marked `allowed: false` with
@@ -1097,7 +1168,9 @@ own action, `read.function`, in the `read` level.
   it lists the functions that reader sees and none that names a hidden term.
   The claim of an installed copy records a digest of what that reader's render
   shows of the catalogs, so granting or taking `read.function` makes the copy
-  stale ([Skills](skills.md#per-reader)).
+  stale ([Skills](skills.md#per-reader)). A reader limited to its catalog gets the
+  functions its grants name (deprecated ones too, only when named) and one line that it works
+  through named entries only; its digest also covers the entry list.
 - **Read limits.** A caller who sees only some types does not see a function
   that names a hidden term, and the others run over what the caller sees
   ([Functions and actions of a limited reader](#functions-and-actions-of-a-limited-reader)).

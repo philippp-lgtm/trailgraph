@@ -41,6 +41,7 @@ class Model:
     actions: Sequence[JsonObject]  # active action catalog entries, by module then name
     views: Sequence[JsonObject]  # active view catalog entries, by module then name
     functions_withheld: bool = False  # the reader may not use functions: no entries, a line says so
+    catalog_only: bool = False  # the reader works through the entries its token names only
 
     @staticmethod
     def of(
@@ -102,6 +103,7 @@ class Model:
             actions=_active_actions(bundle),
             views=_active_views(bundle),
             functions_withheld=_withheld(bundle, "functions"),
+            catalog_only=bundle.get("catalog_only") is True,
         )
 
     @property

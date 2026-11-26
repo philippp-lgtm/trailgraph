@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import difflib
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Final
 
 from graph_cli.app_cli.column_schemas import column_schema
@@ -158,12 +158,28 @@ def lookup_output() -> JsonObject:
     return standalone(LOOKUP_PAGE_OUTPUT)
 
 
-def tool_errors(kind: str) -> tuple[str, ...]:
-    """The codes a tool of ``kind`` may return, sorted."""
+# What a caller limited to its catalog is never answered: a suffix is not matched (no ambiguous
+# reference) and a reference of another class is no entity (no wrong class, no class mismatch).
+NOT_FOR_EXACT_IDS: Final = frozenset(
+    {
+        "entity.ambiguous_ref",
+        "function.parameter_type",
+        "action.parameter_type",
+        "view.parameter_type",
+        "view.class_mismatch",
+    }
+)
+
+
+def tool_errors(kind: str, *, exact_ids: bool = False) -> tuple[str, ...]:
+    """The codes a tool of ``kind`` may return, sorted; ``exact_ids``: for a caller limited to its
+    catalog, which is never answered the codes of ``NOT_FOR_EXACT_IDS``."""
     command = {FUNCTION: RUN_ERRORS, ACTION: DO_ERRORS, VIEW: VIEW_ERRORS, LOOKUP: LOOKUP_ERRORS}[
         kind
     ]
     codes = {*command, *CALL_ERRORS, *TRANSPORT_ERRORS} - NOT_FOR_TOOLS
+    if exact_ids:
+        codes -= NOT_FOR_EXACT_IDS
     if kind == LOOKUP:
         # a call of the tool names its input as an object, which the command's options do not
         codes = (codes - NOT_FOR_LOOKUP) | {"usage.missing_argument"}
@@ -212,7 +228,7 @@ def tool_json(head: ToolHead, model: CompiledModel) -> JsonObject:
         "module": head.module,
         "hash": hash_value(built),
         "entry_hash": head.entry_hash,
-        "errors": list(tool_errors(head.kind)),
+        "errors": list(tool_errors(head.kind, exact_ids=head.exact_ids)),
     }
 
 
@@ -240,6 +256,7 @@ def heads(
     only: str | None = None,
     refs: Sequence[RefInput] = (),
     rows: Sequence[FunctionEntry] | None = None,
+    exact_ids: bool = False,
 ) -> tuple[ToolHead, ...]:
     """Every tool the caller may use: functions, then actions, then views, each by name, then the
     ``lookup`` tool. With ``only`` just the tool of that name is built (a function's head resolves
@@ -252,7 +269,10 @@ def heads(
 
     ``rows`` are the functions that type the ``rows`` sections of the views (``functions`` when
     not given): a view runs its row functions without them being granted, so for a caller limited
-    to its catalog they are more than the function tools listed."""
+    to its catalog they are more than the function tools listed.
+
+    ``exact_ids``: the caller may not find entities (it is limited to its catalog): a reference
+    input takes a full id or an alias, and the ``lookup`` tool is the narrow one."""
     lookup = bool(refs)
     row_functions = functions if rows is None else rows
 
@@ -260,7 +280,7 @@ def heads(
         return only is None or describe_tools.tool_name(kind, entry.name) == only
 
     function_heads = tuple(
-        describe_tools.function_head(e, model, functions, lookup=lookup)
+        describe_tools.function_head(e, model, functions, lookup=lookup, exact=exact_ids)
         for e in _by_name(functions)
         if wanted(FUNCTION, e)
     )
@@ -268,19 +288,27 @@ def heads(
     found = (
         *function_heads,
         *(
-            describe_tools.action_head(e, model, actions, obligations, lookup=lookup)
+            describe_tools.action_head(
+                e, model, actions, obligations, lookup=lookup, exact=exact_ids
+            )
             for e in _by_name(actions)
             if wanted(ACTION, e)
         ),
         *(
-            describe_tools.view_head(e, model, views, row_functions, known, lookup=lookup)
+            describe_tools.view_head(
+                e, model, views, row_functions, known, lookup=lookup, exact=exact_ids
+            )
             for e in _by_name(views)
             if wanted(VIEW, e)
         ),
-        *((describe_tools.lookup_head(refs),) if lookup and only in (None, LOOKUP) else ()),
+        *(
+            (describe_tools.lookup_head(refs, exact=exact_ids),)
+            if lookup and only in (None, LOOKUP)
+            else ()
+        ),
     )
     describe_tools.unique_names(found)
-    return found
+    return tuple(replace(h, exact_ids=True) for h in found) if exact_ids else found
 
 
 def classified(
@@ -310,9 +338,10 @@ def tool_head(
     entry must be one the caller may use; ``call --expect-hash`` and the test plugin that checks
     the answers against the output schema of the tool both build it here.
 
-    What the manifest says of a tool's references depends only on ``read.find`` and on whether
-    the tool has a servable one itself (then the lookup tool is listed whatever else there is), so
-    the entry of this tool alone gives the same flag as every entry."""
+    What the manifest says of a tool's references depends only on whether the caller is served a
+    lookup (``lookup_served``) and on whether the tool has a servable one itself (then the lookup
+    tool is listed whatever else there is), so the entry of this tool alone gives the same flag as
+    every entry."""
     seen = classified(reader, actor, entry, kind) if seen is None else seen
     obligations = reader.reason_obligations(actor, entry) if kind == ACTION else frozenset()
     model = reader.visible_model(actor, entry)
@@ -322,7 +351,7 @@ def tool_head(
     rows = reader.view_row_functions(actor, entry) if kind == VIEW else None
     own = {k: tuple(e for e in parts[k] if e.name == name) if k == kind else none for k in KINDS}
     refs = lookup_refs(
-        model, own[FUNCTION], own[ACTION], own[VIEW], find=reader.may(actor, entry, "read.find")
+        model, own[FUNCTION], own[ACTION], own[VIEW], find=reader.lookup_served(actor, entry)
     )
     tool = describe_tools.tool_name(kind, name)
     found = heads(
@@ -334,6 +363,7 @@ def tool_head(
         only=tool,
         refs=refs,
         rows=rows,
+        exact_ids=reader.catalog_scope(actor, entry) is not None,
     )
     if len(found) != 1:
         raise GraphCliError(
@@ -353,8 +383,9 @@ def lookup_refs(
     find: bool,
 ) -> tuple[RefInput, ...]:
     """The reference inputs of the tools the caller may use that the ``lookup`` tool serves: none
-    when the caller may not find entities (``find``: it holds ``read.find``; until a narrower
-    lookup exists, a reference input takes the ids the caller already has)."""
+    when the caller is served no lookup (``find``: ``ReadAccess.lookup_served``: it holds
+    ``read.find``, or its grants name the entries it works through and nothing denies
+    ``read.find``)."""
     return describe_tools.ref_inputs(model, functions, actions, views) if find else ()
 
 
@@ -402,16 +433,19 @@ def build_manifest(
     selection: Selection | None = None,
     find: bool = False,
     rows: Sequence[FunctionEntry] | None = None,
+    exact_ids: bool = False,
 ) -> dict[str, JsonValue]:
     """The manifest (``graph_cli.model/1``) of the entries the caller may use, over the model it
-    sees; ``find``: the caller holds ``read.find``, which lists the ``lookup`` tool; ``rows``: see
-    ``heads``. A wanted name that is no visible tool is ``tool.not_found``; ``term.unknown`` for
-    an unknown module.
+    sees; ``find``: the caller is served a lookup (``ReadAccess.lookup_served``), which lists the
+    ``lookup`` tool; ``rows`` and ``exact_ids``: see ``heads``. A wanted name that is no visible
+    tool is ``tool.not_found``; ``term.unknown`` for an unknown module.
     ``version`` is the hash of the tools and errors listed."""
     selection = selection or Selection()
     module = ModuleIndex(model).filter(selection.module)
     refs = lookup_refs(model, functions, actions, views, find=find)
-    available = heads(model, functions, actions, views, obligations, refs=refs, rows=rows)
+    available = heads(
+        model, functions, actions, views, obligations, refs=refs, rows=rows, exact_ids=exact_ids
+    )
     problem = missing_tools(selection.tools, [h.name for h in available])
     if problem is not None:
         raise problem

@@ -21,6 +21,7 @@ from jsonschema import Draft202012Validator
 from support.admin import admin
 from support.company_server import COMPANY, GRAPH, Installation, build
 from support.isolation import isolated, runner
+from support.server import call
 from support.tools_client import Ref, ToolsClient, sections
 
 pytestmark = pytest.mark.slow
@@ -305,6 +306,118 @@ def test_a_tool_that_is_hidden_from_the_caller_is_not_found(
         {"_entity": harness.resolve(ref("Engineering", "view_unit_overview._entity"))},
     )
     assert hidden_view.code == "tool.not_found"
+
+
+@pytest.mark.doc_claim("security_model.catalog_no_enumeration")
+def test_a_caller_limited_to_its_catalog_finds_names_only_through_the_narrow_lookup(
+    harness: ToolsClient, shared: Installation
+) -> None:
+    """The token of a catalog grant names one function and one entity view: its manifest holds
+    those two tools and the lookup tool for their reference inputs, the harness resolves names
+    with it and calls the tools with the alias it gets, and every other way to a reference is
+    shut."""
+    client = ToolsClient.fetch(shared.server, shared.tokens["catalog"], GRAPH)
+    assert set(client.tools) == {"run_members_of_unit", "view_unit_overview", "lookup"}
+    assert client.tools["lookup"]["input_schema"]["properties"]["for"]["enum"] == [
+        "run_members_of_unit.unit",
+        "view_unit_overview._entity",
+    ]
+    unit = FUNCTIONS["run_members_of_unit"]["unit"]
+    members = client.call("run_members_of_unit", {"unit": unit})
+    assert members.data["items"]
+    assert client.call("view_unit_overview", ENTITY_VIEWS["view_unit_overview"]).ok
+    # the candidates show what tells homonyms apart and nothing that counts the rest
+    found = client.call("lookup", {"text": "Engineering", "for": "run_members_of_unit.unit"}).data
+    (item,) = found["items"]
+    assert set(item) == {"text", "id", "alias", "type", "record_status", "label", "match", "facts"}
+    assert found["texts"] == [{"text": "Engineering", "total": 1, "exact": 1, "excluded": 0}]
+    # a name of another class (a person) is no candidate for a unit and is not even counted
+    person = "Mara Lindqvist"
+    other = client.call("lookup", {"text": person, "for": "run_members_of_unit.unit"}).data
+    nothing = client.call(
+        "lookup", {"text": "No Such Name", "for": "run_members_of_unit.unit"}
+    ).data
+    assert other["items"] == nothing["items"] == []
+    assert other["texts"] == [{"text": person, "total": 0, "exact": 0, "excluded": 0}]
+    assert nothing["texts"] == [{"text": "No Such Name", "total": 0, "exact": 0, "excluded": 0}]
+    assert other["page"]["next_offset"] is None
+    # an id of another class, and one it cannot see, are not found: neither names a class
+    maintainer_ref = harness.resolve(ref(person, "run_employer_of.person"))
+    shut = harness.resolve(ref("Marrowdale Holding AG", "run_shareholders_of.entity"))
+    nowhere = "DEPT-9999"
+    answers = []
+    for text in (maintainer_ref, shut, nowhere):
+        wrong = client.call("run_members_of_unit", {"unit": text})
+        assert (wrong.reply.status, wrong.code) == (404, "entity.not_found"), text
+        answers.append((wrong.reply.error["message"].replace(text, "X"), wrong.on_error))
+    assert answers[0] == answers[1] == answers[2]
+    wrong_view = client.call(
+        "view_unit_overview", {**ENTITY_VIEWS["view_unit_overview"], "_entity": maintainer_ref}
+    )
+    assert wrong_view.code == "entity.not_found"
+    # a trailing hex is no reference: the schema forbids it and the server refuses it
+    hexed = client.call("run_members_of_unit", {"unit": "0123abcd"}, valid=False)
+    assert hexed.code == "function.parameter_invalid"
+    assert "candidates" not in hexed.details and "matches" not in hexed.reply.error["message"]
+
+
+@pytest.mark.doc_claim("security_model.catalog_no_enumeration")
+def test_every_other_way_to_look_names_up_is_refused_for_a_catalog_caller(
+    shared: Installation,
+) -> None:
+    token = shared.tokens["catalog"]
+
+    def command(path: str, **args: Any) -> Any:
+        return call(
+            shared.server,
+            "POST",
+            f"/v1/commands/{path}",
+            token=token,
+            body={"args": {"graph": GRAPH, **args}},
+        )
+
+    narrow = command("lookup", text=["Engineering"], **{"--for": "members_of_unit.unit"})
+    assert narrow.status == 200, narrow.json
+    # nothing found: the only hint names no other way to look names up
+    empty = command("lookup", text=["No Such Name"], **{"--for": "members_of_unit.unit"})
+    assert empty.status == 200 and empty.json["data"]["items"] == []
+    assert [h["command"] for h in empty.json["hints"]] == [None]
+    assert narrow.json["hints"] == [] and narrow.json["page"]["next_offset"] is None
+    refused = {
+        "free": {"text": ["Engineering"]},
+        "relation": {"text": ["Engineering"], "--for": "part_of"},
+        "source": {"text": ["Engineering"], "--for-source": "part_of"},
+        "prefix": {"text": ["Eng"], "--for": "members_of_unit.unit", "--match": "prefix"},
+        "offset": {"text": ["Eng"], "--for": "members_of_unit.unit", "--offset": 1},
+        "inactive": {"text": ["Eng"], "--for": "members_of_unit.unit", "--include-inactive": True},
+        "typed": {"text": ["Eng"], "--for": "members_of_unit.unit", "--type": ["org:Team"]},
+    }
+    bodies = []
+    for label, args in refused.items():
+        reply = command("lookup", **args)
+        assert reply.status == 403, (label, reply.json)
+        assert (
+            reply.error["code"] == "access.denied"
+            and reply.error["details"]["action"] == "read.find"
+        )
+        assert reply.error["details"]["resource"].count("/") == 0, label  # the graph, no entry
+        bodies.append(str(reply.error["details"]))
+    assert len(set(bodies)) == 1  # one refusal for every shape
+    for path, args in (
+        ("search", {"text": "Engineering"}),
+        ("find", {"--type": ["org:Department"]}),
+        ("get", {"ref": "DEPT-0001"}),
+    ):
+        reply = command(path, **args)
+        assert reply.status == 403 and reply.error["code"] == "access.denied", (path, reply.json)
+    # a slot of an entry outside the catalog is no slot
+    outside = command("lookup", text=["Engineering"], **{"--for": "function:employer_of.person"})
+    absent = command("lookup", text=["Engineering"], **{"--for": "function:employer_ofz.person"})
+    assert outside.status == absent.status == 404
+    assert outside.error["code"] == absent.error["code"] == "function.not_found"
+    assert outside.error["message"].replace("employer_of", "X") == absent.error["message"].replace(
+        "employer_ofz", "X"
+    )
 
 
 def test_a_tool_the_caller_sees_but_may_not_use_is_denied(

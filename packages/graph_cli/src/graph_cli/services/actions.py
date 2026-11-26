@@ -127,6 +127,7 @@ class ActionService:
             model=model,
             snapshot=snapshot,
             shown=shown,
+            exact_ids=self._reader.catalog_scope(actor, entry) is not None,
         )
         warnings += found
         ref = ActionRef(name, action.hash)
