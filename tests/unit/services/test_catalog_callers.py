@@ -51,6 +51,7 @@ roles:
   overview: {{description: "Catalog only, a view whose row function it is not granted"}}
   legacy: {{description: "Catalog only, a deprecated function"}}
   blind: {{description: "Catalog only, a default view that names a type it cannot see"}}
+  lister: {{description: "Catalog only, a function whose reference parameter takes a list"}}
   ghost: {{description: "Catalog only, a view the graph does not publish"}}
 grants:
   - entrypoint: server
@@ -97,6 +98,12 @@ grants:
     level: catalog
     catalog: {{views: [unit_overview]}}
     reads: ["ppl:*"]
+  - entrypoint: server
+    principal: {{role: lister}}
+    graphs: [example_graph]
+    level: catalog
+    catalog: {{functions: [required_trainings]}}
+    reads: {READS}
   - entrypoint: server
     principal: {{role: ghost}}
     graphs: [example_graph]
@@ -1146,6 +1153,7 @@ def test_an_id_of_another_class_or_a_hidden_one_is_not_found_without_naming_its_
         outcomes[label] = caught.value
     for found in outcomes.values():
         assert found.code == "entity.not_found"
+        assert "id" not in found.details  # an alias is not resolved to the id it names
     shapes = {
         label: (
             e.code,
@@ -1572,4 +1580,54 @@ def test_a_lookup_for_an_action_slot_is_asked_among_the_actions_the_caller_sees(
             error.details["did_you_mean"], {"assign_position", "hand_over_position"}
         )
         answers.append(error.message.replace(use.split(":")[1].split(".")[0], "X"))
-    assert answers[0] == answers[1]
+    assert answers[0] == answers[1] == answers[2]  # the granted one is as unknown (until step 3)
+
+
+@pytest.mark.doc_claim("security_model.catalog_no_enumeration")
+def test_a_list_of_references_is_checked_item_by_item_like_a_single_one(
+    env: ServiceEnv, read: ReadService
+) -> None:
+    units = named_units(env)
+    employee = str(next(e for e in env.create("ppl:Employee", "p").entities if e.local == "p").id)
+    revisions = {str(r.id): r for r in env.all_revisions()}
+    person_alias = str(revisions[employee].alias)
+    lister = token("lister")
+    opened = open_through(read, env, lister, "function", "required_trainings")
+    data, _, _ = read.run(
+        opened, "required_trainings", [("person", employee), ("person", person_alias)],
+        limit=5, offset=0,
+    )  # fmt: skip
+    assert data["function"]["name"] == "required_trainings"  # type: ignore[index]
+    refusals = []
+    for item, code in (
+        (employee[-8:], "function.parameter_invalid"),  # a suffix in the list
+        (units["eng_a"], "entity.not_found"),  # a unit is no person
+        (units["hidden_le"], "entity.not_found"),  # a hidden type
+        ("EMP-9999", "entity.not_found"),
+    ):
+        with pytest.raises(GraphCliError) as caught:
+            read.run(
+                opened, "required_trainings", [("person", employee), ("person", item)],
+                limit=5, offset=0,
+            )  # fmt: skip
+        error = caught.value
+        assert error.code == code, (item, error.code)
+        assert "id" not in error.details and "candidates" not in error.details
+        if code == "entity.not_found":
+            refusals.append(error.message.replace(item, "X"))
+    assert len(set(refusals)) == 1
+
+
+def test_only_a_catalog_caller_has_a_lookup_path(env: ServiceEnv, read: ReadService) -> None:
+    """The path through an entry is for the caller ``lookup_served`` serves through entries; the
+    lookup of everyone else is the plain ``read.find`` question, and a graph that cannot be listed
+    has none before ``graph.not_found`` is decided."""
+    from graph_cli.query.lookup import LookupSpec
+
+    spec = LookupSpec(text="Engineering")
+    path = read.lookup_path(SUPPORT, env.entry, spec, for_use=SLOT, for_source=None)
+    assert path == EntryPath("function", ("members_of_unit",))
+    for who in (READER, token("scoped"), token("closer"), token("nobody")):
+        assert read.lookup_path(who, env.entry, spec, for_use=SLOT, for_source=None) is None
+    hidden = policy_reader(env, exact=("read.list",))
+    assert hidden.lookup_path(SUPPORT, env.entry, spec, for_use=SLOT, for_source=None) is None
