@@ -25,6 +25,12 @@ from support.server import new_token
 GRAPH = "company"
 COMPANY = EXAMPLES / "company"
 FIXTURE_VIEWS = ("unit_overview", "members_report", "tasks_by_state", "legacy_unit_overview")
+# The concrete types of the modules a catalog caller reads: a catalog grant lists exact types, so
+# that a type a later release adds never widens it
+ORGANIZATION = ("org:Department", "org:Team", "org:Position", "org:Role", "org:CostCenter")
+PEOPLE = ("ppl:Employee", "ppl:External", "ppl:Identity")
+OPERATIONS = ("ops:Process", "ops:Instruction", "ops:Policy", "ops:Training", "ops:Task")
+CATALOG_READS = (*ORGANIZATION, *PEOPLE, *OPERATIONS)
 NARROW_TYPES = ("ppl:Employee", "ppl:External", "org:Department", "org:Team", "org:Position")
 
 POLICY = f"""\
@@ -49,7 +55,7 @@ grants:
     graphs: [{GRAPH}]
     level: catalog
     catalog: {{functions: [members_of_unit], views: [unit_overview]}}
-    reads: [org:*, ppl:*, ops:*]
+    reads: [{", ".join(CATALOG_READS)}]
 scopes:
   company_project: {{{GRAPH}: write}}
 no_project: {{"*": none}}

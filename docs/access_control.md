@@ -499,7 +499,9 @@ no_project: {"*": write}
   The grant also needs `entrypoint: server` (locally a caller with a shell reads
   the files, so the limit would only pretend), graphs named one by one (`"*"` is
   refused: entries belong to a graph) and `reads`, the types its entries may read
-  (required, so that a type a later release adds never widens the grant; the
+  (required, and exact types only: a `prefix:*` is refused, `policy.invalid` with the
+  path of the entry, because a glob would cover a type a later release adds to the
+  module, so that a type a later release adds never widens the grant; the
   checks are those of [Read limits](#read-limits)). It takes no `writes`: an
   action writes through its own entry. `markings` work as for any grant. Every
   refusal is `policy.invalid` and names the key.

@@ -284,8 +284,12 @@ are accepted and known:
   walk the aliases of the class of a reference parameter of any entry it may use (a `many`
   parameter takes a list per call) and read through the entry what the entry returns for each
   entity; this lists the entities of that class it sees, bounded by the types of its `reads`, and
-  allowed reads are not audited, so a walk leaves no trace. Narrowing it is a later decision (an
-  audited refusal, a rate limit, a grant that refuses aliases). The candidates of its narrow
+  allowed reads are not audited, so a walk leaves no trace in the audit trail; the opt-in access
+  log (`[audit] access_log = true`) records every call (command, entry, session, outcome, no
+  values), so a server that holds catalog tokens should turn it on, and `graph-admin usage
+  report` then shows a token's runs per entry. Narrowing it is a later decision (a rate or volume
+  limit per token, a grant that refuses aliases); an audited refusal of every unknown alias is
+  not planned, since it would hand the caller a way to fill the audit chain. The candidates of its narrow
   lookup also carry `facts` when a name has several, the labels of the neighbours that tell the
   homonyms apart, so it learns the names of the neighbours of the entities it finds by name, all
   of a type it sees. <!-- claim: security_model.catalog_lookup_residual -->

@@ -38,7 +38,8 @@ grants:
 ```
 
 - `level: catalog` needs `catalog` (at least one name), `entrypoint: server`, graphs named one by
-  one and `reads` (the only types the token sees; a type a later release adds never widens it).
+  one and `reads` (the only types the token sees, exact types: a `<prefix>:*` is refused, so a type a later release
+  adds never widens it).
   `markings` as for any grant; `writes` is not allowed (an action writes through its own grant).
 - A reader that should also write through some actions keeps `level: read` and adds `catalog:
   {actions: [...]}`.
@@ -64,7 +65,10 @@ grants:
    (`published: false` grants nothing yet), `catalog_only` and, when it is false, the
    `reader_rules` that make the token a reader. `--function <name>`, `--view <name>` and
    `--entry-action <name>` explain the decision on one entry and name the rule that allowed it.
-4. What the app will see: `graph whoami` with the token (`level: catalog`, the names it sees) and
+4. A server that holds catalog tokens should run with `[audit] access_log = true` in its `config.toml`:
+   allowed reads are not in the audit trail, and the access log is what shows a token that runs one
+   entry many times (`graph-admin usage report`); it records commands, entries and sessions, no values.
+5. What the app will see: `graph whoami` with the token (`level: catalog`, the names it sees) and
    `graph describe tools --json`, which lists exactly its tools.
 
 ## Republishing a granted entry

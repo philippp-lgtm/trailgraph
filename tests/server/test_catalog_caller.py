@@ -36,7 +36,13 @@ import pytest
 from harness import CliRunner
 from support.admin import admin, init
 from support.app import app, create_graph
-from support.company_server import GRAPH, Installation, build
+from support.company_server import (
+    CATALOG_READS,
+    GRAPH,
+    ORGANIZATION,
+    Installation,
+    build,
+)
 from support.files import write_pdf
 from support.isolation import isolated, runner
 from support.markings import STAFF
@@ -70,7 +76,7 @@ grants:
       functions: [members_of_unit, vacant_positions]
       actions: [assign_position]
       views: [unit_overview, org_catalog]
-    reads: [org:*, ppl:*, ops:*]
+    reads: [{READS}]
   - entrypoint: server
     principal: {role: catalog_denied}
     graphs: [company]
@@ -79,7 +85,7 @@ grants:
       functions: [members_of_unit, vacant_positions]
       actions: [assign_position]
       views: [unit_overview, org_catalog]
-    reads: [org:*, ppl:*, ops:*]
+    reads: [{READS}]
   - entrypoint: server
     principal: {role: catalog_narrow}
     graphs: [company]
@@ -87,7 +93,7 @@ grants:
     catalog:
       functions: [members_of_unit]
       views: [org_catalog]
-    reads: [org:*, ppl:Employee]
+    reads: [{NARROW_READS}]
 scopes:
   company_project: {company: write}
   read_project: {company: read}
@@ -96,6 +102,9 @@ deny:
   - {id: denied_no_link, role: [catalog_denied], action: [write.link]}
   - {id: denied_no_find, role: [catalog_denied], action: [read.find]}
 """
+POLICY = POLICY.replace("{READS}", ", ".join(CATALOG_READS)).replace(
+    "{NARROW_READS}", ", ".join((*ORGANIZATION, "ppl:Employee"))
+)
 TOKENS = {
     "maintainer": ("maintainer", "company_project"),
     "reader": ("reader", "company_project"),

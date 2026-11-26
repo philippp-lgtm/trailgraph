@@ -331,6 +331,10 @@ def test_a_read_grant_may_list_actions_and_keeps_its_read_rule() -> None:
         "grant.1.actions",
     ]
     assert again["grant.1"]["resource"] == [GRAPH]
+    # a reader that writes through actions may list globs, as every read grant may: only a
+    # catalog level, which is the limit itself, needs exact types
+    globbed = rule_map(compiled(CLOSER.replace("level: read", 'level: read\n    reads: ["ex:*"]')))
+    assert "grant.1.reads" in globbed
 
 
 def test_grant_numbers_follow_the_grants() -> None:
@@ -354,6 +358,17 @@ REFUSED: list[tuple[str, str, str]] = [
         SUPPORT.replace('    reads: ["ex:Ticket", "ex:Customer"]\n', ""),
         "grants[0].reads",
         "is required for level: catalog",
+    ),
+    # reads lists exact types: a glob would cover the types a later release adds to the module
+    (
+        SUPPORT.replace('reads: ["ex:Ticket", "ex:Customer"]', 'reads: ["ex:Ticket", "ex:*"]'),
+        "grants[0].reads[1]",
+        "is a glob",
+    ),
+    (
+        SUPPORT.replace('reads: ["ex:Ticket", "ex:Customer"]', 'reads: ["ex:*"]'),
+        "grants[0].reads[0]",
+        "later release adds",
     ),
     (
         SUPPORT.replace("entrypoint: server", "entrypoint: app").replace(
