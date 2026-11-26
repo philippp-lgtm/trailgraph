@@ -420,16 +420,26 @@ class ReadCatalogs(ReadAccess):
         """The write actions (``write.create``, ...) the actor's policy demands a reason for
         (a ``require_reason`` obligation), so that a listing can say which actions need one.
         Obligations never make an entry not allowed. Records nothing."""
-        policy = self._policy.current(entry.id)
-        found = write_obligations(actor, entry.id, policy)
-        entered = self._entered_action(actor, entry, policy)
-        if entered is not None:  # the writes of a granted action are decided deny-only
-            found = {**found, **entry_write_obligations(actor, entry.id, entered, policy)}
+        found = self.shown_obligations(actor, entry, self._policy.current(entry.id))
         return frozenset(
             action
             for action, item in found.items()
             if isinstance(item, Mapping) and item.get("require_reason") is True
         )
+
+    def shown_obligations(
+        self, actor: ActorContext, entry: GraphEntry, policy: PolicySet
+    ) -> dict[str, JsonValue]:
+        """``{action: {require_reason?, max_batch?}}`` the actor's writes in the graph are held to:
+        what the policy asks of its own writes (``write_obligations``) and, when its grants name
+        an action it may run, what the entry path holds the writes of that action to (they are
+        decided deny-only, whatever allow rules the actor lacks by hand), so that ``whoami`` and the
+        manifest say a reason is needed wherever ``do`` will ask for one. Records nothing."""
+        found = write_obligations(actor, entry.id, policy)
+        entered = self._entered_action(actor, entry, policy)
+        if entered is not None:
+            found = {**found, **entry_write_obligations(actor, entry.id, entered, policy)}
+        return found
 
     def _entered_action(
         self, actor: ActorContext, entry: GraphEntry, policy: PolicySet

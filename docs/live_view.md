@@ -102,7 +102,12 @@ streams, a reload shows a change.
   it holds when the graph's ontology marks fields it does not all hold ("none"
   for a caller that holds no marking), what a write allow list lets it
   write and, for an admin token, whether it maintains the graph, as
-  `graph-admin policy explain` answers. "Installation policy" and "Graph policy" list the
+  `graph-admin policy explain` answers. A caller limited to the graph's
+  [catalog](access_control.md#catalog-grants) shows `catalog` as its level with the
+  functions, actions and views its grants name, each name the graph has not published
+  yet marked "not published" (it grants nothing until it is); a caller that also reads
+  the graph names the rules that make it a reader. The grant rules list a named entry as
+  "function `<name>` in `<graph>`". "Installation policy" and "Graph policy" list the
   installed rules of each layer that can decide on this graph (grants,
   maintainers, project admins, scopes, deny rules, type limits, the marking
   rules of a grant: "marking `<marking>` in `<graph>`"), with

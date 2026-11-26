@@ -170,6 +170,10 @@ class CatalogGrants:
     # the ids of the allow rules that make the actor a reader of the graph (empty for a catalog-only
     # actor): what a ``whoami`` or an ``explain`` shows to say why the catalog limits nothing
     reader_rules: tuple[str, ...] = ()
+    # the ids (``grant.<n>``) of the ``level: catalog`` grants that name entries of the graph for
+    # the actor: told from a read grant with ``catalog.actions`` (a reader) by their base rule,
+    # which allows nothing beyond listing and describing the graph
+    catalog_rules: tuple[str, ...] = ()
 
     def names(self, kind: str) -> tuple[str, ...]:
         """The granted names of ``kind`` (``function``, ``action`` or ``view``)."""
@@ -204,11 +208,15 @@ def catalog_grants(actor: ActorContext, graph: GraphId, policy: PolicySet) -> Ca
     prefixes = {kind: f"{resource}/{kind}:" for kind in _ENTRY_KIND_OF}
     found: dict[str, set[str]] = {kind: set() for kind in _ENTRY_KIND_OF}
     proper: set[str] = set()
+    entry_grants: set[str] = set()  # ids of the grants whose entry rules name an entry here
+    base_only: set[str] = set()  # rules that allow nothing beyond listing and describing
     for document in policy.documents:
         for rule in rules(document):
             if rule.get("effect") != "allow" or not allow_rule_holds(rule, actor):
                 continue
             patterns = strings(rule, "resource")
+            if all(a in CATALOG_BASE_ACTIONS for a in strings(rule, "action")):
+                base_only.add(str(rule.get("id")))
             for kind, prefix in prefixes.items():
                 # a rule grants the entry only through an action that covers the action of its
                 # kind (a hand-built rule may name another one, which authorize never allows)
@@ -218,6 +226,7 @@ def catalog_grants(actor: ActorContext, graph: GraphId, policy: PolicySet) -> Ca
                     name = pattern[len(prefix) :]
                     if pattern.startswith(prefix) and ENTRY_NAME_RE.match(name):
                         found[kind].add(name)
+                        entry_grants.add(str(rule.get("id")).rsplit(".", 1)[0])
             if any(glob(p, resource) for p in patterns) and any(
                 a not in CATALOG_BASE_ACTIONS for a in strings(rule, "action")
             ):
@@ -229,6 +238,7 @@ def catalog_grants(actor: ActorContext, graph: GraphId, policy: PolicySet) -> Ca
         views=names["views"],
         catalog_only=any(found.values()) and not proper,
         reader_rules=tuple(sorted(proper)) if any(found.values()) else (),
+        catalog_rules=tuple(sorted(entry_grants & base_only)),
     )
 
 

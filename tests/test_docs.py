@@ -105,6 +105,11 @@ FILE_SUFFIXES = frozenset(
 NOT_CODES = frozenset(
     {
         "actor.roles",
+        "catalog.actions",
+        "catalog.catalog_only",
+        "catalog.functions",
+        "catalog.reader_rules",
+        "catalog.views",
         "data.action",
         "data.columns",
         "data.entities",

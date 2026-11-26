@@ -69,6 +69,7 @@ action publish under one lock, checking all before the first write.
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
@@ -95,7 +96,12 @@ from graph_cli.ontology_layer.semver import Version
 from graph_cli.services.migration import build_migration_tx, migration_record
 from graph_cli.services.term_model import extended_types, term_model
 from graph_cli.temporal_knowledge.name_map import Hop
-from graph_cli_admin.services_admin import marking_names, marking_warnings, renamed_terms
+from graph_cli_admin.services_admin import (
+    granted_entries,
+    marking_names,
+    marking_warnings,
+    renamed_terms,
+)
 from graph_cli_admin.services_admin import migration as migrations
 from graph_cli_admin.services_admin.catalog_follow import (
     Followed,
@@ -163,6 +169,9 @@ class Planned:
     functions: Republish | None = None  # the function catalog compiled again for the release
     actions: Republish | None = None  # the action catalog compiled again for the release
     views: Republish | None = None  # the view catalog compiled again for the release
+    # the release carries a migration file or renames against the pin the lock holds: the
+    # rights of ``maint.migrate`` and the catalogs' ``maint.graph_configure`` belong to it
+    needs_migrate: bool = False
 
     @property
     def unchanged(self) -> bool:
@@ -221,6 +230,34 @@ def wants_migration(
     return migrations.has_renames(renames)
 
 
+def decide_under_the_lock(
+    ctx: AdminContext,
+    planned: Planned,
+    decisions: Decisions,
+    meta: RequestMeta,
+    *,
+    reason: str | None = None,
+) -> Decisions:
+    """The decisions of a release whose plan, made under the lock, needs rights the check before
+    the lock did not make. ``wants_migration`` compares with the pin read before the lock; when
+    another release came in between, the renames are those of the pin the lock holds, and a
+    release that compiles the catalogs again (or migrates) is decided for ``maint.migrate`` and
+    ``maint.graph_configure`` now: a project admin has no such right (``access.ceiling``), so
+    the release is refused before any write, a dry run included."""
+    if not planned.needs_migrate or planned.old is None:
+        return decisions
+    resource = f"graph:{planned.manifest.entry.id}"
+    entry_id = planned.manifest.entry.id
+    migrate, configure = decisions.migrate, decisions.configure
+    if not migrate:
+        pairs = [("maint.migrate", resource)]
+        migrate = ctx.authorize(pairs, request=meta, graph=entry_id, reason=reason)
+    if not configure:
+        pairs = [("maint.graph_configure", resource)]
+        configure = ctx.authorize(pairs, request=meta, graph=entry_id, reason=reason)
+    return replace(decisions, migrate=migrate, configure=configure)
+
+
 def release(
     ctx: AdminContext,
     *,
@@ -249,6 +286,7 @@ def release(
     )
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
         planned = plan(ctx, session, compiled, migration=migration, dry_run=dry_run)
+        decisions = decide_under_the_lock(ctx, planned, decisions, meta, reason=reason)
         if planned.unchanged or dry_run:
             return Released(planned.manifest.entry, planned.data, planned.seq, planned.warnings)
         pinned = write(ctx, session, planned, decisions, meta, reason=reason)
@@ -427,8 +465,15 @@ def plan(
                 raise views_broken(hint_problems(followed_views.problems), bump_details)
     warnings = module_bump_warnings(old_model, compiled.model, report) + rename_notes
     warnings += marking_notes
-    warnings += policies_affected(
-        ctx.policy.current(entry.id), entry, compiled.model, published_actions
+    policy = ctx.policy.current(entry.id)
+    warnings += policies_affected(policy, entry, compiled.model, published_actions)
+    warnings += republish_warnings(
+        policy,
+        entry,
+        (followed_functions, followed_actions, followed_views),
+        # a push that replaces the views judges the new ones itself (against the new functions)
+        None if views_replaced else current_catalog(session, "views"),
+        only_project=granted_entries.only_project(ctx),
     )
     if bump == "excessive":
         warnings += (
@@ -479,6 +524,7 @@ def plan(
         followed_functions.republish,
         followed_actions.republish,
         followed_views.republish,
+        file is not None or migrations.has_renames(renames),
     )
 
 
@@ -846,6 +892,44 @@ def follow_published(
         follow(actions, model, pin, recompile=recompile, function_names=names),
         follow(views, model, pin, recompile=recompile, functions=entries),
     )
+
+
+def republish_warnings(
+    policy: PolicySet,
+    entry: GraphEntry,
+    followed: Sequence[Followed],
+    views: KineticSlot | None = None,
+    *,
+    only_project: str | None = None,
+) -> tuple[WarningRecord, ...]:
+    """What the catalogs a release compiles again do to the entries a catalog grant names
+    (catalog callers plan Q8): the same sources compiled against the new model give another
+    entry hash, and the callers of the grant run the new definition
+    (``catalog.granted_entry_changed``, the code of a publish). A granted view that runs a
+    function compiled again is judged the same way (``views``: the published view catalog,
+    for the views the release does not compile again). An entry stays in a republished
+    catalog, so ``catalog.granted_entry_removed`` is not expected; the helper judges both."""
+    found: tuple[WarningRecord, ...] = ()
+    for each in followed:
+        if each.republish is not None:
+            slot = each.republish.slot
+            found += granted_entries.warnings(
+                policy, entry, slot.kind, each.republish.current, slot, only_project=only_project
+            )
+    functions = followed[0].republish if followed else None
+    if functions is not None:
+        again = followed[2].republish if len(followed) > 2 else None
+        warned = frozenset(str(w.details["name"]) for w in found if w.details.get("kind") == "view")
+        found += granted_entries.row_function_warnings(
+            policy,
+            entry,
+            again.slot if again is not None else views,
+            functions.current,
+            functions.slot,
+            skip=warned,
+            only_project=only_project,
+        )
+    return found
 
 
 def policies_affected(

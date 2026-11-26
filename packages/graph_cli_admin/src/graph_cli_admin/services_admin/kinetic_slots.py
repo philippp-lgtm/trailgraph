@@ -28,7 +28,7 @@ from graph_cli.kernel.records import RequestMeta
 from graph_cli.kinetic.format import FILE_SUFFIX
 from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.model import CompiledModel
-from graph_cli_admin.services_admin import catalog_follow
+from graph_cli_admin.services_admin import catalog_follow, granted_entries
 from graph_cli_admin.services_admin.catalog_follow import ProblemHints, names_of, rename_hints
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import pinned_model
@@ -226,7 +226,8 @@ def publish(
 ) -> Published:
     """The publish flow of ``graph <kind> publish`` (see ``functions`` and ``actions``).
     ``warn`` judges the slot it would publish, also on a dry run and when nothing changes
-    (the warnings describe a state, like those of a release)."""
+    (the warnings describe a state, like those of a release). A publish that removes or changes
+    an entry a catalog grant names also warns (``granted_entries``)."""
     command = f"graph {kind} publish"
     entry = ctx.resolve(graph_ref, command)
     check_state(entry)
@@ -268,6 +269,19 @@ def publish(
         }
         seq = session.head().seq
         warnings = warn(entry, model, slot) if warn is not None else ()
+        policy, audience = ctx.policy.current(entry.id), granted_entries.only_project(ctx)
+        warnings += granted_entries.warnings(
+            policy, entry, kind, current, slot, only_project=audience
+        )
+        if kind == "functions":  # the views that run a function name it, never its hash
+            warnings += granted_entries.row_function_warnings(
+                policy,
+                entry,
+                current_slot(session, "views"),
+                current,
+                slot,
+                only_project=audience,
+            )
         unchanged = current.summary() == slot.summary() if current is not None else not slot.files
         if unchanged or dry_run:
             return Published(entry, data, seq, warnings)

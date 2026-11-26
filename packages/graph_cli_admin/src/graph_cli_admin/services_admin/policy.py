@@ -57,6 +57,7 @@ import contextlib
 import dataclasses
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 from typing import Final
 
@@ -73,6 +74,7 @@ from graph_cli.access_control.documents import (
     strings,
 )
 from graph_cli.access_control.effective import (
+    CatalogGrants,
     catalog_grants,
     catalog_overlaps,
     graph_level,
@@ -120,12 +122,12 @@ from graph_cli.kernel.actor import (
     is_valid_asserted_value,
 )
 from graph_cli.kernel.authz import AuthzContext, Decision
-from graph_cli.kernel.canonical import JsonValue, hash_value
+from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_value
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import GraphId, parse_id
 from graph_cli.kernel.json_access import JsonShapeError, req_list
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditEventDraft, AuditReceipt
-from graph_cli.kernel.ports.catalog import GraphEntry
+from graph_cli.kernel.ports.catalog import GraphEntry, SlotKind
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.ports.storage import RegistrySession
 from graph_cli.kernel.records import RequestMeta
@@ -139,7 +141,7 @@ from graph_cli.services.term_model import (
 from graph_cli.services.visibility import attribute_mask, filter_model
 from graph_cli.storage.files.policy_files import installation_policy_path, read_policy_file
 from graph_cli.storage.files.token_files import read_tokens_file, tokens_path
-from graph_cli_admin.services_admin import marking_warnings
+from graph_cli_admin.services_admin import granted_entries, marking_warnings
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import pinned_model
 from graph_cli_admin.services_admin.tokens import check_name, check_roles, server_actor
@@ -480,17 +482,48 @@ def explain(
         data["type_decision"] = _decision_json(type_decision)
     granted = catalog_grants(caller, entry.id, policy)
     if granted:
-        # the names the caller's grants say, published or not (step: published flags and hashes)
-        data["catalog"] = {
-            "functions": list(granted.functions),
-            "actions": list(granted.actions),
-            "views": list(granted.views),
-            "catalog_only": granted.catalog_only,
-            "reader_rules": list(granted.reader_rules),
-        }
+        data["catalog"] = _catalog_json(granted, _published_of(ctx, entry))
     if action is None:
         data.update(_allowances(entry, caller, policy, data["level"], _pinned_model(ctx, entry)))
     return Outcome(data, (*warnings, *((warning,) if warning is not None else ())))
+
+
+def _published_of(
+    ctx: AdminContext, graph: GraphEntry, *, soft: bool = False
+) -> Callable[[SlotKind], dict[str, JsonObject]]:
+    """The entries of each published catalog of ``graph`` by name, each catalog read once. A
+    catalog that cannot be read is an error, except in the live view (``soft``)."""
+    return cache(lambda kind: granted_entries.published_entries(ctx, graph, kind, soft=soft))
+
+
+def _catalog_json(
+    granted: CatalogGrants, published: Callable[[SlotKind], dict[str, JsonObject]]
+) -> dict[str, JsonValue]:
+    """The ``catalog`` object of an explanation: each granted name with whether the graph
+    publishes the entry now and its current hash (``null`` when it does not): what a
+    republish would change is the hash, and a name the graph does not publish grants
+    nothing. ``published`` gives the entries of one published catalog by name."""
+    kinds: tuple[tuple[SlotKind, tuple[str, ...]], ...] = (
+        ("functions", granted.functions),
+        ("actions", granted.actions),
+        ("views", granted.views),
+    )
+    shown: dict[str, JsonValue] = {}
+    for kind, names in kinds:
+        have = published(kind) if names else {}
+        shown[kind] = [
+            {
+                "name": name,
+                "published": name in have,
+                "hash": have[name].get("hash") if name in have else None,
+            }
+            for name in names
+        ]
+    return {
+        **shown,
+        "catalog_only": granted.catalog_only,
+        "reader_rules": list(granted.reader_rules),
+    }
 
 
 def _entry_question(
@@ -628,8 +661,9 @@ def for_graph(ctx: AdminContext, entry: GraphEntry) -> dict[str, JsonValue]:
         )
     projects = strings(installation, "projects")
     model = _pinned_model(ctx, entry)
+    published = _published_of(ctx, entry, soft=True)
     callers: list[JsonValue] = [
-        {"project": p, **_access(_app_caller(ctx.actor, p), entry, policy, model)}
+        {"project": p, **_access(_app_caller(ctx.actor, p), entry, policy, model, published)}
         for p in (*projects, None)  # the maintainer's own principal, through graph
     ]
     records = parse_tokens(read_tokens_file(tokens_path(ctx.roots.data_root)))
@@ -643,7 +677,7 @@ def for_graph(ctx: AdminContext, entry: GraphEntry) -> dict[str, JsonValue]:
                 "scope": record.scope,
                 "roles": list(record.roles),
                 "expired": not record.valid_on(today),
-                **_access(caller, entry, policy, model),
+                **_access(caller, entry, policy, model, published),
             }
         )
     graphs = ctx.catalog.list_graphs(include_archived=True)
@@ -1193,7 +1227,11 @@ def _obligations(document: Mapping[str, JsonValue]) -> list[JsonValue]:
 
 
 def _access(
-    caller: ActorContext, entry: GraphEntry, policy: PolicySet, model: CompiledModel | None
+    caller: ActorContext,
+    entry: GraphEntry,
+    policy: PolicySet,
+    model: CompiledModel | None,
+    published: Callable[[SlotKind], dict[str, JsonObject]],
 ) -> dict[str, JsonValue]:
     access: dict[str, JsonValue] = {
         "principal": caller.principal.id,
@@ -1202,6 +1240,9 @@ def _access(
         "withheld": withheld_actions(caller, entry.id, policy),
         "maintains": maintains(caller, entry.id, policy),
     }
+    granted = catalog_grants(caller, entry.id, policy)
+    if granted:  # as in ``explain``: the names the caller's grants say, published or not
+        access["catalog"] = _catalog_json(granted, published)
     access.update(_allowances(entry, caller, policy, access["level"], model))
     return access
 

@@ -25,6 +25,12 @@ from support.server import new_token
 GRAPH = "company"
 COMPANY = EXAMPLES / "company"
 FIXTURE_VIEWS = ("unit_overview", "members_report", "tasks_by_state", "legacy_unit_overview")
+# The concrete types of the modules a catalog caller reads: a catalog grant lists exact types, so
+# that a type a later release adds never widens it
+ORGANIZATION = ("org:Department", "org:Team", "org:Position", "org:Role", "org:CostCenter")
+PEOPLE = ("ppl:Employee", "ppl:External", "ppl:Identity")
+OPERATIONS = ("ops:Process", "ops:Instruction", "ops:Policy", "ops:Training", "ops:Task")
+CATALOG_READS = (*ORGANIZATION, *PEOPLE, *OPERATIONS)
 NARROW_TYPES = ("ppl:Employee", "ppl:External", "org:Department", "org:Team", "org:Position")
 
 POLICY = f"""\
@@ -49,7 +55,7 @@ grants:
     graphs: [{GRAPH}]
     level: catalog
     catalog: {{functions: [members_of_unit], views: [unit_overview]}}
-    reads: [org:*, ppl:*, ops:*]
+    reads: [{", ".join(CATALOG_READS)}]
 scopes:
   company_project: {{{GRAPH}: write}}
 no_project: {{"*": none}}
@@ -59,7 +65,8 @@ no_project: {{"*": none}}
 @dataclass(frozen=True)
 class Installation:
     server: ServerApp
-    tokens: dict[str, str]  # role -> bearer token
+    tokens: dict[str, str]  # token name -> bearer token
+    root: Path  # the data root, for tests that read the audit trail
 
 
 EXTERNALS_BY_KIND = """\
@@ -111,10 +118,23 @@ def publish_set(run_cli: CliRunner, tmp_path: Path) -> None:
         assert published.code == 0, published.envelope
 
 
-def build(run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path) -> Installation:
+ROLE_TOKENS: dict[str, tuple[str, str]] = {
+    role: (role, "company_project") for role in ("maintainer", "reader", "narrow", "catalog")
+}
+
+
+def build(
+    run_cli: CliRunner,
+    isolated_env: dict[str, str],
+    tmp_path: Path,
+    *,
+    policy: str = POLICY,
+    tokens: dict[str, tuple[str, str]] | None = None,
+) -> Installation:
     """The example graph the way ``examples/company/load.sh`` builds it, served with a token per
-    caller."""
-    init(run_cli, isolated_env)
+    caller. ``policy`` is the installation policy; ``tokens`` maps a token name to its role and
+    project (default: one token per role of ``POLICY``, named like the role)."""
+    root = init(run_cli, isolated_env)
     config = Path(isolated_env["XDG_CONFIG_HOME"]) / "graph_cli" / "config.toml"
     config.write_text(config.read_text() + "\n[audit]\naccess_log = true\n")
     created = admin(
@@ -135,12 +155,12 @@ def build(run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path) -> I
     applied = app(run_cli, "apply", str(COMPANY / "seeds" / "1.1.0.jsonl"), env=env)
     assert applied.code == 0, applied.envelope
     publish_set(run_cli, tmp_path)
-    path = write_policy(tmp_path / "policies", "installation.yaml", POLICY)
-    policy = admin(run_cli, "policy", "apply", str(path), "--reason", "serve the example")
-    assert policy.code == 0, policy.envelope
-    tokens = {
-        role: new_token(run_cli, f"app_{role}", "--project", "company_project", "--role", role)
-        for role in ("maintainer", "reader", "narrow", "catalog")
+    path = write_policy(tmp_path / "policies", "installation.yaml", policy)
+    applied = admin(run_cli, "policy", "apply", str(path), "--reason", "serve the example")
+    assert applied.code == 0, applied.envelope
+    issued = {
+        name: new_token(run_cli, f"app_{name}", "--project", project, "--role", role)
+        for name, (role, project) in (tokens or ROLE_TOKENS).items()
     }
     server = ServerApp(Settings.load(isolated_env, tmp_path), log=io.StringIO(), enroll=Enrollment)
-    return Installation(server, tokens)
+    return Installation(server, issued, root)

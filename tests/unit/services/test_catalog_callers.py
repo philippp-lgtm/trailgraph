@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 from support.catalog_leaks import assert_hidden_absent
 from support.catalog_policies import Fixed, company_env
+from support.company_server import CATALOG_READS
 from support.services import ServiceEnv
 from support.txbuilder import actor
 
@@ -36,7 +37,8 @@ from graph_cli.services.catalog_access import (
 from graph_cli.services.read import ReadService
 from graph_cli.services.schema_search import search_model
 
-READS = '["org:*", "ppl:*", "ops:*"]'  # no leg:*: functions that touch it are hidden to these
+# no leg: types: the functions that touch them are hidden to these callers
+READS = str(list(CATALOG_READS)).replace("'", '"')
 
 POLICY = f"""\
 schema: graph_cli.policy/1
@@ -97,7 +99,7 @@ grants:
     graphs: [example_graph]
     level: catalog
     catalog: {{views: [unit_overview]}}
-    reads: ["ppl:*"]
+    reads: ["ppl:Employee", "ppl:External", "ppl:Identity"]
   - entrypoint: server
     principal: {{role: lister}}
     graphs: [example_graph]

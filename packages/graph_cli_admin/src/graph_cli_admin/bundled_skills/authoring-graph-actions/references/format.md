@@ -228,6 +228,12 @@ have (`admin.actions_broken` when one fails), and the stored normalized
 form must still compile too: an action that no longer does is
 `action.stale`, also when `graph do` meets it.
 
+Warned, not refused: `catalog.granted_entry_removed` and `catalog.granted_entry_changed`, one record
+per action (also on a dry run and in a push that publishes actions) when the publish removes or
+changes an action that a catalog grant of the installation policy names. The tokens of the grant
+write whatever the published template says under that name (see `SKILL.md`, "Actions for callers
+limited to a catalog").
+
 ## Published form
 
 Publishing stores the files and a compiled catalog

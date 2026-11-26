@@ -36,6 +36,7 @@ roles:
   catalog_agent: {description: "Runs three entries of example_graph"}
   reader: {description: "Reads example_graph"}
   mover: {description: "Reads example_graph and moves items through one action"}
+  writer_only: {description: "Moves items through one action and reads nothing else"}
   idle: {description: "Granted nothing"}
 grants:
   - entrypoint: server
@@ -48,6 +49,12 @@ grants:
       views: [item_catalog]
     reads: [inv:Item, inv:Location, inv:Category]
   - {entrypoint: server, principal: {role: reader}, graphs: [example_graph], level: read}
+  - entrypoint: server
+    principal: {role: writer_only}
+    graphs: [example_graph]
+    level: catalog
+    catalog: {actions: [move_item]}
+    reads: [inv:Item, inv:Location]
   - entrypoint: server
     principal: {role: mover}
     graphs: [example_graph]
@@ -152,6 +159,27 @@ def test_whoami_shows_the_level_catalog_and_the_names_the_token_sees(
     assert "write.action" not in allowed and "read.view" not in allowed
     other = command(served, "whoami", reader).json["data"]["permissions"]["graphs"][0]
     assert other["level"] == "read" and "catalog" not in other
+
+
+def test_whoami_shows_the_obligations_the_granted_action_holds_its_writes_to(
+    served: ServerApp, agent: str, reader: str, mover: str
+) -> None:
+    """The token has no write by hand, so the obligations of its own writes are empty; the ones
+    ``do`` will hold the writes of its action to (the built-in reason for a supersede or a
+    retract, the entry's own) are what whoami shows (step 3 review N4)."""
+
+    def obligations(token: str) -> dict[str, Any]:
+        (graph,) = command(served, "whoami", token).json["data"]["permissions"]["graphs"]
+        shown: dict[str, Any] = graph["obligations"]
+        return shown
+
+    assert obligations(agent) == {
+        "write.retract": {"require_reason": True},
+        "write.supersede": {"require_reason": True},
+    }
+    # a reader with an action gets the same; a plain reader writes nothing, so nothing holds it
+    assert obligations(mover) == obligations(agent)
+    assert obligations(reader) == {}
 
 
 def test_start_counts_the_catalog_only_and_says_level_catalog(
@@ -530,6 +558,60 @@ def test_token_creation_and_enrollment_count_a_catalog_grant_as_granted(
     assert nothing.warning_codes == ["admin.token_not_granted"]
 
 
+def test_a_token_that_holds_a_catalog_role_and_a_reader_role_is_warned_about(
+    run_cli: CliRunner, installation: dict[str, Any]
+) -> None:
+    """Rights add up: the reader grant lets the token read what the catalog grant limits, which
+    no principal of the policy shows (``policy.catalog_widened`` cannot), only the roles one
+    token holds. ``token create``, ``token role add`` and ``enroll create`` say so."""
+    both = admin(
+        run_cli, "token", "create", "both_one", "--project", "example_project",
+        "--role", "catalog_agent", "--role", "reader",
+    )  # fmt: skip
+    assert both.code == 0, both.envelope
+    assert both.warning_codes == ["admin.token_not_catalog_only"]
+    (warning,) = both.warnings
+    assert (
+        warning["details"]["name"] == "both_one" and warning["details"]["graph"] == "example_graph"
+    )
+    assert warning["details"]["reader_rules"], warning
+    assert "example_graph" in warning["message"] and "both_one" in warning["message"]
+    # a role added later widens it the same way; a reader that only holds an action does not
+    plain = admin(
+        run_cli, "token", "create", "plain_one", "--project", "example_project",
+        "--role", "catalog_agent",
+    )  # fmt: skip
+    assert plain.warning_codes == []
+    added = admin(run_cli, "token", "role", "add", "plain_one", "reader")
+    assert added.warning_codes == ["admin.token_not_catalog_only"]
+    removed = admin(run_cli, "token", "role", "remove", "plain_one", "reader")
+    assert removed.warning_codes == []
+    mover = admin(
+        run_cli, "token", "create", "mover_one", "--project", "example_project", "--role", "mover"
+    )
+    assert mover.warning_codes == []  # a reader with catalog.actions is no catalog caller
+    # a catalog grant that names only actions is a catalog grant all the same: with a reader role
+    # the token reads the graph; a reader with catalog.actions, with another reader role, is none
+    writer = admin(
+        run_cli, "token", "create", "writer_one", "--project", "example_project",
+        "--role", "writer_only",
+    )  # fmt: skip
+    assert writer.warning_codes == []
+    widened = admin(run_cli, "token", "role", "add", "writer_one", "reader")
+    assert widened.warning_codes == ["admin.token_not_catalog_only"]
+    reading = admin(run_cli, "token", "role", "add", "mover_one", "reader")
+    assert reading.warning_codes == []
+    code = admin(
+        run_cli, "enroll", "create", "--project", "example_project",
+        "--role", "catalog_agent", "--role", "reader",
+    )  # fmt: skip
+    assert code.warning_codes == ["admin.token_not_catalog_only"]
+    only = admin(
+        run_cli, "enroll", "create", "--project", "example_project", "--role", "catalog_agent"
+    )
+    assert only.warning_codes == []
+
+
 def test_policy_explain_shows_the_level_the_names_and_the_decision_on_an_entry(
     run_cli: CliRunner, installation: dict[str, Any]
 ) -> None:
@@ -543,13 +625,16 @@ def test_policy_explain_shows_the_level_the_names_and_the_decision_on_an_entry(
 
     shown = explain("--role", "catalog_agent")
     assert shown.data["level"] == "catalog" and shown.data["withheld"] == []
-    assert shown.data["catalog"] == {
+    listed = shown.data["catalog"]
+    assert {k: [e["name"] for e in listed[k]] for k in ("functions", "actions", "views")} == {
         "functions": ["items_by_condition"],
         "actions": ["move_item"],
         "views": ["item_catalog"],
-        "catalog_only": True,
-        "reader_rules": [],
     }
+    assert all(
+        e["published"] and e["hash"] for k in ("functions", "actions", "views") for e in listed[k]
+    )
+    assert (listed["catalog_only"], listed["reader_rules"]) == (True, [])
     for flag, name, rule in (
         ("--function", "items_by_condition", "grant.1.functions"),
         ("--view", "item_catalog", "grant.1.views"),

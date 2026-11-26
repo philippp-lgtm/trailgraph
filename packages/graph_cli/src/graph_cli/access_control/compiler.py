@@ -56,7 +56,8 @@ without ``markings`` compiles as before, to the same hash.
 ``functions``, ``actions`` and ``views`` (names of the entry pattern) the grant runs and nothing
 else of the graph is granted. It needs ``entrypoint: server`` (locally an agent with a shell reads
 the files, so the profile would only pretend), named graphs, a ``reads`` list (the types its
-entries may read, so a later release's new types never widen it) and refuses ``writes`` (an
+entries may read, exact types and no ``prefix:*``, so a later release's new types never widen
+it) and refuses ``writes`` (an
 action writes through its own entry). Its rules: ``grant.<n>`` (``read.list`` and
 ``read.describe`` on the exact ``graph:<id>``), ``grant.<n>.reads`` as above, then one rule per
 kind that names entries, ``grant.<n>.functions`` (``read.function`` on
@@ -515,6 +516,14 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
             "resource": [f"graph:{g}" for g in graphs] if limited else resources,
         }
     ]
+    if reads and level == CATALOG_LEVEL:
+        for index, name in enumerate(reads):
+            if name.endswith(":*"):
+                ctx.add(
+                    f"{path}.reads[{index}]",
+                    f"{name!r} is a glob: a catalog grant lists the exact types its entries may"
+                    " read, so that a type a later release adds to the module never widens it",
+                )
     if reads and limited:
         _check_reads(reads, graphs, f"{path}.reads", ctx)
         rules.append(_reads_rule(number, principal, graphs, reads))

@@ -281,14 +281,26 @@ def named_markings(documents: Sequence[Mapping[str, JsonValue]], graph: GraphId)
 _ENTRY_RULE_RE: Final = re.compile(r"^grant\.[0-9]+\.(functions|views|actions)$")
 
 
-def named_entries(
+@dataclass(frozen=True, slots=True, order=True)
+class EntryGrant:
+    """One catalog grant that names an entry: the grant's id (``grant.<n>``, the rule ids of its
+    ``functions``, ``views`` and ``actions`` rules without the suffix) and the facts of its
+    principal as sorted ``(facet, values)`` pairs (a facet may list several values), the
+    entrypoint left out (a catalog grant is always a server grant)."""
+
+    grant: str
+    principal: tuple[tuple[str, tuple[str, ...]], ...]
+
+
+def entry_grants(
     documents: Sequence[Mapping[str, JsonValue]], graph: GraphId
-) -> dict[str, tuple[str, ...]]:
-    """The entries the ``grant.<n>.functions|views|actions`` rules (installation layer) of
-    ``documents`` grant for ``graph`` (their ``graph:<id>/<kind>:<name>`` resources), as
-    ``{function|action|view: sorted unique names}`` with every kind present. A rule of another
-    shape (a hand-built document may name entry resources anywhere) is not a catalog grant."""
-    found: dict[str, set[str]] = {kind: set() for kind in ENTRY_KINDS}
+) -> dict[str, dict[str, tuple[EntryGrant, ...]]]:
+    """The grants behind ``named_entries``: ``{function|action|view: {name: grants}}`` for the
+    entries the ``grant.<n>.functions|views|actions`` rules (installation layer) of ``documents``
+    grant for ``graph``, every kind present, each name with its grants sorted and unique. A rule
+    of another shape (a hand-built document may name entry resources anywhere) is not a catalog
+    grant."""
+    found: dict[str, dict[str, set[EntryGrant]]] = {kind: {} for kind in ENTRY_KINDS}
     for document in documents:
         if layer_of(document) != INSTALLATION_LAYER:
             continue
@@ -296,13 +308,38 @@ def named_entries(
             rule_id = rule.get("id")
             if not isinstance(rule_id, str) or _ENTRY_RULE_RE.match(rule_id) is None:
                 continue
+            principal = rule.get("principal")
+            facts = (
+                tuple(
+                    sorted(
+                        (key, tuple(strings(principal, key)))
+                        for key in principal
+                        if key != "entrypoint" and strings(principal, key)
+                    )
+                )
+                if isinstance(principal, dict)
+                else ()
+            )
+            grant = EntryGrant(rule_id.rsplit(".", 1)[0], facts)
             for resource in strings(rule, "resource"):
                 for kind in ENTRY_KINDS:
                     prefix = f"graph:{graph}/{kind}:"
                     name = resource[len(prefix) :]
                     if resource.startswith(prefix) and ENTRY_NAME_RE.match(name):
-                        found[kind].add(name)
-    return {kind: tuple(sorted(names)) for kind, names in found.items()}
+                        found[kind].setdefault(name, set()).add(grant)
+    return {
+        kind: {name: tuple(sorted(grants)) for name, grants in sorted(names.items())}
+        for kind, names in found.items()
+    }
+
+
+def named_entries(
+    documents: Sequence[Mapping[str, JsonValue]], graph: GraphId
+) -> dict[str, tuple[str, ...]]:
+    """The entries the ``grant.<n>.functions|views|actions`` rules (installation layer) of
+    ``documents`` grant for ``graph`` (their ``graph:<id>/<kind>:<name>`` resources), as
+    ``{function|action|view: sorted unique names}`` with every kind present."""
+    return {kind: tuple(names) for kind, names in entry_grants(documents, graph).items()}
 
 
 @dataclass(frozen=True, slots=True, order=True)

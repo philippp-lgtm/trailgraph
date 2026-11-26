@@ -62,8 +62,15 @@ prevents depends on what is verified:
   `maintain` on a graph other projects read lets one project's admin write
   instructions for their agents and choose which queries and which reviewed writes they run.
   Tokens whose grants name entries ([catalog grants](access_control.md#catalog-grants)) run exactly
-  what the catalog then says under that name, so the admin also defines what such a token reads and
-  writes, though not which names it holds. <!-- claim: security_model.project_admin_ceiling -->
+  what the catalog then says under that name, so whoever may publish a graph's catalog defines what
+  a catalog grant lets a token read and write, though not which names it holds. A publish that
+  removes or changes an entry a grant names warns (`catalog.granted_entry_removed`,
+  `catalog.granted_entry_changed`, [republishing](access_control.md#catalog-grants)) but is not
+  refused: the grant names, it does not pin, so the warning and `policy explain` (the entry's
+  current hash) are what a maintainer has until finer publish rights exist. The same holds
+  for a granted view when a function its rows run changes. A project admin gets the grant ids
+  and the principal of its own project's grants only, never another project's roles.
+  <!-- claim: security_model.project_admin_ceiling -->
 - A token bound to a project (`token create --project`) verifies the
   project, so that project's scope is a boundary for the token, and a
   grant to the project (`principal: {project: P}`) reaches it; without a
@@ -277,8 +284,12 @@ are accepted and known:
   walk the aliases of the class of a reference parameter of any entry it may use (a `many`
   parameter takes a list per call) and read through the entry what the entry returns for each
   entity; this lists the entities of that class it sees, bounded by the types of its `reads`, and
-  allowed reads are not audited, so a walk leaves no trace. Narrowing it is a later decision (an
-  audited refusal, a rate limit, a grant that refuses aliases). The candidates of its narrow
+  allowed reads are not audited, so a walk leaves no trace in the audit trail; the opt-in access
+  log (`[audit] access_log = true`) records every call (command, entry, session, outcome, no
+  values), so a server that holds catalog tokens should turn it on, and `graph-admin usage
+  report` then shows a token's runs per entry. Narrowing it is a later decision (a rate or volume
+  limit per token, a grant that refuses aliases); an audited refusal of every unknown alias is
+  not planned, since it would hand the caller a way to fill the audit chain. The candidates of its narrow
   lookup also carry `facts` when a name has several, the labels of the neighbours that tell the
   homonyms apart, so it learns the names of the neighbours of the entities it finds by name, all
   of a type it sees. <!-- claim: security_model.catalog_lookup_residual -->

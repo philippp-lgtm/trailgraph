@@ -30,8 +30,7 @@ files with `authoring-graph-functions`, `authoring-graph-actions` and
 
 1. Every write runs with `--dry-run` first where the command has it; read
    the answer, then run it again with `--reason "<why>"`.
-2. One change at a time, then `graph-admin audit verify`. Stop when it
-   reports errors.
+2. One change at a time, then `graph-admin audit verify`; stop on errors.
 3. Never edit `.graph_cli_source.json`, the data root or a graph's store
    files. Changes go through `graph-admin` only.
 4. On a refusal, read `error.code`, `error.message` and `error.hint`; fix
@@ -167,11 +166,10 @@ graph without a skill gets one the same way: create the directory, push.
 
 ## Publish or change functions
 
-The named functions of a graph (`functions/<name>.yaml` in its folder) are
-published with the ontology and the skill by `graph-admin graph push`.
-Read `graph-admin usage report <graph>` before writing or changing functions:
-its candidates and batch gaps are the input. Write them with the
-`authoring-graph-functions` skill, then:
+The named functions of a graph (`functions/<name>.yaml` in its folder) are published with the
+ontology and the skill by `graph-admin graph push`. Read `graph-admin usage report <graph>`
+before writing or changing functions: its candidates and batch gaps are the input. Write them
+with the `authoring-graph-functions` skill, then:
 
 ```sh
 graph-admin graph functions publish <graph> <folder>/functions --dry-run
@@ -183,35 +181,37 @@ graph-admin graph functions show <graph>
 The dry run reports every problem of every file together (`admin.functions_invalid`); a missing
 or empty `functions/` folder unpublishes all functions. A result column that no type describes
 only warns (`admin.function_untyped_columns`): add `type:`. Agents run functions only with
-`read.function` (without it they are marked `allowed: false`; an older policy needs `policy apply`
-again, [give_an_app_a_role.md](references/give_an_app_a_role.md)). A publish of a function, action
-or view needs nothing from agents; only `featured` changes make installed graph skills stale
-(`graph start` refreshes them).
+`read.function` (without it they are marked `allowed: false`; an older policy needs `policy
+apply` again, [give_an_app_a_role.md](references/give_an_app_a_role.md)). A publish of a
+function, action or view needs nothing from agents; only `featured` changes make installed
+graph skills stale (`graph start` refreshes them).
 
 ## Publish or change actions and views
 
-The named actions (`actions/<name>.yaml`) and the views (`views/<name>.yaml`) are
-published by `graph-admin graph push` after the release, the skill and the functions,
-views last (they run functions); write them with `authoring-graph-actions` and
-`authoring-graph-views`. `graph-admin graph actions publish <graph> <folder>/actions
---dry-run` and `graph-admin graph views publish <graph> <folder>/views --dry-run` report
-every problem together (`admin.actions_invalid`, `admin.views_invalid`); the push as
-above publishes, an empty folder unpublishes all of its kind, `graph-admin graph actions
-show <graph>` and `graph-admin graph views show <graph>` list them. Functions and actions share one namespace per graph; views have
-their own. An action needs no policy: a caller lacking a write right of its ops, or
-`read.get`, `read.find` or `read.function` for a view, finds it marked `allowed: false`
-(`access.denied` when it calls it); what names a hidden term does not exist for it. A
-function a view runs cannot be removed or changed incompatibly alone
-(`admin.views_broken`): push both.
+The named actions (`actions/<name>.yaml`) and the views (`views/<name>.yaml`) are published
+by `graph-admin graph push` after the release, the skill and the functions, views last (they
+run functions); write them with `authoring-graph-actions` and `authoring-graph-views`.
+`graph-admin graph actions publish <graph> <folder>/actions --dry-run` and `graph-admin graph
+views publish <graph> <folder>/views --dry-run` report every problem together
+(`admin.actions_invalid`, `admin.views_invalid`); the push as above publishes, an empty folder
+unpublishes all of its kind, `graph-admin graph actions show <graph>` and `graph-admin graph
+views show <graph>` list them. Functions and actions share one namespace per graph; views have
+their own. Removing or changing an entry a catalog grant names warns
+([give_an_app_a_catalog_profile.md](references/give_an_app_a_catalog_profile.md)). An action
+needs no policy: a caller lacking a write right of its ops, or `read.get`, `read.find` or
+`read.function` for a view, finds it marked `allowed: false` (`access.denied` when it calls
+it); what names a hidden term does not exist for it. A function a view runs cannot be removed
+or changed incompatibly alone (`admin.views_broken`): push both.
 
 ## Give an app a role
 
-Roles let apps of one project differ: declared in the installation policy,
-given to app tokens or to enrollment codes. Only when the user asks; the steps
-and the policy grammar are in
-[give_an_app_a_role.md](references/give_an_app_a_role.md). A pipeline that keeps part
-of a graph equal to an external source needs a role, a first run and a pause across
-releases that touch its keys: [feed_a_graph_from_a_pipeline.md](references/feed_a_graph_from_a_pipeline.md).
+Roles let apps of one project differ: declared in the installation policy, given to app
+tokens or to enrollment codes. Only when the user asks; steps and policy grammar:
+[give_an_app_a_role.md](references/give_an_app_a_role.md). A pipeline that keeps part of a
+graph equal to an external source needs a role, a first run and a pause across releases that
+touch its keys: [feed_a_graph_from_a_pipeline.md](references/feed_a_graph_from_a_pipeline.md).
+A harness that runs a few named entries only gets a catalog profile:
+[give_an_app_a_catalog_profile.md](references/give_an_app_a_catalog_profile.md).
 
 ## Check a graph
 

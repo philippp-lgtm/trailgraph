@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 from support.actions import action_service, publish_actions
 from support.catalog_policies import Fixed
+from support.company_server import CATALOG_READS
 from support.services import ServiceEnv
 from support.txbuilder import actor
 
@@ -1076,7 +1077,7 @@ def test_a_need_is_met_through_the_first_type_the_deny_only_check_lets_through(
     unit = str(made.entities[0].id)
     installation = INSTALLATION.replace(
         f"catalog: {{actions: {ACTIONS}}}\n    reads: {ITEMS}",
-        "catalog: {actions: [detach_unit]}\n    reads: [org:*, ppl:*, ops:*]",
+        f"catalog: {{actions: [detach_unit]}}\n    reads: [{', '.join(CATALOG_READS)}]",
     ).replace(f"graphs: [{GRAPH}]\n    level: catalog", f"graphs: [{GRAPH}]\n    level: catalog", 1)
     document = compile_policy(
         installation.encode(), file="i.yaml", graphs={GRAPH: env.entry.id}

@@ -150,6 +150,9 @@ _DECISION: Final = obj(  # services_admin.policy._decision_json
         ),
     }
 )
+_GRANTED_ENTRIES: Final = array(
+    obj({"name": STRING, "published": BOOLEAN, "hash": NULLABLE_STRING})
+)
 EXPLAIN_OUTPUT: Final = obj(
     {
         "graph": STRING,
@@ -173,12 +176,13 @@ EXPLAIN_OUTPUT: Final = obj(
         # for a caller who lacks a marking the graph's model uses: the markings it holds
         "markings": STRINGS,
         "writes": obj(extra=obj(extra={"anyOf": [{"const": True}, array(STRING)]})),
-        # for a caller whose grants name catalog entries of the graph: the names granted
+        # for a caller whose grants name catalog entries of the graph: the names granted, each
+        # with whether the graph publishes it now and its current hash
         "catalog": obj(
             {
-                "functions": STRINGS,
-                "actions": STRINGS,
-                "views": STRINGS,
+                "functions": _GRANTED_ENTRIES,
+                "actions": _GRANTED_ENTRIES,
+                "views": _GRANTED_ENTRIES,
                 "catalog_only": BOOLEAN,  # false: the caller is also a reader of the graph
                 "reader_rules": STRINGS,  # ... made so by these rules
             }

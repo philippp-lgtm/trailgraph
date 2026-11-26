@@ -331,6 +331,10 @@ def test_a_read_grant_may_list_actions_and_keeps_its_read_rule() -> None:
         "grant.1.actions",
     ]
     assert again["grant.1"]["resource"] == [GRAPH]
+    # a reader that writes through actions may list globs, as every read grant may: only a
+    # catalog level, which is the limit itself, needs exact types
+    globbed = rule_map(compiled(CLOSER.replace("level: read", 'level: read\n    reads: ["ex:*"]')))
+    assert "grant.1.reads" in globbed
 
 
 def test_grant_numbers_follow_the_grants() -> None:
@@ -354,6 +358,17 @@ REFUSED: list[tuple[str, str, str]] = [
         SUPPORT.replace('    reads: ["ex:Ticket", "ex:Customer"]\n', ""),
         "grants[0].reads",
         "is required for level: catalog",
+    ),
+    # reads lists exact types: a glob would cover the types a later release adds to the module
+    (
+        SUPPORT.replace('reads: ["ex:Ticket", "ex:Customer"]', 'reads: ["ex:Ticket", "ex:*"]'),
+        "grants[0].reads[1]",
+        "is a glob",
+    ),
+    (
+        SUPPORT.replace('reads: ["ex:Ticket", "ex:Customer"]', 'reads: ["ex:*"]'),
+        "grants[0].reads[0]",
+        "later release adds",
     ),
     (
         SUPPORT.replace("entrypoint: server", "entrypoint: app").replace(
@@ -865,6 +880,7 @@ def test_a_catalog_caller_is_catalog_only_and_gets_its_names() -> None:
         actions=("close_ticket",),
         views=("ticket_overview",),
         catalog_only=True,
+        catalog_rules=("grant.1",),
     )
     assert found.names("function") == ("customer_summary", "open_tickets")
     assert found.names("action") == ("close_ticket",)
@@ -880,7 +896,7 @@ def test_the_names_and_the_state_belong_to_one_graph() -> None:
     assert not catalog_grants(token("support"), OTHER, installed)
     triage_other = catalog_grants(token("triage"), OTHER, installed)
     assert triage_other == CatalogGrants(
-        functions=("escalations", "open_tickets"), catalog_only=True
+        functions=("escalations", "open_tickets"), catalog_only=True, catalog_rules=("grant.2",)
     )
     assert catalog_grants(token("triage"), THIRD, installed) == CatalogGrants()
 
@@ -965,6 +981,21 @@ def test_a_read_grant_with_catalog_actions_is_no_catalog_caller() -> None:
         actions=("close_ticket",), catalog_only=False, reader_rules=("grant.1",)
     )
     assert found  # it names an action
+
+
+def test_a_catalog_grant_that_names_only_actions_is_told_from_a_reader_with_actions() -> None:
+    """The base rule tells them apart: ``level: catalog`` allows only listing and describing the
+    graph, a read grant with ``catalog.actions`` allows the reads. Next to a reader grant the
+    first is a catalog grant that limits nothing, the second never limited anything."""
+    only_actions = SUPPORT.replace(SUPPORT_CATALOG, "    catalog:\n      actions: [close_ticket]\n")
+    alone = catalog_grants(token("support"), EXAMPLE, policy(only_actions))
+    assert alone.actions == ("close_ticket",) and alone.functions == alone.views == ()
+    assert alone.catalog_only and alone.catalog_rules == ("grant.1",)
+    widened = catalog_grants(token("support", "reader"), EXAMPLE, policy(only_actions, READER))
+    assert not widened.catalog_only and widened.catalog_rules == ("grant.1",)
+    assert widened.reader_rules == ("grant.2",)
+    reader = catalog_grants(token("closer"), EXAMPLE, policy(CLOSER))
+    assert reader.actions == ("close_ticket",) and reader.catalog_rules == ()
 
 
 def test_a_deny_rule_does_not_make_a_reader_a_catalog_caller() -> None:
