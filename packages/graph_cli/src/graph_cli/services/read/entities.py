@@ -33,14 +33,36 @@ def refuse_affordances_with_rev() -> GraphCliError:
     )
 
 
+def unknown_entity(ref: str) -> GraphCliError:
+    """``entity.not_found`` as a caller that may not find entities gets it for an id that names
+    nothing it can use (unknown, hidden, of another class): no id, no class."""
+    return GraphCliError("entity.not_found", f"no entity {ref}", details={"ref": ref})
+
+
 def current_entity(
-    view: GraphRead, ref: str
+    view: GraphRead, ref: str, *, lookup_for: str | None = None
 ) -> tuple[EntityId, Revision, list[WarningRecord], list[str], list[str]]:
     """The entity ``ref`` names and its current revision, the warnings (alias notices, and
-    superseded or retracted) and the ids of the entities that superseded and retracted it."""
-    entity, ref_warnings = resolve_ref(ref, view.snapshot, argument="ref")
+    superseded or retracted) and the ids of the entities that superseded and retracted it.
+    A catalog-only caller names it by full id or alias (no trailing hex digits); ``lookup_for``
+    is the slot it is for (``view:NAME._entity``), so that a refused text points to the lookup
+    that serves that slot."""
+    try:
+        entity, ref_warnings = resolve_ref(
+            ref,
+            view.snapshot,
+            argument="ref",
+            lookup_for=lookup_for if view.catalog_only else None,
+            suffixes=not view.catalog_only,
+        )
+    except GraphCliError as exc:
+        if view.catalog_only and exc.code == "entity.not_found":
+            raise unknown_entity(ref) from None  # the same answer as for any id it cannot use
+        raise
     current = view.snapshot.get(entity)
     if current is None:
+        if view.catalog_only:
+            raise unknown_entity(ref)
         raise GraphCliError(
             "entity.not_found", f"no entity {ref}", details={"ref": ref, "id": str(entity)}
         )

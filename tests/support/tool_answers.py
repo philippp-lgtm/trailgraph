@@ -106,6 +106,7 @@ def _validator(
         name,
         entry.pin.artifact_hash,
         reader.read_view(actor, entry),
+        reader.catalog_scope(actor, entry) is not None,  # references are ids and aliases only
         tuple((c.entry.name, c.entry.hash, c.allowed) for c in functions),
         tuple((c.entry.name, c.entry.hash, c.allowed) for c in views),
     )

@@ -762,9 +762,10 @@ exactly as before. The graph itself stays as visible as the grant makes it
   `run` return entities of visible types only, and totals count what is left. A
   hidden entity is `entity.not_found` in every form of reference: id, alias and
   the end of an id (a suffix that matches only hidden ids is unknown, and the
-  candidates an ambiguous suffix lists are visible ones). A filter with a hidden
-  id (`find --rel <relation>=<id>`) is an empty page, as with an id that is not
-  there.
+  candidates an ambiguous suffix lists are visible ones; a caller limited to its
+  catalog takes no suffix at all, see [References and names](#references-and-names-for-a-caller-limited-to-its-catalog)).
+  A filter with a hidden id (`find --rel <relation>=<id>`) is an empty page, as with an id
+  that is not there.
 - **Edges.** An entity is shown without its edges into hidden entities, and
   `get --full` shows a content hash computed over what is shown, so nothing
   marks an entity as having hidden edges. Edges from hidden entities are not
@@ -913,6 +914,47 @@ the caller sees. It is what the caller is told, not the complete list: for an ac
 write of each unmet need, so a right granted may reveal the next one missing. Listing, counting, describing and
 searching record no decision, like `graph graphs`.
 The graph skill still lists the allowed featured entries only ([Skills](skills.md#per-reader)).
+
+### References and names for a caller limited to its catalog
+
+A caller whose grants on a graph are [catalog grants](#catalog-grants) only may not `find`,
+`search` or `get` entities, so the only way to an entity it needs is a `ref` parameter of an entry
+it may use (the entity of an entity view included) and the narrow `lookup` that serves that
+parameter. Both are shaped so that neither can list or probe the graph.
+
+- **References.** A `ref` parameter takes a full id (with or without `urn:uuid:`) or an
+  alias, never the trailing hex digits of an id: a suffix is `function.parameter_invalid`
+  (`action.`, `view.`), whether it ends no id, one or several, so no answer lists the ids a suffix
+  matches (`entity.ambiguous_ref` is never answered). An id of another class than the parameter's
+  and an id of a type the caller does not see are `entity.not_found`, with the message and details
+  of an id that does not exist: no class, no id. The same holds for the entity of an entity view
+  (`view.class_mismatch` is not answered to such a caller) and for the parameters a view passes to its
+  `rows` functions. Every other caller keeps the forms it had. The tool manifest says it: the
+  pattern of a reference input of such a caller is an id or an alias, and its description leaves
+  the trailing digits out.
+- **Narrow lookup.** `lookup TEXT --for NAME.PARAM` (`kind:NAME.PARAM` to name a function, action or
+  view, `view:NAME._entity` for the entity of an entity view) is allowed for the parameter of an entry the
+  caller may use: the entry is decided as `run` or `view --name` decide it, with `read.find` on the
+  graph asked deny-only, so a deny rule on it takes the lookup away. The answer is the exact
+  matches of the text in the graph's language, the first page, records that are active, of the class of the
+  parameter (and its subclasses) among the types the caller sees. A match of another class is
+  neither listed nor counted (`excluded` is always zero), there is no next page (`next_offset` is
+  `null`) and no hint names another way to look a name up. A candidate shows `id`, `alias`, `type`,
+  `label`, `record_status`, `match` and `facts`: when a text has several candidates, the labels of the
+  neighbours that tell them apart, only of the types and attributes the caller sees. Every other
+  shape stays refused (`access.denied` on `read.find` of the graph, audited): a plain lookup,
+  `--for <relation>`, `--for-source`, `--match prefix`, `--offset`, `--include-inactive`, `--type`,
+  `--lang`, `--ignore-accents` and `--as-of`; so do `search` and `find`. A parameter of an entry that is
+  outside the catalog is as unknown as the entry (`function.not_found`, `action.not_found` or
+  `view.not_found`).
+- **The lookup tool.** The tool manifest lists `lookup` for such a caller when one of its tools has a
+  reference input that has a name to look up, and `call lookup` follows the rules above for the input
+  its `for` names; with no such input the tool does not exist (`tool.not_found`). One predicate
+  decides it for the manifest, `describe tools` and `call`.
+
+What this leaves open is the oracle of an alias and of a name: an alias that is tried and found is
+a visible entity of the right class, and the facts of homonyms show their neighbours' labels
+([Type read limits](security_model.md#type-read-limits)).
 
 ### Attributes a caller lacks a marking for
 

@@ -3,6 +3,7 @@ may use has a reference input and the caller holds ``read.find``, its ``for`` ov
 inputs, the names the descriptions of the inputs give it, and what it maps to."""
 
 import json
+import re
 from dataclasses import replace
 from typing import Any
 
@@ -14,6 +15,7 @@ from support.tools import ITEMS, NOTHING, PERSONAL, Scene
 from graph_cli.app_cli import tool_manifest as tm
 from graph_cli.kernel.canonical import hash_value
 from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.ids import ENTITY_REF_PATTERN, EXACT_ENTITY_REF_PATTERN
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.lookup import MAX_LOOKUP_TEXTS
 from graph_cli.services import describe_tools as dt
@@ -424,3 +426,100 @@ def test_the_slots_follow_the_order_of_the_manifest() -> None:
     assert order == sorted(order, key=names.index)
     entity_first = [v for v in values if v.startswith("view_unit_overview.")]
     assert entity_first == ["view_unit_overview._entity"]
+
+
+# ---- a caller limited to its catalog -----------------------------------------------------------
+
+
+def catalog_scene() -> Scene:
+    """The company example as a caller sees it whose grants name a function and an entity view."""
+    return replace(
+        COMPANY.scene(),
+        functions=tuple(f for f in COMPANY.functions if f.name == "members_of_unit"),
+        actions=(),
+        views=tuple(v for v in COMPANY.views if v.name == "unit_overview"),
+    )
+
+
+def catalog_manifest(**selection: Any) -> dict[str, Any]:
+    scene = catalog_scene()
+    found = tm.build_manifest(
+        scene.entry,
+        scene.model,
+        functions=scene.functions,
+        actions=scene.actions,
+        views=scene.views,
+        obligations=NO_OBLIGATIONS,
+        selection=tm.Selection(**selection),
+        find=True,
+        rows=COMPANY.functions,
+        exact_ids=True,
+    )
+    return json.loads(json.dumps(found))
+
+
+def reference_schemas(document: dict[str, Any]) -> list[dict[str, Any]]:
+    """The scalar schema of every reference input of the tools of the document."""
+    found: list[dict[str, Any]] = []
+    for tool in document["tools"]:
+        for schema in tool["input_schema"]["properties"].values():
+            for node in (schema, *schema.get("anyOf", ())):
+                for item in (node, node.get("items", {})):
+                    if isinstance(item, dict) and "x-graph-cli" in item:
+                        found.append(item)
+    return found
+
+
+def test_a_catalog_caller_is_listed_the_lookup_tool_for_the_inputs_of_its_tools_only() -> None:
+    document = catalog_manifest()
+    assert [t["name"] for t in document["tools"]] == [
+        "run_members_of_unit",
+        "view_unit_overview",
+        "lookup",
+    ]
+    assert slots(lookup_of(document)) == [
+        "run_members_of_unit.unit",
+        "view_unit_overview._entity",
+    ]
+
+
+@pytest.mark.doc_claim("security_model.tool_manifest_per_caller")
+def test_a_catalog_callers_references_take_an_id_or_an_alias_never_trailing_hex() -> None:
+    plain = manifest(COMPANY.scene())
+    exact = catalog_manifest()
+    assert reference_schemas(plain) and reference_schemas(exact)
+    for schema in reference_schemas(exact):
+        assert schema["pattern"] == EXACT_ENTITY_REF_PATTERN
+        assert "trailing hex" not in schema.get("description", "")
+        assert not re.fullmatch(schema["pattern"], "1f0e5d6c7b8a")  # a suffix is no reference
+        assert re.fullmatch(schema["pattern"], "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a")
+        assert re.fullmatch(schema["pattern"], "DEPT-0001")
+    for tool in exact["tools"]:
+        for schema in tool["input_schema"]["properties"].values():
+            assert "trailing hex" not in json.dumps(schema)
+    # every other caller keeps what the manifest said before
+    for schema in reference_schemas(plain):
+        assert schema["pattern"] == ENTITY_REF_PATTERN
+    assert any("trailing hex" in json.dumps(t["input_schema"]) for t in plain["tools"])
+
+
+def test_the_lookup_tool_of_a_catalog_caller_says_what_it_lists_and_leaves_out() -> None:
+    narrow = lookup_of(catalog_manifest())["description"]
+    wide = lookup_of(manifest(COMPANY.scene()))["description"]
+    assert "texts[].excluded" not in narrow and "first page of active" in narrow
+    assert "texts[].excluded" in wide
+    assert narrow != wide
+
+
+def test_the_hash_of_a_catalog_callers_tool_is_the_hash_in_its_manifest() -> None:
+    scene = catalog_scene()
+    document = by_name(catalog_manifest())
+    refs = tm.lookup_refs(scene.model, scene.functions, scene.actions, scene.views, find=True)
+    for name in ("lookup", "run_members_of_unit", "view_unit_overview"):
+        (head,) = tm.heads(
+            *scene_args(scene), only=name, refs=refs, rows=COMPANY.functions, exact_ids=True
+        )
+        assert tm.tool_hash(head, scene.model) == document[name]["hash"], name
+    # the exactness is part of what a harness builds its tool from
+    (loose,) = tm.heads(*scene_args(scene), only="run_members_of_unit", refs=refs)
+    assert tm.tool_hash(loose, scene.model) != document["run_members_of_unit"]["hash"]

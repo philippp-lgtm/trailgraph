@@ -14,7 +14,7 @@ from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry
 from graph_cli.kernel.read_view import UNLIMITED, ReadView
 from graph_cli.kernel.records import RequestMeta
-from graph_cli.kinetic.action_entries import ActionEntry, load_action_entries
+from graph_cli.kinetic.action_entries import ActionEntry, find_action, load_action_entries
 from graph_cli.kinetic.action_needs import NeedOptions
 from graph_cli.kinetic.action_needs import action_needs as derive_needs
 from graph_cli.kinetic.entries import FunctionEntry, Named, find_entry, load_entries
@@ -421,14 +421,20 @@ class ReadCatalogs(ReadAccess):
         self, actor: ActorContext, entry: GraphEntry, kind: str, path: EntryPath
     ) -> GraphCliError:
         """The error for an entry of ``path`` the caller does not see: what the lookup of a name
-        among the entries it sees raises (``function.not_found`` or ``view.not_found``, with
-        suggestions among those entries only), so an entry outside its catalog and one that does
-        not exist are answered alike."""
+        among the entries it sees raises (``function.not_found``, ``action.not_found`` or
+        ``view.not_found``, with suggestions among those entries only), so an entry outside its
+        catalog and one that does not exist are answered alike."""
         name = path.names[0] if path.names else ""
         try:
             if kind == "function":
                 seen = self.callable_functions(actor, entry, self.read_view(actor, entry))
                 find_entry(seen, name)
+            elif kind == "action":
+                published = self.published_actions(entry)
+                found = (
+                    () if published is None else self.classified_actions(actor, entry, published)
+                )
+                find_action([c.entry for c in found], name)
             else:
                 shown = self._classified_views(actor, entry, self.read_view(actor, entry))
                 find_view([c.entry for c in shown], name)

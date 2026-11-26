@@ -364,8 +364,11 @@ def bind_cli(
     params: Sequence[ParamDef],
     pairs: Sequence[tuple[str, str]],
     model: CompiledModel,
+    *,
+    suffixes: bool = True,
 ) -> dict[str, Value]:
-    """Values from ``name=value`` pairs; a ``many`` parameter repeats its name."""
+    """Values from ``name=value`` pairs; a ``many`` parameter repeats its name. ``suffixes``:
+    a reference may be written as trailing hex digits of an id (else only a full id or an alias)."""
     grouped: dict[str, list[str]] = {}
     for key, text in pairs:
         grouped.setdefault(key, []).append(text)
@@ -379,7 +382,8 @@ def bind_cli(
         if not param.many and len(texts) > 1:
             raise _invalid(kind, name, param, "is given more than once")
         values = [
-            _checked(kind, name, param, partial(_from_text, param, text, model)) for text in texts
+            _checked(kind, name, param, partial(_from_text, param, text, model, suffixes))
+            for text in texts
         ]
         bound[param.name] = values if param.many else values[0]
     return bound
@@ -391,8 +395,11 @@ def bind_json(
     params: Sequence[ParamDef],
     values: Mapping[str, JsonValue],
     model: CompiledModel,
+    *,
+    suffixes: bool = True,
 ) -> dict[str, Value]:
-    """Values from a JSON object; a ``many`` parameter takes a list."""
+    """Values from a JSON object; a ``many`` parameter takes a list (``suffixes``: see
+    ``bind_cli``)."""
     _check_names(kind, name, params, values)
     bound: dict[str, Value] = {}
     for param in params:
@@ -402,11 +409,12 @@ def bind_json(
         given = values[param.name]
         if not param.many:
             bound[param.name] = _checked(
-                kind, name, param, partial(_from_json, param, given, model)
+                kind, name, param, partial(_from_json, param, given, model, suffixes)
             )
         elif isinstance(given, list):
             bound[param.name] = [
-                _checked(kind, name, param, partial(_from_json, param, v, model)) for v in given
+                _checked(kind, name, param, partial(_from_json, param, v, model, suffixes))
+                for v in given
             ]
         else:
             raise _invalid(kind, name, param, "expects a list")
@@ -419,6 +427,8 @@ def bind_input(
     params: Sequence[ParamDef],
     values: Mapping[str, JsonValue],
     model: CompiledModel,
+    *,
+    suffixes: bool = True,
 ) -> dict[str, Value]:
     """Values from the typed input of a tool call (``graph call``): ``bind_json`` with the two
     rules a JSON Schema cannot express. ``null`` for a parameter means "not given": a default
@@ -434,7 +444,7 @@ def bind_input(
             given[key] = value  # an unknown key: bind_json refuses it
         elif value is not None:
             given[key] = number_value(value, integer=param.type == "integer")
-    return bind_json(kind, name, params, given, model)
+    return bind_json(kind, name, params, given, model, suffixes=suffixes)
 
 
 def number_value(value: JsonValue, *, integer: bool) -> JsonValue:
@@ -580,12 +590,12 @@ def _enum_value(param: ParamDef, text: str, model: CompiledModel) -> str:
     return text
 
 
-def _reference(text: str) -> str:
-    parsed = parse_entity_ref(text, allow_abbrev=True)
+def _reference(text: str, suffixes: bool) -> str:
+    parsed = parse_entity_ref(text, allow_abbrev=suffixes)
     if parsed is None:
+        forms = "full id, alias or 8-32 trailing hex digits" if suffixes else "full id or alias"
         raise ValueError(
-            f"{text!r} is not an entity reference (full id, alias or 8-32 trailing hex digits); "
-            "a name has to be looked up first"
+            f"{text!r} is not an entity reference ({forms}); a name has to be looked up first"
         )
     return ref_text(parsed)
 
@@ -597,17 +607,21 @@ _FLOAT_TEXT: Final = {
 }
 
 
-def _from_text(param: ParamDef, text: str, model: CompiledModel) -> str | int | bool:
+def _from_text(
+    param: ParamDef, text: str, model: CompiledModel, suffixes: bool = True
+) -> str | int | bool:
     if param.type == "string":
         return text
     if param.type == "enum":
         return _enum_value(param, text, model)
     if param.type == "ref":
-        return _reference(text)
+        return _reference(text, suffixes)
     return _scalar(coerce_text(param.type, text))
 
 
-def _from_json(param: ParamDef, value: JsonValue, model: CompiledModel) -> str | int | bool:
+def _from_json(
+    param: ParamDef, value: JsonValue, model: CompiledModel, suffixes: bool = True
+) -> str | int | bool:
     kind = param.type
     if isinstance(value, FloatLiteral):  # a number with a fraction or an exponent (a str subclass)
         raise ValueError(_FLOAT_TEXT.get(kind, f"{str(value)!r} is not a string").format(value))
@@ -623,4 +637,4 @@ def _from_json(param: ParamDef, value: JsonValue, model: CompiledModel) -> str |
         return _scalar(coerce_text("decimal", str(value)))
     if not isinstance(value, str):
         raise ValueError(f"{value!r} is not a string")
-    return _from_text(param, value, model)
+    return _from_text(param, value, model, suffixes)

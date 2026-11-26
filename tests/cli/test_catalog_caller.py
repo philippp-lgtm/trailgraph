@@ -275,6 +275,10 @@ def test_the_primitives_and_the_card_stay_refused_whatever_is_asked(
         ("view", {"ref": missing, "name": "card"}),
         ("view", {"ref": "abcdef12"}),
         ("neighbors", {"ref": missing}),
+        ("lookup", {"text": ["x"]}),
+        ("lookup", {"text": ["x"], "--for": "part_of"}),
+        ("lookup", {"text": ["x"], "--match": "prefix", "--for": "items_by_condition.condition"}),
+        ("search", {"text": "x"}),
     ):
         reply = command(served, path, agent, **args, **GRAPH)
         assert reply.status == 403 and reply.error["code"] == "access.denied", (path, reply.json)
@@ -317,6 +321,26 @@ def test_call_runs_the_granted_function_and_view_through_the_manifest(
     assert "do_move_item" not in tools
     refused = command(served, "call", agent, tool="do_move_item", input={}, **GRAPH)
     assert refused.status in (403, 404), refused.json
+
+
+def test_the_lookup_tool_is_listed_only_when_a_tool_has_a_reference_input(
+    served: ServerApp, agent: str
+) -> None:
+    """The entries of this role take no reference, so the manifest has no lookup tool and a call
+    of it is an unknown tool, whatever it asks for."""
+    tools = command(served, "describe/tools", agent, **GRAPH).json["data"]["tools"]
+    assert "lookup" not in {t["name"] for t in tools}
+    given = {"text": "x", "for": "run_items_by_condition.condition"}
+    reply = command(served, "call", agent, tool="lookup", input=given, **GRAPH)
+    assert reply.status == 404 and reply.error["code"] == "tool.not_found", reply.json
+    assert reply.error["details"]["did_you_mean"] in ([], ["run_items_by_condition"])
+    assert_hidden_absent(reply.json["error"]["details"], OTHERS)
+    # the way a name is looked up for a parameter that is no reference: a mistake of the call
+    asked = command(
+        served, "lookup", agent, text=["x"], **{"--for": "items_by_condition.condition"}, **GRAPH
+    )
+    assert asked.status == 400, asked.json
+    assert asked.error["code"] == "usage.invalid_argument"
 
 
 # ---- tokens and enrollment ----------------------------------------------------------------

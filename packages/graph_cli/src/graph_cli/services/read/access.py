@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from graph_cli.access_control.authorize import authorize, authorize_entry
 from graph_cli.access_control.effective import CatalogGrants
 from graph_cli.audit import events
+from graph_cli.kernel.actions import ENTRY_KINDS
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext, Decision
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
@@ -160,6 +161,23 @@ class ReadAccess(ReadState):
         """Whether the policy lets ``actor`` do ``action`` on the graph (``_probe``): a probe,
         nothing is recorded (for listings that depend on a right, like the tool manifest)."""
         return self._probe(actor, entry, action).effect == "allow"
+
+    def lookup_served(self, actor: ActorContext, entry: GraphEntry) -> bool:
+        """Whether the ``lookup`` tool is served to ``actor``: it holds ``read.find`` on the graph,
+        or its grants are catalog grants only and some entry they name lets it ``read.find``
+        deny-only (``entry_decisions``: what a lookup for that entry's reference input asks), so
+        that a rule that denies ``read.find`` takes the tool away. The one predicate behind the
+        tool manifest, ``describe tools`` and ``call lookup``: a probe, nothing is recorded."""
+        if self.may(actor, entry, "read.find"):
+            return True
+        scope = self.catalog_scope(actor, entry)
+        if scope is None:
+            return False
+        return any(
+            not self.entry_decisions(actor, entry, EntryRef(kind, name), ("read.find",))[1]
+            for kind in ENTRY_KINDS
+            for name in scope.names(kind)
+        )
 
     def refuse_hidden(
         self, actor: ActorContext, entry: GraphEntry, ref: str, request: RequestMeta

@@ -218,6 +218,7 @@ class ReadQueries(ReadCatalogs):
                 given,
                 model=view.model,
                 snapshot=view.snapshot,
+                exact_ids=view.catalog_only,
             )
             warnings += found
         resolved = self._resolve_function(view, function, bound)

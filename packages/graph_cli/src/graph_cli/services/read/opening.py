@@ -128,6 +128,7 @@ class ReadOpen(ReadCatalogs):
             mapping,
             request.via,
             opened,
+            self.catalog_scope(actor, entry) is not None,
         )
 
     def rename_hint(

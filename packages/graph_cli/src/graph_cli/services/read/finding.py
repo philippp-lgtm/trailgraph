@@ -7,9 +7,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Final
 
+from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId
+from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import EdgeRecord
 from graph_cli.kinetic.entries import find_entry
@@ -32,6 +34,7 @@ from graph_cli.query.search import SearchSpec, plan_search
 from graph_cli.query.search import main_label as search_label
 from graph_cli.query.search import match_revision as search_match
 from graph_cli.query.search import rank_key as search_rank
+from graph_cli.services.catalog_access import EntryPath, EntryRef
 from graph_cli.services.read.catalogs import ReadCatalogs
 from graph_cli.services.read.graph_read import GraphRead, Page
 from graph_cli.services.read.json_shapes import entity_json
@@ -54,11 +57,65 @@ class _Slot:
     of_class: str | None
 
 
+def _narrow_shape(spec: LookupSpec) -> bool:
+    """Whether ``spec`` asks nothing a lookup through an entry may not: an exact match of the
+    text in the graph's language, first page, active records, every type of the slot."""
+    return (
+        spec.match == "exact"
+        and spec.offset == 0
+        and not spec.include_inactive
+        and not spec.ignore_accents
+        and not spec.types
+        and spec.lang is None
+    )
+
+
 def _param_slots(params: Sequence[ParamDef]) -> list[_Slot]:
     return [_Slot(p.name, p.type_text, p.of_class if p.type == "ref" else None) for p in params]
 
 
+def split_slot(use: str) -> tuple[str | None, str, str] | None:
+    """``(kind or None, entry name, parameter)`` of a ``--for`` that names a parameter
+    (``NAME.PARAM``, ``kind:NAME.PARAM``); ``None`` when it names a relation (no ``.``) or its
+    qualifier is no kind of entry."""
+    owner, dot, param = use.partition(".")
+    if not dot:
+        return None
+    qualifier, colon, name = owner.rpartition(":")
+    if colon and qualifier not in SLOT_KINDS:
+        return None
+    return (qualifier if colon else None), name, param
+
+
 class ReadFinding(ReadCatalogs):
+    def lookup_path(
+        self,
+        actor: ActorContext,
+        entry: GraphEntry,
+        spec: LookupSpec,
+        *,
+        for_use: str | None,
+        for_source: str | None,
+    ) -> EntryPath | None:
+        """The entry a lookup may work through when the caller's own right to find entities does
+        not allow it (``open(through=...)``): the function, action or view whose parameter
+        ``--for`` names, and only for the narrow form of a lookup: ``--for NAME.PARAM`` with the
+        text and the limit, an exact match, the first page, active records, no ``--type``,
+        ``--lang`` or accent folding. Any other shape (a relation, ``--for-source``, a prefix, an
+        offset, ``--include-inactive``) has no entry: it is the plain ``read.find`` question and a
+        caller that lacks the right is refused. Decides nothing about the caller. An unqualified
+        name is the action when the caller may run an action of that name, else a function (the
+        order ``_slots`` looks in), so that a name no entry answers to is one error for every
+        caller."""
+        parsed = None if for_use is None else split_slot(for_use)
+        if parsed is None or for_source is not None or not _narrow_shape(spec):
+            return None
+        qualifier, name, _ = parsed
+        if qualifier is None:
+            actions = self.actions(actor, entry) or ()
+            qualifier = "action" if any(a.name == name for a in actions) else "function"
+        return EntryPath(qualifier, (name,))
+
     @query_phase
     def find(
         self,
@@ -137,16 +194,23 @@ class ReadFinding(ReadCatalogs):
     def _parameter_fit(self, view: GraphRead, use: str) -> tuple[str, ...]:
         """The class of a ``ref`` parameter of a function, an action or a view and its subclasses
         (``--for NAME.PARAM``): the slot ``--for`` names (see ``_slot``)."""
-        owner, _, param_name = use.partition(".")
-        qualifier, colon, name = owner.rpartition(":")
-        if colon and qualifier not in SLOT_KINDS:
+        parsed = split_slot(use)
+        if parsed is None:
+            bad = use.partition(".")[0].rpartition(":")[0]
             raise GraphCliError(
                 "usage.invalid_argument",
-                f"--for: {qualifier!r} is not a kind; write NAME.PARAM or "
+                f"--for: {bad!r} is not a kind; write NAME.PARAM or "
                 + " or ".join(f"{kind}:NAME.PARAM" for kind in SLOT_KINDS),
                 details={"argument": "--for", "actual": use, "expected": list(SLOT_KINDS)},
             )
-        kind, slots = self._slots(view, qualifier if colon else None, name)
+        qualifier, name, param_name = parsed
+        through = view.through
+        asked = through.kind if through is not None and qualifier is None else qualifier
+        # (through: the entry the lookup was opened through says which kind an unqualified name is)
+        kind, slots = self._slots(view, asked, name)
+        if through is not None and through != EntryRef(kind, name):
+            # the command layer opened the graph through another entry: nothing it decided holds
+            raise GraphCliError("internal.error", "a lookup was opened through another entry")
         found = next((s for s in slots if s.name == param_name), None)
         if found is None:
             known = [s.name for s in slots]
@@ -234,7 +298,20 @@ class ReadFinding(ReadCatalogs):
         ``items[].facts`` tells the candidates of a text apart (``query.lookup.fact_edges``):
         a list when the text has more than one candidate, else null. One ``get_many`` reads
         the targets of every shown item.
+
+        A graph opened through an entry (``view.through``: the caller may not find entities, its
+        grants name the entry whose parameter ``--for`` is) gets the narrow lookup: the request
+        must be the narrow shape (``lookup_path`` decided it; anything else is a bug and
+        ``internal.error``), only active exact matches of the slot's class among the types the
+        caller sees are candidates, the first page only (no ``next_offset``), and a match of
+        another class is neither shown nor counted (``excluded`` is 0). The facts are those of
+        the visible model and snapshot, as for any limited reader.
         """
+        narrow = view.through is not None
+        if narrow and not (
+            _narrow_shape(spec) and for_use is not None and "." in for_use and for_source is None
+        ):
+            raise GraphCliError("internal.error", "a lookup through an entry asked for more")
         fit, asked = self._use_fit(view, for_use, for_source)
         spec = replace(spec, fit=fit)
         plans: dict[str, tuple[str, LookupPlan]] = {}
@@ -257,7 +334,7 @@ class ReadFinding(ReadCatalogs):
                     continue
                 if plan.fits(revision.type):
                     found.append((rank_key(plan, revision, match), revision, match))
-                else:
+                elif not narrow:
                     excluded += 1
             found.sort(key=lambda row: row[0])
             shown = found[plan.offset : plan.offset + plan.limit]
@@ -299,7 +376,9 @@ class ReadFinding(ReadCatalogs):
             item["facts"] = facts
         fact_ids = [edge.edge_id for _, _, edges in pending for edge in edges]
         self._signal(view, [*shown_ids, *(t for t in sorted(targets) if t in read)], fact_ids)
-        page = Page(total, len(items), spec.limit, spec.offset, more=bool(more))
+        page = Page(
+            total, len(items), spec.limit, spec.offset, more=bool(more), first_page_only=narrow
+        )
         data: dict[str, JsonValue] = {"items": items, "texts": counts}
         data["fit"] = (
             {"for": for_use, "for_source": for_source, "types": None if fit is None else list(fit)}

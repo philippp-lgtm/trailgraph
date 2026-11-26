@@ -18,7 +18,8 @@ from graph_cli.kinetic.view_format import ENTITY, RowsSection, placeholder_name
 from graph_cli.kinetic.view_page import decode_cursor, render_set
 from graph_cli.kinetic.view_rows import RowsResult
 from graph_cli.query.cypher.values import Value
-from graph_cli.services.read.entities import ReadEntities, current_entity
+from graph_cli.services.read.entities import ReadEntities, current_entity, unknown_entity
+from graph_cli.services.read.finding import ENTITY_SLOT
 from graph_cli.services.read.graph_read import GraphRead
 from graph_cli.services.read.json_shapes import edges_in, entities_in, value_json
 from graph_cli.services.read.queries import ReadQueries
@@ -236,10 +237,16 @@ class ReadViews(ReadEntities, ReadQueries):
         entity: Resolved | None = None
         if chosen.entity:
             assert ref is not None and chosen.takes is not None
-            entity = resolved if resolved is not None else current_entity(view, ref)
+            entity = (
+                resolved
+                if resolved is not None
+                else current_entity(view, ref, lookup_for=f"view:{name}.{ENTITY_SLOT}")
+            )
             warnings += entity[2]
             found = str(entity[1].type)
             if not view.model.is_a(found, chosen.takes):
+                if view.catalog_only or view.through is not None:
+                    raise unknown_entity(ref)  # an id of another class is no entity of the one
                 raise GraphCliError(
                     "view.class_mismatch",
                     f"view {name} takes {chosen.takes}; {ref} is a {found}",
@@ -265,6 +272,7 @@ class ReadViews(ReadEntities, ReadQueries):
             pairs,
             model=view.model,
             snapshot=view.snapshot,
+            exact_ids=view.catalog_only,
         )
         warnings += found_warnings
         spec = spec_of(chosen, view.model, bound)
@@ -433,12 +441,23 @@ class ReadViews(ReadEntities, ReadQueries):
                 values[key] = json_value(bound[holder])
         with self.timings.phase("query"):
             call = kinetic_params.bind_json(
-                "function", function.name, function.defn.params, values, view.model
+                "function",
+                function.name,
+                function.defn.params,
+                values,
+                view.model,
+                suffixes=not view.catalog_only,
             )
             for param in function.defn.params:
                 if param.type == "ref":
                     call[param.name], _found = entity_params(
-                        view.snapshot, view.model, "function", function.name, param, call
+                        view.snapshot,
+                        view.model,
+                        "function",
+                        function.name,
+                        param,
+                        call,
+                        exact_ids=view.catalog_only,
                     )
         resolved = self._resolve_function(view, function, call)
         result = self._execute(view, resolved, False, budget)

@@ -185,8 +185,9 @@ def _lookup_refs(
     model: CompiledModel | None = None,
 ) -> tuple[RefInput, ...]:
     """The reference inputs the ``lookup`` tool serves for the caller (it is listed when there are
-    some and the caller may find entities); ``model`` is the caller's, when it is at hand."""
-    if not reader.may(actor, entry, "read.find"):
+    some and the caller is served a lookup, ``ReadAccess.lookup_served``); ``model`` is the
+    caller's, when it is at hand."""
+    if not reader.lookup_served(actor, entry):
         return ()  # the model is read only when it matters
     model = model or reader.visible_model(actor, entry)
     return lookup_refs(model, usable[FUNCTION], usable[ACTION], usable[VIEW], find=True)
@@ -316,7 +317,9 @@ def _lookup(
 ) -> Result:
     """A call of the ``lookup`` tool: the lookup service for the entity a name stands for, for the
     reference input ``for`` names. The tool is there only when some tool takes a reference; a
-    caller that may not find entities gets the ``access.denied`` of ``lookup``."""
+    caller that is served no lookup gets the ``access.denied`` of ``lookup``. A caller limited to
+    its catalog looks up through the entry the input belongs to: the narrow lookup of
+    ``ReadFinding.lookup``."""
     ctx = context(state)
     reader, actor = ctx.reader, ctx.actor
     usable = _usable(reader, actor, entry)
@@ -327,8 +330,17 @@ def _lookup(
         assert problem is not None
         raise problem
     services(state).usage.ran = RAN[LOOKUP]
-    if expect_hash is not None and reader.may(actor, entry, "read.find"):
-        (head,) = heads(model, (), (), (), frozenset(), only=LOOKUP, refs=refs)
+    if expect_hash is not None and reader.lookup_served(actor, entry):
+        (head,) = heads(
+            model,
+            (),
+            (),
+            (),
+            frozenset(),
+            only=LOOKUP,
+            refs=refs,
+            exact_ids=reader.catalog_scope(actor, entry) is not None,
+        )
         _check_hash(LOOKUP, expect_hash, tool_hash(head, model))
     texts, slot, limit = _lookup_input(values, refs)
     args: dict[str, JsonValue] = {
@@ -343,7 +355,16 @@ def _lookup(
         "limit": limit,
         "offset": 0,
     }
-    view = open_graph(state, graph, "read.find", "lookup", args, None, via=VIA_CALL)
+    view = open_graph(
+        state,
+        graph,
+        "read.find",
+        "lookup",
+        args,
+        None,
+        via=VIA_CALL,
+        through=EntryPath(slot.kind, (slot.entry,)),
+    )
     spec = LookupSpec(text=texts[0], limit=limit)
     data, page = reader.lookup(view, spec, texts, for_use=slot.lookup_for)
     fit = data["fit"]

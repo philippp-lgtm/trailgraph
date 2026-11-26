@@ -38,6 +38,7 @@ from typing import Final
 from graph_cli.kernel.canonical import HASH_PREFIX, JsonObject, JsonValue, hash_value
 from graph_cli.kernel.changeset import MAX_REASON
 from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.ids import EXACT_ENTITY_REF_PATTERN
 from graph_cli.kinetic.action_entries import ActionEntry
 from graph_cli.kinetic.entries import FunctionEntry, Named, seen_replacement
 from graph_cli.kinetic.params import ParamDef
@@ -152,13 +153,16 @@ def _enum_text(values: Sequence[tuple[str, str | None]]) -> str:
     return "Values: " + "; ".join(f"{n} - {s}" if s else n for n, s in values) + "."
 
 
-def _ref_text(of_class: str | None, lookup_for: str | None) -> str:
+def _ref_text(of_class: str | None, lookup_for: str | None, exact: bool) -> str:
     """What a ``ref`` input takes; ``lookup_for`` is the ``for`` of the ``lookup`` tool that finds
-    the entity by name (``None``: the tool is not listed)."""
-    text = (
-        f"An entity of class {of_class}: its id, its alias or 8 to 32 trailing hex digits of "
-        "its id; a name has to be looked up first"
+    the entity by name (``None``: the tool is not listed). ``exact``: a caller that may not find
+    entities, for whom a reference is a full id or an alias, never trailing hex digits."""
+    forms = (
+        "its id or its alias"
+        if exact
+        else "its id, its alias or 8 to 32 trailing hex digits of its id"
     )
+    text = f"An entity of class {of_class}: {forms}; a name has to be looked up first"
     if lookup_for is None:
         return text + "."
     return text + f", with the {LOOKUP} tool (for: {lookup_for!r})."
@@ -177,7 +181,7 @@ def lookup_slot(model: CompiledModel, param: ParamType) -> bool:
 
 
 def _scalar(
-    param: ParamType, model: CompiledModel, lookup_for: str | None
+    param: ParamType, model: CompiledModel, lookup_for: str | None, exact: bool
 ) -> tuple[JsonObject, str]:
     """The schema of one value of a parameter and the text it adds to the description."""
     schema: dict[str, JsonValue] = {"type": param.json_type}
@@ -195,18 +199,20 @@ def _scalar(
             text = _enum_text(values)
     if param.kind == "ref":
         schema[EXTENSION] = {"class": param.of_class}
-        text = _ref_text(param.of_class, lookup_for)
+        if exact:
+            schema["pattern"] = EXACT_ENTITY_REF_PATTERN
+        text = _ref_text(param.of_class, lookup_for, exact)
     return schema, text
 
 
 def param_schema(
-    param: ParamType, model: CompiledModel, lookup_for: str | None = None
+    param: ParamType, model: CompiledModel, lookup_for: str | None = None, *, exact: bool = False
 ) -> JsonObject:
     """The property schema of a parameter (TM5): the type of one value, an array of at least one
     for ``many``, the default, and ``null`` as "not given" unless the parameter is required or has
     a default. ``lookup_for`` is the ``for`` of the ``lookup`` tool for a ``ref`` parameter (the
-    description names the tool)."""
-    scalar, text = _scalar(param, model, lookup_for)
+    description names the tool). ``exact``: see ``_ref_text``."""
+    scalar, text = _scalar(param, model, lookup_for, exact)
     description = " ".join(part for part in (param.summary, text) if part)
     schema: dict[str, JsonValue] = {"type": "array", "items": scalar, "minItems": 1}
     if not param.many:
@@ -251,10 +257,11 @@ def _input(
     tail: Sequence[tuple[str, JsonObject, bool]],
     model: CompiledModel,
     lookup: str | None = None,
+    exact: bool = False,
 ) -> JsonObject:
     """The closed object of ``head`` controls, the parameters and ``tail`` controls; a control is
     ``(name, schema, required)``. ``lookup`` is the name of the tool when the ``lookup`` tool is
-    listed."""
+    listed; ``exact``: see ``_ref_text``."""
     properties: dict[str, JsonValue] = {}
     required: list[str] = []
     for name, schema, needed in head:
@@ -262,7 +269,9 @@ def _input(
         if needed:
             required.append(name)
     for param in params:
-        properties[param.name] = param_schema(param, model, _lookup_for(lookup, param, model))
+        properties[param.name] = param_schema(
+            param, model, _lookup_for(lookup, param, model), exact=exact
+        )
         if param.required:
             required.append(param.name)
     for name, schema, needed in tail:
@@ -289,16 +298,17 @@ def _offset_schema() -> JsonObject:
 
 
 def function_input(
-    entry: FunctionEntry, model: CompiledModel, *, lookup: bool = False
+    entry: FunctionEntry, model: CompiledModel, *, lookup: bool = False, exact: bool = False
 ) -> JsonObject:
     """The input of ``run_<function>``: its parameters, then ``_limit`` and ``_offset``
-    (``lookup``: the ``lookup`` tool is listed)."""
+    (``lookup``: the ``lookup`` tool is listed; ``exact``: references are ids and aliases only)."""
     return _input(
         (),
         param_types(entry.defn.params),
         ((LIMIT, _limit_schema(), False), (OFFSET, _offset_schema(), False)),
         model,
         tool_name(FUNCTION, entry.name) if lookup else None,
+        exact,
     )
 
 
@@ -310,10 +320,16 @@ def reason_required(entry: ActionEntry, obligations: frozenset[str]) -> bool:
 
 
 def action_input(
-    entry: ActionEntry, model: CompiledModel, *, reason_needed: bool, lookup: bool = False
+    entry: ActionEntry,
+    model: CompiledModel,
+    *,
+    reason_needed: bool,
+    lookup: bool = False,
+    exact: bool = False,
 ) -> JsonObject:
     """The input of ``do_<action>``: its parameters, then ``_reason`` (required when
-    ``reason_needed``) and ``_dry_run`` (``lookup``: the ``lookup`` tool is listed)."""
+    ``reason_needed``) and ``_dry_run`` (``lookup``: the ``lookup`` tool is listed; ``exact``:
+    references are ids and aliases only)."""
     reason = _control(
         # \S: a reason of blanks only is refused, as the binder refuses it
         {"type": "string", "minLength": 1, "maxLength": MAX_REASON, "pattern": r"\S"},
@@ -332,19 +348,23 @@ def action_input(
         ((REASON, reason, reason_needed), (DRY_RUN, dry_run, False)),
         model,
         tool_name(ACTION, entry.name) if lookup else None,
+        exact,
     )
 
 
-def view_input(entry: ViewEntry, model: CompiledModel, *, lookup: bool = False) -> JsonObject:
+def view_input(
+    entry: ViewEntry, model: CompiledModel, *, lookup: bool = False, exact: bool = False
+) -> JsonObject:
     """The input of ``view_<view>``: ``_entity`` first for an entity view (required: a reference
     to an entity of the class it takes), the parameters, then ``_cursor`` and ``_page_bytes`` for
-    a set view (``lookup``: the ``lookup`` tool is listed)."""
+    a set view (``lookup``: the ``lookup`` tool is listed; ``exact``: references are ids and
+    aliases only)."""
     params = param_types(entry.defn.params)
     tool = tool_name(VIEW, entry.name) if lookup else None
     if entry.takes is not None:
         shown = ref_type(ENTITY, "The entity to show.", entry.takes)
-        entity = param_schema(shown, model, _lookup_for(tool, shown, model))
-        return _input(((ENTITY, entity, True),), params, (), model, tool)
+        entity = param_schema(shown, model, _lookup_for(tool, shown, model), exact=exact)
+        return _input(((ENTITY, entity, True),), params, (), model, tool, exact)
     cursor = _control(
         {"type": "string", "minLength": 1},
         "The next of the previous page of this view, with the same parameters; leave it out for "
@@ -357,7 +377,7 @@ def view_input(entry: ViewEntry, model: CompiledModel, *, lookup: bool = False) 
         nullable=True,
     )
     tail = ((CURSOR, cursor, False), (PAGE_BYTES_ARG, page_bytes, False))
-    return _input((), params, tail, model, tool)
+    return _input((), params, tail, model, tool, exact)
 
 
 REFERENCES_NOTE: Final = "Supply the references it needs."
@@ -421,6 +441,7 @@ def function_head(
     visible: Sequence[FunctionEntry],
     *,
     lookup: bool = False,
+    exact: bool = False,
 ) -> ToolHead:
     defn = entry.defn
     replaced = _replacement(FUNCTION, defn.replaced_by, visible)
@@ -432,7 +453,7 @@ def function_head(
         description=description_text(
             defn.summary, defn.use_when, examples, deprecated=entry.deprecated, replaced_by=replaced
         ),
-        input_schema=function_input(entry, model, lookup=lookup),
+        input_schema=function_input(entry, model, lookup=lookup, exact=exact),
         annotations={"read_only": True, "dry_run": False, "reason": None, "paging": "offset"},
         status=defn.status,
         replaced_by=replaced,
@@ -450,6 +471,7 @@ def action_head(
     obligations: frozenset[str],
     *,
     lookup: bool = False,
+    exact: bool = False,
 ) -> ToolHead:
     defn = entry.defn
     replaced = _replacement(ACTION, defn.replaced_by, visible)
@@ -462,7 +484,7 @@ def action_head(
         description=description_text(
             defn.summary, defn.use_when, examples, deprecated=entry.deprecated, replaced_by=replaced
         ),
-        input_schema=action_input(entry, model, reason_needed=needed, lookup=lookup),
+        input_schema=action_input(entry, model, reason_needed=needed, lookup=lookup, exact=exact),
         annotations={
             "read_only": False,
             "dry_run": True,
@@ -512,6 +534,7 @@ def view_head(
     known: dict[str, tuple[ToolColumn, ...]] | None = None,
     *,
     lookup: bool = False,
+    exact: bool = False,
 ) -> ToolHead:
     defn = entry.defn
     replaced = _replacement(VIEW, defn.replaced_by, visible)
@@ -526,7 +549,7 @@ def view_head(
         description=description_text(
             defn.summary, defn.use_when, examples, deprecated=entry.deprecated, replaced_by=replaced
         ),
-        input_schema=view_input(entry, model, lookup=lookup),
+        input_schema=view_input(entry, model, lookup=lookup, exact=exact),
         annotations={
             "read_only": True,
             "dry_run": False,
@@ -623,15 +646,22 @@ def lookup_input(refs: Sequence[RefInput]) -> JsonObject:
     return _closed(properties, [LOOKUP_TEXT, LOOKUP_FOR])
 
 
-def lookup_head(refs: Sequence[RefInput]) -> ToolHead:
-    """The ``lookup`` tool over ``refs``, the ``ref`` inputs of the tools that are listed."""
+def lookup_head(refs: Sequence[RefInput], *, exact: bool = False) -> ToolHead:
+    """The ``lookup`` tool over ``refs``, the ``ref`` inputs of the tools that are listed.
+    ``exact``: the caller may not find entities, so the tool lists only the active candidates
+    that go by the name exactly, the first page, and counts no match of another class."""
+    others = (
+        "only the first page of active matches is listed and no other class is shown"
+        if exact
+        else "matches of other classes are counted in texts[].excluded"
+    )
     description = description_text(
         "Find the entities that go by a name, to fill a reference input of another tool.",
         "you know the name of an entity where a tool needs a reference. Names are matched whole, "
         "ignoring case, against main, alternative and hidden names; each name gets its candidates "
-        "ranked, best first, and only those of the class that the input in for takes (matches of "
-        "other classes are counted in texts[].excluded). Pass the id or alias of a candidate as "
-        "the reference, never a guess: when a name has several candidates, facts tell them apart.",
+        f"ranked, best first, and only those of the class that the input in for takes ({others}). "
+        "Pass the id or alias of a candidate as the reference, never a guess: when a name has "
+        "several candidates, facts tell them apart.",
         (),
         deprecated=False,
         replaced_by=None,

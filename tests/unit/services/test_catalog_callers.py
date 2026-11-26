@@ -959,3 +959,449 @@ def test_a_granted_name_the_graph_does_not_publish_is_unknown_like_any_other(
         assert error.details["did_you_mean"] == []
         answers.append(str(error.message).replace(name, "X"))
     assert answers[0] == answers[1]
+
+
+# ---- step 2, batch 2b: references and the narrow lookup --------------------------------------
+
+READER = token("reader")
+
+
+@dataclasses.dataclass
+class Names:
+    """The entities of ``named_units``: ids by local name, their aliases and the hidden one."""
+
+    ids: dict[str, str]
+    aliases: dict[str, str]
+
+    def __getitem__(self, local: str) -> str:
+        return self.ids[local]
+
+
+def entity_ops(
+    env: ServiceEnv, cls: str, local: str, attr: str, name: str, **edges: str
+) -> list[dict[str, object]]:
+    """Ops creating ``cls`` named ``name`` (its label attribute ``attr``) with edges to earlier
+    locals (``relation=local``)."""
+    ops = env.factory.create(cls, local)
+    main = next(o for o in ops if o.get("local") == local)
+    main["attrs"][attr] = name  # type: ignore[index]
+    if cls == "leg:LegalEntity":
+        main["attrs"]["country"] = "DE"  # type: ignore[index]
+    if edges:
+        found = [{"rel": r, "target": f"@{t}"} for r, t in edges.items()]
+        main["edges"] = [*main.get("edges", []), *found]  # type: ignore[call-overload]
+    return ops
+
+
+ENG_A_EDGES = {"org:part_of": "corp", "leg:operated_by": "hidden_le"}
+
+
+def named_units(env: ServiceEnv) -> Names:
+    """Three homonym units named Engineering (one under Corporate and operated by a legal entity the
+    callers cannot see, one under Subsidiary, one without a parent), a position of the same name
+    (another class) and a sales department."""
+    ops = [
+        *entity_ops(env, "leg:LegalEntity", "hidden_le", "name", "Hidden Holding"),
+        *entity_ops(env, "org:Department", "corp", "name", "Corporate"),
+        *entity_ops(env, "org:Department", "sub", "name", "Subsidiary"),
+        *entity_ops(env, "org:Department", "eng_a", "name", "Engineering", **ENG_A_EDGES),
+        *entity_ops(
+            env, "org:Department", "eng_b", "name", "Engineering", **{"org:part_of": "sub"}
+        ),
+        *entity_ops(env, "org:Department", "eng_c", "name", "Engineering"),
+        *entity_ops(env, "org:Department", "sales", "name", "Sales"),
+        *entity_ops(env, "org:Position", "pos", "title", "Engineering"),
+    ]
+    created = env.apply(*ops)
+    ids = {e.local: str(e.id) for e in created.entities if e.local}
+    revisions = {str(r.id): r for r in env.all_revisions()}
+    return Names(ids, {k: str(revisions[v].alias) for k, v in ids.items()})
+
+
+def lookup_view(
+    read: ReadService,
+    env: ServiceEnv,
+    who: ActorContext,
+    use: str | None,
+    *,
+    for_source: str | None = None,
+    **spec: object,
+):  # type: ignore[no-untyped-def]
+    """The graph opened for ``lookup TEXT --for use`` the way the command opens it: through the
+    entry the request is for when it has the narrow shape, else as a plain ``read.find``."""
+    from graph_cli.query.lookup import LookupSpec
+
+    lookup = LookupSpec(text="Engineering", **spec)  # type: ignore[arg-type]
+    path = read.lookup_path(who, env.entry, lookup, for_use=use, for_source=for_source)
+    request = RequestMeta.of("lookup", {"graph": env.entry.name, "for": use})
+    opened = read.open(who, env.entry, "read.find", request, through=path)
+    return opened, lookup
+
+
+def candidates(
+    read: ReadService, env: ServiceEnv, who: ActorContext, use: str, *texts: str, **spec: object
+) -> dict[str, object]:
+    opened, lookup = lookup_view(read, env, who, use, **spec)
+    data, page = read.lookup(opened, lookup, texts or ("Engineering",), for_use=use)
+    return {**data, "page": page.to_json()}
+
+
+SLOT = "members_of_unit.unit"
+
+
+@pytest.mark.doc_claim("security_model.catalog_no_enumeration")
+@pytest.mark.doc_claim("security_model.catalog_lookup_residual")
+def test_a_catalog_callers_reference_takes_an_id_or_an_alias_and_no_trailing_hex(
+    env: ServiceEnv, read: ReadService
+) -> None:
+    units = named_units(env)
+    suffix = units["eng_a"][-8:]
+    answers = {}
+    for who in (SUPPORT, READER):
+        opened = open_through(read, env, who, "function", "members_of_unit")
+        for ref in (units["eng_a"], f"urn:uuid:{units['eng_a']}", units.aliases["eng_a"]):
+            data, _, _ = read.run(opened, "members_of_unit", [("unit", ref)], limit=5, offset=0)
+            assert data["function"]["name"] == "members_of_unit"  # type: ignore[index]
+        try:
+            read.run(opened, "members_of_unit", [("unit", suffix)], limit=5, offset=0)
+        except GraphCliError as exc:
+            answers[who.roles] = exc
+    # a reader may still write an id by its trailing hex digits
+    assert ("reader",) not in answers
+    refused = answers[("support",)]
+    assert refused.code == "function.parameter_invalid"
+    assert "trailing hex" not in refused.message and refused.code != "entity.ambiguous_ref"
+    assert refused.details["parameter"] == "unit" and "candidates" not in refused.details
+
+
+@pytest.mark.doc_claim("security_model.catalog_no_enumeration")
+def test_a_suffix_is_never_matched_against_the_ids_of_a_catalog_caller(
+    env: ServiceEnv, read: ReadService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No answer may tell how many ids end in a suffix (the ambiguous-reference list of up to ten
+    full ids is an enumeration): for a catalog caller a suffix is not looked at, whether it ends
+    ids or not, while a reader's suffix is matched as before."""
+    from graph_cli.services import refs
+
+    units = named_units(env)
+    matched: list[str] = []
+    real = refs.parse_entity_ref
+
+    def spy(text: str, **kw: bool) -> object:
+        found = real(text, **kw)
+        if isinstance(found, refs.AbbrevRef):
+            matched.append(text)
+        return found
+
+    monkeypatch.setattr(refs, "parse_entity_ref", spy)
+    nothing = "0" * 8  # ends no id
+    refusals = []
+    for ref in (units["eng_a"][-8:], units["eng_a"][-12:], nothing, units["eng_a"][-8:].upper()):
+        opened = open_through(read, env, SUPPORT, "function", "members_of_unit")
+        with pytest.raises(GraphCliError) as caught:
+            read.run(opened, "members_of_unit", [("unit", ref)], limit=5, offset=0)
+        error = caught.value
+        assert error.code == "function.parameter_invalid"
+        refusals.append((error.message.replace(ref, "X"), set(error.details)))
+        assert "candidates" not in error.details and units["eng_a"] not in str(error.details)
+    assert len(set(map(str, refusals))) == 1  # the same answer for a suffix that ends ids or not
+    assert matched == []  # nothing was matched against the ids
+    opened = open_through(read, env, READER, "function", "members_of_unit")
+    read.run(opened, "members_of_unit", [("unit", units["eng_a"][-8:])], limit=5, offset=0)
+    assert matched == [units["eng_a"][-8:]]  # a reader's suffix is matched as before
+
+
+@pytest.mark.doc_claim("security_model.catalog_no_enumeration")
+def test_an_id_of_another_class_or_a_hidden_one_is_not_found_without_naming_its_class(
+    env: ServiceEnv, read: ReadService
+) -> None:
+    units = named_units(env)
+    nowhere = "0192f0aa-0000-7000-8000-000000000000"
+    outcomes: dict[str, GraphCliError] = {}
+    opened = open_through(read, env, SUPPORT, "function", "members_of_unit")
+    for label, ref in (
+        ("position", units["pos"]),  # a class it sees, not the class of the parameter
+        ("hidden", units["hidden_le"]),  # a class outside its reads
+        ("nowhere", nowhere),
+        ("position_alias", units.aliases["pos"]),  # the same by alias, and an alias nobody has
+        ("hidden_alias", units.aliases["hidden_le"]),
+        ("nowhere_alias", "DEPT-9999"),
+    ):
+        with pytest.raises(GraphCliError) as caught:
+            read.run(opened, "members_of_unit", [("unit", ref)], limit=5, offset=0)
+        outcomes[label] = caught.value
+    for found in outcomes.values():
+        assert found.code == "entity.not_found"
+    shapes = {
+        label: (
+            e.code,
+            e.message.replace(ref, "X"),
+            {k: v for k, v in e.details.items() if k not in ("ref", "id")},
+        )
+        for (label, e), ref in zip(
+            outcomes.items(),
+            (
+                units["pos"],
+                units["hidden_le"],
+                nowhere,
+                units.aliases["pos"],
+                units.aliases["hidden_le"],
+                "DEPT-9999",
+            ),
+            strict=True,
+        )
+    }
+    assert len({str(v) for v in shapes.values()}) == 1  # one answer, however the id is no unit
+    assert_hidden_absent(str(outcomes["position"].details), {"org:Position", "ops:Task"})
+    # everyone else is told the class, as before
+    opened = open_through(read, env, READER, "function", "members_of_unit")
+    with pytest.raises(GraphCliError) as plain:
+        read.run(opened, "members_of_unit", [("unit", units["pos"])], limit=5, offset=0)
+    assert plain.value.code == "function.parameter_type"
+    assert plain.value.details["found"] == "org:Position"
+
+
+@pytest.mark.doc_claim("security_model.catalog_no_enumeration")
+@pytest.mark.doc_claim("security_model.view_is_read_get")
+def test_the_entity_of_an_entity_view_follows_the_same_rule(
+    env: ServiceEnv, read: ReadService
+) -> None:
+    units = named_units(env)
+    nowhere = "0192f0aa-0000-7000-8000-000000000000"
+    outcomes = []
+    for ref in (units["pos"], units["hidden_le"], nowhere):  # another class, hidden, unknown
+        opened = open_through(read, env, SUPPORT, "view", "unit_overview")
+        with pytest.raises(GraphCliError) as caught:
+            read.view(opened, ref, name="unit_overview")
+        error = caught.value
+        assert error.code == "entity.not_found"
+        outcomes.append((error.code, error.message.replace(ref, "X"), set(error.details)))
+    assert outcomes[0] == outcomes[1] == outcomes[2]
+    opened = open_through(read, env, SUPPORT, "view", "unit_overview")
+    with pytest.raises(GraphCliError) as suffix:
+        read.view(opened, units["eng_a"][-8:], name="unit_overview")
+    assert suffix.value.code == "usage.invalid_argument"
+    assert "trailing hex" not in suffix.value.message
+    assert suffix.value.details["for"] == "view:unit_overview._entity"  # the lookup that serves it
+    data, _ = read.view(opened, units.aliases["eng_a"], name="unit_overview")
+    assert data["view"]["name"] == "unit_overview"  # type: ignore[index]
+    # a reader keeps the class mismatch and the suffix
+    opened = open_through(read, env, READER, "view", "unit_overview")
+    with pytest.raises(GraphCliError) as mismatch:
+        read.view(opened, units["pos"], name="unit_overview")
+    assert mismatch.value.code == "view.class_mismatch"
+    read.view(opened, units["eng_a"][-8:], name="unit_overview")
+
+
+@pytest.mark.doc_claim("security_model.catalog_no_enumeration")
+@pytest.mark.doc_claim("security_model.catalog_lookup_residual")
+def test_the_narrow_lookup_lists_the_exact_active_candidates_of_the_slots_class(
+    env: ServiceEnv, read: ReadService
+) -> None:
+    units = named_units(env)
+    found = candidates(read, env, SUPPORT, SLOT)
+    items = found["items"]
+    assert [i["id"] for i in items] == sorted(  # type: ignore[index, attr-defined]
+        (units[k] for k in ("eng_a", "eng_b", "eng_c")), key=lambda i: i
+    ) or {i["id"] for i in items} == {units[k] for k in ("eng_a", "eng_b", "eng_c")}  # type: ignore[attr-defined]
+    for item in items:  # type: ignore[attr-defined]
+        assert set(item) == {
+            "text",
+            "id",
+            "alias",
+            "type",
+            "record_status",
+            "label",
+            "match",
+            "facts",
+        }
+        assert item["type"] == "org:Department" and item["record_status"] == "active"
+    # the position of the same name is another class: not listed, not counted
+    (count,) = found["texts"]  # type: ignore[misc]
+    assert count == {"text": "Engineering", "total": 3, "exact": 3, "excluded": 0}
+    assert found["fit"]["types"] == ["org:Department", "org:OrgUnit", "org:Team"]  # type: ignore[index]
+    assert units["pos"] not in str(found)
+    # the facts tell homonyms apart: the parent, never what the caller cannot see
+    by_id = {i["id"]: i for i in items}  # type: ignore[attr-defined]
+    parents = {
+        k: [(f["rel"], f["label"]) for f in by_id[units[k]]["facts"]]
+        for k in ("eng_a", "eng_b", "eng_c")
+    }
+    assert parents == {
+        "eng_a": [("org:part_of", "Corporate")],
+        "eng_b": [("org:part_of", "Subsidiary")],
+        "eng_c": [],
+    }
+    assert_hidden_absent(found, {"Hidden Holding", "leg:operated_by", "leg:LegalEntity"})
+    assert units["hidden_le"] not in str(found)
+    # one candidate has no facts to tell it apart from
+    sales = candidates(read, env, SUPPORT, SLOT, "Sales")
+    assert [i["facts"] for i in sales["items"]] == [None]  # type: ignore[attr-defined]
+
+
+@pytest.mark.doc_claim("security_model.catalog_no_enumeration")
+def test_the_narrow_lookup_answers_the_first_page_with_no_way_to_the_next(
+    env: ServiceEnv, read: ReadService
+) -> None:
+    named_units(env)
+    found = candidates(read, env, SUPPORT, SLOT, limit=2)
+    assert len(found["items"]) == 2  # type: ignore[arg-type]
+    page = found["page"]
+    assert page["truncated"] is True and page["next_offset"] is None  # type: ignore[index]
+    assert found["texts"][0]["total"] == 3  # type: ignore[index]  # the count of the name itself
+
+
+@pytest.mark.doc_claim("security_model.catalog_no_enumeration")
+def test_the_narrow_lookup_leaves_out_inactive_records(env: ServiceEnv, read: ReadService) -> None:
+    units = named_units(env)
+    env.apply({"op": "retract", "id": units["eng_c"]}, reason="closed")
+    found = candidates(read, env, SUPPORT, SLOT)
+    assert {i["id"] for i in found["items"]} == {units["eng_a"], units["eng_b"]}  # type: ignore[attr-defined]
+    assert found["texts"][0]["total"] == 2  # type: ignore[index]
+    assert all(i["record_status"] == "active" for i in found["items"])  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("use", "for_source", "spec"),
+    [
+        (None, None, {}),  # free lookup
+        ("org:part_of", None, {}),  # for a relation
+        (None, "org:part_of", {}),  # for-source
+        (SLOT, "org:part_of", {}),
+        (SLOT, None, {"match": "prefix"}),
+        (SLOT, None, {"offset": 1}),
+        (SLOT, None, {"include_inactive": True}),
+        (SLOT, None, {"types": ("org:Team",)}),
+        (SLOT, None, {"lang": "en"}),
+        (SLOT, None, {"ignore_accents": True}),
+        ("function:no_such_function.unit", None, {}),
+    ],
+)
+@pytest.mark.doc_claim("security_model.catalog_no_enumeration")
+def test_every_other_shape_of_lookup_stays_refused_for_a_catalog_caller(
+    env: ServiceEnv,
+    read: ReadService,
+    use: str | None,
+    for_source: str | None,
+    spec: dict[str, object],
+) -> None:
+    named_units(env)
+    events = len(env.installation_events())
+    shape = "no_such_function" in str(use)
+    with pytest.raises(GraphCliError) as caught:
+        lookup_view(read, env, SUPPORT, use, for_source=for_source, **spec)
+    error = caught.value
+    if shape:  # an entry that does not exist for it
+        assert error.code == "function.not_found"
+    else:  # the plain question: read.find on the graph, which it does not hold
+        assert error.code == "access.denied" and error.details["action"] == "read.find"
+        assert error.details["resource"].count("/") == 0
+        assert str(error) and "Engineering" not in str(error.details)
+    assert len(denials(env, events)) == 1  # audited as a refusal
+    # the same request is allowed for a reader (the narrow shapes need no entry)
+    if not shape:
+        opened, _ = lookup_view(read, env, READER, use, for_source=for_source, **spec)
+        assert opened.through is None
+
+
+def test_a_lookup_for_an_entry_outside_the_catalog_is_not_found_like_one_that_does_not_exist(
+    env: ServiceEnv, read: ReadService
+) -> None:
+    named_units(env)
+    answers = []
+    for use in ("function:vacant_positions.unit", "function:vacant_positionz.unit"):
+        with pytest.raises(GraphCliError) as caught:
+            lookup_view(read, env, SUPPORT, use)
+        error = caught.value
+        assert error.code == "function.not_found"
+        assert error.details["did_you_mean"] in ([], ["members_of_unit"])
+        answers.append(error.message.replace(use.split(":")[1].split(".")[0], "X"))
+    assert answers[0] == answers[1]
+    # an unqualified name is asked the same way
+    with pytest.raises(GraphCliError) as bare:
+        lookup_view(read, env, SUPPORT, "vacant_positions.unit")
+    assert bare.value.code == "function.not_found"
+    # a name the grants name but the graph does not publish is answered alike
+    legacy = token("legacy")
+    with pytest.raises(GraphCliError) as unpublished:
+        opened, lookup = lookup_view(read, env, legacy, "function:unit_members.unit")
+        read.lookup(opened, lookup, ("Engineering",), for_use="function:unit_members.unit")
+    assert unpublished.value.code == "function.not_found"
+    assert unpublished.value.message == bare.value.message.replace(
+        "vacant_positions", "unit_members"
+    )
+
+
+def test_the_narrow_lookup_serves_the_entity_of_a_granted_entity_view(
+    env: ServiceEnv, read: ReadService
+) -> None:
+    units = named_units(env)
+    found = candidates(read, env, SUPPORT, "view:unit_overview._entity", "Sales")
+    assert [i["id"] for i in found["items"]] == [units["sales"]]  # type: ignore[attr-defined]
+    # a view the grants do not name has no slot to look up for
+    with pytest.raises(GraphCliError) as caught:
+        lookup_view(read, env, SUPPORT, "view:position_overview._entity")
+    assert caught.value.code == "view.not_found"
+
+
+@pytest.mark.doc_claim("security_model.catalog_grants")
+def test_a_deny_rule_on_read_find_takes_the_narrow_lookup_away(env: ServiceEnv) -> None:
+    named_units(env)
+    plain = policy_reader(env)
+    assert plain.lookup_served(SUPPORT, env.entry)
+    taken = policy_reader(env, exact=("read.find",))
+    assert not taken.lookup_served(SUPPORT, env.entry)
+    events = len(env.installation_events())
+    with pytest.raises(GraphCliError) as caught:
+        lookup_view(taken, env, SUPPORT, SLOT)
+    assert caught.value.code == "access.denied" and caught.value.details["action"] == "read.find"
+    (event,) = denials(env, events)
+    found = decided(event)
+    assert found["deny"]["action"] == "read.find"
+    assert found["allow"]["rule"] == "grant.1.functions"  # the entry decision stands next to it
+    # a rule that denies read.find everywhere (also on the entry) is the same refusal
+    wide = policy_reader(env, deny=("read.find",))
+    assert not wide.lookup_served(SUPPORT, env.entry)
+    with pytest.raises(GraphCliError):
+        lookup_view(wide, env, SUPPORT, SLOT)
+
+
+def test_the_lookup_is_served_to_whoever_may_find_or_works_through_entries(
+    env: ServiceEnv, read: ReadService
+) -> None:
+    assert read.lookup_served(SUPPORT, env.entry)
+    assert read.lookup_served(token("viewer"), env.entry)
+    assert read.lookup_served(READER, env.entry)
+    assert not read.lookup_served(token("nobody"), env.entry)  # a role no grant names
+    assert not policy_reader(env, exact=("read.find",)).lookup_served(READER, env.entry)
+
+
+def test_a_lookup_opened_through_an_entry_cannot_ask_for_more(
+    env: ServiceEnv, read: ReadService
+) -> None:
+    """The command layer decides the shape before it opens; a service that is handed a wider
+    request on such a graph refuses it (an internal error, never a wider answer)."""
+    from graph_cli.query.lookup import LookupSpec
+
+    named_units(env)
+    opened, _ = lookup_view(read, env, SUPPORT, SLOT)
+    assert opened.through == EntryRef("function", "members_of_unit")
+    for wide, use, source in (
+        (LookupSpec(text="Eng", match="prefix"), SLOT, None),
+        (LookupSpec(text="Eng", offset=1), SLOT, None),
+        (LookupSpec(text="Eng", include_inactive=True), SLOT, None),
+        (LookupSpec(text="Eng"), None, None),
+        (LookupSpec(text="Eng"), "org:part_of", None),
+        (LookupSpec(text="Eng"), SLOT, "org:part_of"),
+    ):
+        with pytest.raises(GraphCliError) as caught:
+            read.lookup(opened, wide, ("Eng",), for_use=use, for_source=source)
+        assert caught.value.code == "internal.error"
+    # an opened graph is for its own entry's slot only (another entry the caller may use too)
+    with pytest.raises(GraphCliError) as other:
+        read.lookup(opened, LookupSpec(text="Eng"), ("Eng",), for_use="view:unit_overview._entity")
+    assert other.value.code == "internal.error"
+    # the same wide requests are fine for a graph the caller's own right opened
+    own = read.open(READER, env.entry, "read.find", RequestMeta.of("lookup", {"graph": "g"}))
+    data, _ = read.lookup(own, LookupSpec(text="Eng", match="prefix"), ("Eng",))
+    assert data["items"]
