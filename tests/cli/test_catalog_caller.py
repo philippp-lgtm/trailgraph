@@ -36,6 +36,7 @@ roles:
   catalog_agent: {description: "Runs three entries of example_graph"}
   reader: {description: "Reads example_graph"}
   mover: {description: "Reads example_graph and moves items through one action"}
+  writer_only: {description: "Moves items through one action and reads nothing else"}
   idle: {description: "Granted nothing"}
 grants:
   - entrypoint: server
@@ -48,6 +49,12 @@ grants:
       views: [item_catalog]
     reads: [inv:Item, inv:Location, inv:Category]
   - {entrypoint: server, principal: {role: reader}, graphs: [example_graph], level: read}
+  - entrypoint: server
+    principal: {role: writer_only}
+    graphs: [example_graph]
+    level: catalog
+    catalog: {actions: [move_item]}
+    reads: [inv:Item, inv:Location]
   - entrypoint: server
     principal: {role: mover}
     graphs: [example_graph]
@@ -583,6 +590,17 @@ def test_a_token_that_holds_a_catalog_role_and_a_reader_role_is_warned_about(
         run_cli, "token", "create", "mover_one", "--project", "example_project", "--role", "mover"
     )
     assert mover.warning_codes == []  # a reader with catalog.actions is no catalog caller
+    # a catalog grant that names only actions is a catalog grant all the same: with a reader role
+    # the token reads the graph; a reader with catalog.actions, with another reader role, is none
+    writer = admin(
+        run_cli, "token", "create", "writer_one", "--project", "example_project",
+        "--role", "writer_only",
+    )  # fmt: skip
+    assert writer.warning_codes == []
+    widened = admin(run_cli, "token", "role", "add", "writer_one", "reader")
+    assert widened.warning_codes == ["admin.token_not_catalog_only"]
+    reading = admin(run_cli, "token", "role", "add", "mover_one", "reader")
+    assert reading.warning_codes == []
     code = admin(
         run_cli, "enroll", "create", "--project", "example_project",
         "--role", "catalog_agent", "--role", "reader",

@@ -294,16 +294,17 @@ def granted(ctx: AdminContext, record: TokenRecord) -> bool:
 
 
 def not_catalog_only(ctx: AdminContext, record: TokenRecord) -> tuple[WarningRecord, ...]:
-    """``admin.token_not_catalog_only`` for each graph where the grants of this token name
-    functions or views of a catalog grant and yet another grant lets the token read the graph
-    (a token given a catalog role and a reader role): the catalog does not limit it there.
+    """``admin.token_not_catalog_only`` for each graph where the token holds a ``level: catalog``
+    grant that names entries (of any kind, actions only included) and yet another grant lets the
+    token read the graph (a token given a catalog role and a reader role): the catalog does not
+    limit it there. A read grant with ``catalog.actions`` is a reader on purpose, not warned.
     ``policy.catalog_widened`` finds what the principals of two grants imply; this is what the
     roles of one token add up to."""
     actor = server_actor(record, ctx.actor.client.version)
     found: list[WarningRecord] = []
     for graph in ctx.catalog.list_graphs():
         names = catalog_grants(actor, graph.id, ctx.policy.current(graph.id))
-        if (names.functions or names.views) and not names.catalog_only:
+        if names.catalog_rules and not names.catalog_only:
             found.append(_not_catalog_only(record.name, graph.name, names.reader_rules))
     return tuple(found)
 
