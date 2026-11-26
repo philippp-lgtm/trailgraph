@@ -195,9 +195,29 @@ def push_warnings(
         ("actions", locked.current.actions, catalogs.actions),
         ("views", locked.current.views, catalogs.views),
     )
+    audience = granted_entries.only_project(locked.ctx)
     for kind, published, pushed in slots:
         if pushed is not None:  # the catalogs a push replaces: what it does to granted entries
-            warnings += granted_entries.warnings(policy, locked.entry, kind, published, pushed)
+            warnings += granted_entries.warnings(
+                policy, locked.entry, kind, published, pushed, only_project=audience
+            )
+    final = final_slots(locked, catalogs, None)
+    # a granted view runs the functions it names: judge it when the push changes them
+    if final.functions is not locked.current.functions:
+        warned = frozenset(
+            str(w.details["name"])
+            for w in warnings
+            if w.code.startswith("catalog.granted_entry_") and w.details.get("kind") == "view"
+        )
+        warnings += granted_entries.row_function_warnings(
+            policy,
+            locked.entry,
+            final.views,
+            locked.current.functions,
+            final.functions,
+            skip=warned,
+            only_project=audience,
+        )
     if checked is not None:
         warnings += checked.warnings(after, locked.ws.skill.name)
     return warnings + linted

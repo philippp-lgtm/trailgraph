@@ -436,7 +436,11 @@ def plan(
     policy = ctx.policy.current(entry.id)
     warnings += policies_affected(policy, entry, compiled.model, published_actions)
     warnings += republish_warnings(
-        policy, entry, (followed_functions, followed_actions, followed_views)
+        policy,
+        entry,
+        (followed_functions, followed_actions, followed_views),
+        current_catalog(session, "views"),
+        only_project=granted_entries.only_project(ctx),
     )
     if bump == "excessive":
         warnings += (
@@ -857,20 +861,40 @@ def follow_published(
 
 
 def republish_warnings(
-    policy: PolicySet, entry: GraphEntry, followed: Sequence[Followed]
+    policy: PolicySet,
+    entry: GraphEntry,
+    followed: Sequence[Followed],
+    views: KineticSlot | None = None,
+    *,
+    only_project: str | None = None,
 ) -> tuple[WarningRecord, ...]:
     """What the catalogs a release compiles again do to the entries a catalog grant names
     (catalog callers plan Q8): the same sources compiled against the new model give another
     entry hash, and the callers of the grant run the new definition
-    (``catalog.granted_entry_changed``, the code of a publish). An entry stays in a republished
+    (``catalog.granted_entry_changed``, the code of a publish). A granted view that runs a
+    function compiled again is judged the same way (``views``: the published view catalog,
+    for the views the release does not compile again). An entry stays in a republished
     catalog, so ``catalog.granted_entry_removed`` is not expected; the helper judges both."""
     found: tuple[WarningRecord, ...] = ()
     for each in followed:
         if each.republish is not None:
             slot = each.republish.slot
             found += granted_entries.warnings(
-                policy, entry, slot.kind, each.republish.current, slot
+                policy, entry, slot.kind, each.republish.current, slot, only_project=only_project
             )
+    functions = followed[0].republish if followed else None
+    if functions is not None:
+        again = followed[2].republish if len(followed) > 2 else None
+        warned = frozenset(str(w.details["name"]) for w in found if w.details.get("kind") == "view")
+        found += granted_entries.row_function_warnings(
+            policy,
+            entry,
+            again.slot if again is not None else views,
+            functions.current,
+            functions.slot,
+            skip=warned,
+            only_project=only_project,
+        )
     return found
 
 

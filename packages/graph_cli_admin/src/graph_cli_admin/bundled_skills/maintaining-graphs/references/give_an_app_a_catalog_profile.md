@@ -73,12 +73,13 @@ that name. Publishing warns, never refuses, and the dry run shows the warnings:
 
 | Warning | Meaning | What to do |
 | --- | --- | --- |
-| `catalog.granted_entry_changed` | the entry stays, its hash changes (sources, model it resolves against, status); `details` give the grants and both hashes | review the new definition as a new grant (what it reads or writes now), tell the policy's owner, then publish; `policy explain` shows the new hash |
+| `catalog.granted_entry_changed` | the entry stays, its hash changes (sources, model it resolves against, status); `details` give the grants and both hashes; for a view whose row function changed or went, `details.functions` lists the function and its hashes | review the new definition as a new grant (what it reads or writes now), tell the policy's owner, then publish; `policy explain` shows the new hash |
 | `catalog.granted_entry_removed` | the grant now gives nothing; `details.replaced_by` names the successor the old entry declared, if any | a replacement or a renamed entry is never granted by the old name: publish it, then name it in the policy and apply; do this before removing the old entry if the app must not lose a step |
 
 The publish commands (`graph-admin graph functions publish`, `graph-admin graph actions publish`,
 `graph-admin graph views publish`) and `graph-admin graph push` warn in local and remote mode alike.
-No warning means no granted entry was touched. An `ontology release` (also in `graph-admin graph
-push`, also with `--dry-run`) that compiles the catalogs again for renamed terms republishes the
-same sources against the new model and warns `catalog.granted_entry_changed` for each granted entry
-whose hash changes; read the dry run before releasing.
+No warning means no granted entry was touched, none of its row functions either. A project admin
+sees the grant ids and the principal of its own project's grants only. An `ontology release` (also
+in `graph-admin graph push`, also with `--dry-run`) that compiles the catalogs again for renamed
+terms republishes the same sources against the new model and warns `catalog.granted_entry_changed`
+for each granted entry whose hash changes; read the dry run before releasing.

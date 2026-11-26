@@ -269,9 +269,19 @@ def publish(
         }
         seq = session.head().seq
         warnings = warn(entry, model, slot) if warn is not None else ()
+        policy, audience = ctx.policy.current(entry.id), granted_entries.only_project(ctx)
         warnings += granted_entries.warnings(
-            ctx.policy.current(entry.id), entry, kind, current, slot
+            policy, entry, kind, current, slot, only_project=audience
         )
+        if kind == "functions":  # the views that run a function name it, never its hash
+            warnings += granted_entries.row_function_warnings(
+                policy,
+                entry,
+                current_slot(session, "views"),
+                current,
+                slot,
+                only_project=audience,
+            )
         unchanged = current.summary() == slot.summary() if current is not None else not slot.files
         if unchanged or dry_run:
             return Published(entry, data, seq, warnings)

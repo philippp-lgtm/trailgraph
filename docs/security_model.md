@@ -67,7 +67,9 @@ prevents depends on what is verified:
   removes or changes an entry a grant names warns (`catalog.granted_entry_removed`,
   `catalog.granted_entry_changed`, [republishing](access_control.md#catalog-grants)) but is not
   refused: the grant names, it does not pin, so the warning and `policy explain` (the entry's
-  current hash) are what a maintainer has until finer publish rights exist.
+  current hash) are what a maintainer has until finer publish rights exist. The same holds
+  for a granted view when a function its rows run changes. A project admin gets the grant ids
+  and the principal of its own project's grants only, never another project's roles.
   <!-- claim: security_model.project_admin_ceiling -->
 - A token bound to a project (`token create --project`) verifies the
   project, so that project's scope is a boundary for the token, and a

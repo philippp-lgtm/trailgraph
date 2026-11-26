@@ -285,11 +285,11 @@ _ENTRY_RULE_RE: Final = re.compile(r"^grant\.[0-9]+\.(functions|views|actions)$"
 class EntryGrant:
     """One catalog grant that names an entry: the grant's id (``grant.<n>``, the rule ids of its
     ``functions``, ``views`` and ``actions`` rules without the suffix) and the facts of its
-    principal as sorted ``(facet, value)`` pairs, the entrypoint left out (a catalog grant is
-    always a server grant)."""
+    principal as sorted ``(facet, values)`` pairs (a facet may list several values), the
+    entrypoint left out (a catalog grant is always a server grant)."""
 
     grant: str
-    principal: tuple[tuple[str, str], ...]
+    principal: tuple[tuple[str, tuple[str, ...]], ...]
 
 
 def entry_grants(
@@ -312,7 +312,7 @@ def entry_grants(
             facts = (
                 tuple(
                     sorted(
-                        (key, ", ".join(strings(principal, key)))
+                        (key, tuple(strings(principal, key)))
                         for key in principal
                         if key != "entrypoint" and strings(principal, key)
                     )

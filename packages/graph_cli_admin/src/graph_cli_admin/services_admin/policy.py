@@ -489,10 +489,11 @@ def explain(
 
 
 def _published_of(
-    ctx: AdminContext, graph: GraphEntry
+    ctx: AdminContext, graph: GraphEntry, *, soft: bool = False
 ) -> Callable[[SlotKind], dict[str, JsonObject]]:
-    """The entries of each published catalog of ``graph`` by name, each catalog read once."""
-    return cache(lambda kind: granted_entries.published_entries(ctx, graph, kind))
+    """The entries of each published catalog of ``graph`` by name, each catalog read once. A
+    catalog that cannot be read is an error, except in the live view (``soft``)."""
+    return cache(lambda kind: granted_entries.published_entries(ctx, graph, kind, soft=soft))
 
 
 def _catalog_json(
@@ -660,7 +661,7 @@ def for_graph(ctx: AdminContext, entry: GraphEntry) -> dict[str, JsonValue]:
         )
     projects = strings(installation, "projects")
     model = _pinned_model(ctx, entry)
-    published = _published_of(ctx, entry)
+    published = _published_of(ctx, entry, soft=True)
     callers: list[JsonValue] = [
         {"project": p, **_access(_app_caller(ctx.actor, p), entry, policy, model, published)}
         for p in (*projects, None)  # the maintainer's own principal, through graph

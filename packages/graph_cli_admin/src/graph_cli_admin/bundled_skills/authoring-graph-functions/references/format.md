@@ -201,7 +201,8 @@ entity cannot be batched). `graph-admin usage report` shows which functions agen
 
 Warned, not refused: `catalog.granted_entry_removed` and `catalog.granted_entry_changed`, one record
 per function (also on a dry run and in a push that publishes functions) when the publish removes or
-changes a function that a catalog grant of the installation policy names. A grant names a function,
+changes a function that a catalog grant of the installation policy names, and for each granted view
+that runs a function the publish changes (`details.functions`). A grant names a function,
 not its text, so its tokens run whatever is published under that name (see
 `maintaining-graphs`, "Give an app a catalog profile").
 

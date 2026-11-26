@@ -545,7 +545,12 @@ no_project: {"*": write}
   `graph-admin graph views publish` and `graph-admin graph push` warn `catalog.granted_entry_removed` when the new catalog lacks an entry the published one
   has, and `catalog.granted_entry_changed` when the entry stays and its hash changes (its
   sources, the model it resolves against or its status); each names the entry and the grants
-  (`grant.<n>` with the facts of its principal), the second both hashes. A removed entry that
+  (`grant.<n>` with the facts of its principal; a role stays a list), the second both hashes.
+  A granted view also changes when a function its `rows` sections run changes or goes (the
+  view names the function, never its hash): `graph-admin graph functions publish` and
+  `graph-admin graph push` warn `catalog.granted_entry_changed` for the view, and
+  `details.functions` lists each function with its hash before and after (`null`: gone), so no
+  publish that changes what a granted entry reads passes without a warning. A removed entry that
   named a `replaced_by` in the published catalog gives it in the warning, and the grant does
   not follow it: a replacement may read and write otherwise, so a policy names it itself (a
   renamed entry is the removal of the old name and a new, ungranted entry). The warnings
@@ -555,9 +560,18 @@ no_project: {"*": write}
   the catalogs again for renamed terms republishes the same sources against the new model; a
   granted entry that compiles to another hash warns `catalog.granted_entry_changed` as well, an
   entry no grant names does not. A recompile keeps every entry of a catalog, so the release
-  has no `catalog.granted_entry_removed` of its own.
+  has no `catalog.granted_entry_removed` of its own. A project admin may publish the graph's
+  catalog but may not read the installation policy, so its warnings name the grants that name the
+  entry (`grant.<n>`, no more) and give the facts of the principal only for a grant bound to its
+  own project; the role and project of another project's grant stay out of the message and the
+  details.
   `graph-admin policy explain` shows the other direction: for each granted name `published`
-  and the entry's current `hash`, to compare with the hash a publish reported.
+  and the entry's current `hash`, to compare with the hash a publish reported. `published`
+  says the graph holds the entry, not that the token sees it: an entry that names a type
+  outside the grant's `reads` (or an attribute the token holds no marking for) is hidden from
+  the token anyway, and `graph describe tools` with the token's own credentials is the check. A
+  catalog that cannot be read stops the explanation with its own error instead of showing
+  `published: false`.
 
 ## Roles
 

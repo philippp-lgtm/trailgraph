@@ -7,7 +7,9 @@ granted name whether the graph publishes it and its current hash.
 The role ``catalog_agent`` is granted the function ``items_by_condition``, the action
 ``move_item`` and the view ``location_overview`` of ``example_graph`` (inventory); ``second_agent``
 is granted the same function through a grant of its own. The graph publishes both functions, both
-actions and the view; no view runs ``items_by_condition``, so it can be removed.
+actions and the view, and ``items_elsewhere``, a function no granted entry names and no granted view
+runs (the granted view ``location_overview`` runs ``items_in_location``; no view runs
+``items_by_condition``, so it can be removed).
 """
 
 import shutil
@@ -53,6 +55,24 @@ FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
 ACTIONS = FIXTURES / "actions" / "inventory" / "valid"
 VIEWS = FIXTURES / "views" / "inventory" / "valid"
 KINDS = ("functions", "actions", "views")
+ELSEWHERE = """\
+schema: graph_cli.function/1
+name: items_elsewhere
+summary: Items stored somewhere.
+use_when: >-
+  Which items are stored anywhere; a list of all items with their quantity.
+query: |
+  MATCH (i:Item)
+  RETURN i.name AS item, i.quantity AS quantity
+  ORDER BY item
+returns:
+  - column: item
+    summary: Name of the item.
+  - column: quantity
+    summary: Number of units.
+examples:
+  - question: Which items are stored at all?
+"""
 REMOVED, CHANGED = "catalog.granted_entry_removed", "catalog.granted_entry_changed"
 
 
@@ -74,6 +94,7 @@ def work(run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path) -> di
         "actions": copy_folder(ACTIONS, tmp_path / "actions"),
         "views": copy_folder(VIEWS, tmp_path / "views", "location_overview.yaml"),
     }
+    (folders["functions"] / "items_elsewhere.yaml").write_text(ELSEWHERE)
     for kind, folder in folders.items():
         published = admin(run_cli, "graph", kind, "publish", "example_graph", str(folder))
         assert published.code == 0 and catalog_warnings(published) == [], published.envelope
@@ -121,10 +142,10 @@ def test_removing_a_granted_function_warns_and_names_the_grants(
         "kind": "function",
         "name": "items_by_condition",
         "grants": [
-            {"grant": "grant.1", "principal": {"role": "catalog_agent"}},
+            {"grant": "grant.1", "principal": {"role": ["catalog_agent"]}},
             {
                 "grant": "grant.2",
-                "principal": {"project": "example_project", "role": "second_agent"},
+                "principal": {"project": ["example_project"], "role": ["second_agent"]},
             },
         ],
         "replaced_by": None,
@@ -234,9 +255,9 @@ def test_a_publish_that_touches_no_granted_entry_has_no_catalog_warning(
     # an entry no grant names: changed, then removed
     edit(
         work["functions"],
-        "items_in_location.yaml",
-        "summary: Items stored",
-        "summary: Things stored",
+        "items_elsewhere.yaml",
+        "summary: Items stored somewhere",
+        "summary: Things stored somewhere",
     )
     changed = publish(run_cli, "functions", work["functions"])
     assert changed.data["published"] is True and catalog_warnings(changed) == []
@@ -295,9 +316,9 @@ def test_a_push_warns_like_the_publish_commands(
          "summary: Items in a given (reworded)")  # fmt: skip
     edit(
         source / "functions",
-        "items_in_location.yaml",
-        "summary: Items stored",
-        "summary: Things stored",
+        "items_elsewhere.yaml",
+        "summary: Items stored somewhere",
+        "summary: Things stored somewhere",
     )
     dry = push(run_cli, source, "--dry-run")
     found = [(w["code"], w["details"]["kind"], w["details"]["name"]) for w in dry.warnings]
@@ -313,6 +334,61 @@ def test_a_push_warns_like_the_publish_commands(
     ]
     assert "move_item" not in rows(run_cli, "actions")
     assert catalog_warnings(push(run_cli, source)) == []  # the same push again
+
+
+# ---- publish: a function a granted view runs --------------------------------------------------
+
+
+def test_a_function_a_granted_view_runs_warns_for_the_view(
+    run_cli: CliRunner, work: dict[str, Path]
+) -> None:
+    """The view names its row function, never its hash, and runs what the graph publishes under
+    the name: changing ``items_in_location`` changes what a token of the view grant reads."""
+    edit(
+        work["functions"],
+        "items_in_location.yaml",
+        "summary: Items stored",
+        "summary: Things stored",
+    )
+    before = rows(run_cli, "functions")["items_in_location"]["hash"]
+    dry = publish(run_cli, "functions", work["functions"], "--dry-run")
+    (warning,) = catalog_warnings(dry)
+    assert warning["code"] == CHANGED
+    assert (warning["details"]["kind"], warning["details"]["name"]) == ("view", "location_overview")
+    (function,) = warning["details"]["functions"]
+    assert function["name"] == "items_in_location" and function["hash_before"] == before
+    assert function["hash_after"] not in (None, before)
+    assert [g["grant"] for g in warning["details"]["grants"]] == ["grant.1"]
+    assert "items_in_location" in warning["message"] and "grant.1" in warning["message"]
+    assert rows(run_cli, "functions")["items_in_location"]["hash"] == before  # a dry run
+    done = publish(run_cli, "functions", work["functions"])
+    assert [w["details"]["name"] for w in catalog_warnings(done)] == ["location_overview"]
+    assert rows(run_cli, "functions")["items_in_location"]["hash"] == function["hash_after"]
+    # the same publish again changes nothing and warns about nothing
+    assert catalog_warnings(publish(run_cli, "functions", work["functions"])) == []
+
+
+def test_a_push_warns_for_the_granted_view_of_a_function_it_changes(
+    run_cli: CliRunner, work: dict[str, Path], tmp_path: Path
+) -> None:
+    source = tmp_path / "workspace"
+    assert admin(run_cli, "graph", "pull", "example_graph", str(source)).code == 0
+    edit(
+        source / "functions",
+        "items_in_location.yaml",
+        "summary: Items stored",
+        "summary: Things stored",
+    )
+    dry = push(run_cli, source, "--dry-run")
+    assert [(w["code"], w["details"]["kind"], w["details"]["name"]) for w in dry.warnings] == [
+        (CHANGED, "view", "location_overview")
+    ]
+    # the push that replaces the view too names it once, as a changed view
+    edit(source / "views", "location_overview.yaml", "summary: A location", "summary: One location")
+    both = push(run_cli, source, "--dry-run")
+    assert [(w["details"]["kind"], w["details"]["name"]) for w in both.warnings] == [
+        ("view", "location_overview")
+    ]
 
 
 # ---- policy explain ----------------------------------------------------------------------------
@@ -361,3 +437,21 @@ def test_policy_explain_says_whether_a_granted_name_is_published_and_its_hash(
     second = explain("second_agent")
     assert [e["name"] for e in second["functions"]] == ["items_by_condition"]
     assert second["actions"] == [] and second["views"] == []
+
+
+def test_policy_explain_fails_on_a_catalog_it_cannot_read_instead_of_saying_not_published(
+    run_cli: CliRunner, work: dict[str, Path], isolated_env: dict[str, str]
+) -> None:
+    """``published: false`` says the grant gives nothing; a damaged slot says nothing of the
+    kind, so the explanation stops with the slot's own error."""
+    (slot,) = [
+        p
+        for p in Path(isolated_env["XDG_DATA_HOME"]).rglob("slot.json")
+        if p.parent.name == "functions"
+    ]
+    slot.write_text("{not json")
+    found = admin(
+        run_cli, "policy", "explain", "--graph", "example_graph",
+        "--project", "example_project", "--role", "catalog_agent",
+    )  # fmt: skip
+    assert found.code != 0 and found.error["code"] == "functions.slot_invalid", found.envelope

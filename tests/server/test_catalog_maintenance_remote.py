@@ -84,7 +84,7 @@ def test_a_remote_publish_warns_about_granted_entries(
     (changed,) = [w for w in dry.json["warnings"] if w["code"].startswith("catalog.")]
     assert changed["details"]["name"] == "move_item"
     assert changed["details"]["grants"] == [
-        {"grant": "grant.1", "principal": {"role": "catalog_agent"}}
+        {"grant": "grant.1", "principal": {"role": ["catalog_agent"]}}
     ]
     assert dry.json["data"]["published"] is False
     (folder / "move_item.yaml").unlink()
@@ -238,9 +238,102 @@ def test_a_remote_release_warns_about_the_granted_entries_it_compiles_again(
     (changed,) = [w for w in dry.json["warnings"] if w["code"].startswith("catalog.")]
     assert changed["details"]["name"] == "suppliers_by_name"
     assert changed["details"]["grants"] == [
-        {"grant": "grant.1", "principal": {"role": "catalog_agent"}}
+        {"grant": "grant.1", "principal": {"role": ["catalog_agent"]}}
     ]
     assert dry.json["data"]["pinned"] is False
     done = release()
     assert codes(done) == ["catalog.granted_entry_changed"]
     assert done.json["data"]["pinned"] is True
+
+
+PROJECT_POLICY = """\
+schema: graph_cli.policy/1
+id: installation
+roles:
+  any_agent: {description: "Any project"}
+  own_agent: {description: "Of the project that publishes"}
+  other_agent: {description: "Of another project"}
+grants:
+  - entrypoint: server
+    principal: {role: any_agent}
+    graphs: [example_graph]
+    level: catalog
+    catalog: {functions: [items_by_condition]}
+    reads: [inv:Item]
+  - entrypoint: server
+    principal: {role: own_agent, project: p1}
+    graphs: [example_graph]
+    level: catalog
+    catalog: {functions: [items_by_condition]}
+    reads: [inv:Item]
+  - entrypoint: server
+    principal: {role: other_agent, project: other_project}
+    graphs: [example_graph]
+    level: catalog
+    catalog: {functions: [items_by_condition]}
+    reads: [inv:Item]
+scopes:
+  p1: {example_graph: maintain}
+no_project: {"*": none}
+"""
+
+
+@pytest.mark.doc_claim("security_model.project_admin_ceiling")
+def test_a_project_admin_is_told_which_grants_but_not_whose(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> None:
+    """The project admin may publish the catalog, not read the installation policy: the warning
+    names the grants that name the entry (``grant.<n>``), and the principal (role, project) only
+    of a grant bound to its own project. A maintainer sees every principal."""
+    init(run_cli, isolated_env)
+    create_graph(run_cli, "example_graph", "inventory")
+    assert (
+        admin(run_cli, "graph", "functions", "publish", "example_graph", str(FUNCTIONS)).code == 0
+    )
+    path = write_policy(tmp_path / "policies", "installation.yaml", PROJECT_POLICY)
+    assert admin(run_cli, "policy", "apply", str(path), "--reason", "project admin").code == 0
+    pa = admin(run_cli, "token", "create", "pa", "--scope", "admin", "--project", "p1")
+    root = admin(run_cli, "token", "create", "root", "--scope", "admin")
+    app = served({"root": None, "env": isolated_env}, tmp_path)
+    folder = tmp_path / "functions"
+    shutil.copytree(FUNCTIONS, folder)
+    (folder / "items_by_condition.yaml").unlink()
+
+    def warned(token: str) -> Any:
+        args = {"ref": "example_graph", "dir": upload_tree(app, token, folder), "--dry-run": True}
+        reply = command(app, "graph/functions/publish", token, args=args)
+        assert codes(reply) == ["catalog.granted_entry_removed"], reply.json
+        return next(w for w in reply.json["warnings"] if w["code"].startswith("catalog."))
+
+    seen = warned(pa.data["token"])
+    assert seen["details"]["grants"] == [
+        {"grant": "grant.1"},
+        {"grant": "grant.2", "principal": {"project": ["p1"], "role": ["own_agent"]}},
+        {"grant": "grant.3"},
+    ]
+    for text in ("other_agent", "other_project", "any_agent"):
+        assert text not in str(seen), text
+    assert "own_agent" in seen["message"]
+    # a push says no more than a publish
+    workspace = tmp_path / "workspace"
+    assert admin(run_cli, "graph", "pull", "example_graph", str(workspace)).code == 0
+    (workspace / "functions" / "items_by_condition.yaml").unlink()
+    pushed = command(
+        app,
+        "graph/push",
+        pa.data["token"],
+        args={
+            "ref": "example_graph",
+            "dir": upload_tree(app, pa.data["token"], workspace),
+            "--dry-run": True,
+        },
+    )
+    assert codes(pushed) == ["catalog.granted_entry_removed"], pushed.json
+    (push_warning,) = [w for w in pushed.json["warnings"] if w["code"].startswith("catalog.")]
+    assert push_warning["details"]["grants"] == seen["details"]["grants"]
+    full = warned(root.data["token"])
+    assert full["details"]["grants"] == [
+        {"grant": "grant.1", "principal": {"role": ["any_agent"]}},
+        {"grant": "grant.2", "principal": {"project": ["p1"], "role": ["own_agent"]}},
+        {"grant": "grant.3", "principal": {"project": ["other_project"], "role": ["other_agent"]}},
+    ]

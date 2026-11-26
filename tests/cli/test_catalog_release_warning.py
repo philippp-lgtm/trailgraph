@@ -106,10 +106,10 @@ def test_a_dry_run_warns_for_the_granted_entries_a_release_compiles_again(
     ]
     function, view = found
     assert function["details"]["grants"] == [
-        {"grant": "grant.1", "principal": {"role": "catalog_agent"}}
+        {"grant": "grant.1", "principal": {"role": ["catalog_agent"]}}
     ]
     assert view["details"]["grants"] == [
-        {"grant": "grant.2", "principal": {"project": "example_project", "role": "viewer"}}
+        {"grant": "grant.2", "principal": {"project": ["example_project"], "role": ["viewer"]}}
     ]
     assert "grant.1 (role catalog_agent)" in function["message"]
     assert function["details"]["hash_before"] == before[0]["suppliers_by_name"]

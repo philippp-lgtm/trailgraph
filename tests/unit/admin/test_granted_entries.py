@@ -7,6 +7,8 @@ reads (the names and hashes of the compiled entries and what a removed entry nam
 replacement).
 """
 
+import copy
+
 from graph_cli.access_control.compiler import compile_policy
 from graph_cli.access_control.policy import BUILTIN_POLICY_SET, policy_set
 from graph_cli.access_control.terms import EntryGrant, entry_grants, named_entries
@@ -76,8 +78,8 @@ def codes(found: tuple[object, ...]) -> list[tuple[str, str]]:
 
 def test_grants_are_read_back_per_kind_and_name_with_their_principal() -> None:
     found = entry_grants(installed().documents, EXAMPLE)
-    support = EntryGrant("grant.1", (("role", "support"),))
-    triage = EntryGrant("grant.2", (("project", "shop"), ("role", "triage")))
+    support = EntryGrant("grant.1", (("role", ("support",)),))
+    triage = EntryGrant("grant.2", (("project", ("shop",)), ("role", ("triage",))))
     assert found == {
         "function": {"escalations": (support,), "open_tickets": (support, triage)},
         "action": {"close_ticket": (support,)},
@@ -88,7 +90,7 @@ def test_grants_are_read_back_per_kind_and_name_with_their_principal() -> None:
     assert sorted(other["function"]) == ["open_tickets"] and sorted(other["action"]) == [
         "other_action"
     ]
-    assert other["action"]["other_action"] == (EntryGrant("grant.3", (("role", "triage"),)),)
+    assert other["action"]["other_action"] == (EntryGrant("grant.3", (("role", ("triage",)),)),)
     # named_entries is the names of the same reading
     assert named_entries(installed().documents, EXAMPLE) == {
         "function": ("escalations", "open_tickets"),
@@ -230,3 +232,130 @@ def test_a_release_judges_each_catalog_it_compiles_again_by_the_same_rules() -> 
     ]
     assert republish_warnings(installed(), ENTRY, (Followed(None, []),) * 3) == ()
     assert republish_warnings(BUILTIN_POLICY_SET, ENTRY, (Followed(functions, []),)) == ()
+
+
+def test_a_principal_facet_with_several_values_stays_a_list() -> None:
+    """The authored policy takes one role, but a compiled document may carry several values for
+    a facet (hand-built ones do); the grant keeps them apart and only the message joins them."""
+    document = copy.deepcopy(dict(installed().documents[0]))
+    for rule in document["rules"]:  # type: ignore[union-attr]
+        if rule["id"] == "grant.1.functions":  # type: ignore[index]
+            rule["principal"]["role"] = ["lead", "support"]  # type: ignore[index]
+    many = policy_set(document)  # type: ignore[arg-type]
+    grant = entry_grants(many.documents, EXAMPLE)["function"]["escalations"][0]
+    assert grant.principal == (("role", ("lead", "support")),)
+    (found,) = granted_entries.warnings(
+        many, ENTRY, "functions", slot("functions", escalations="a"), slot("functions")
+    )
+    assert found.details["grants"][0]["principal"] == {"role": ["lead", "support"]}  # type: ignore[index]
+    assert "grant.1 (role lead, support)" in found.message
+
+
+def test_a_project_admin_sees_the_principal_of_its_own_projects_grants_only() -> None:
+    """``only_project``: a project admin may publish the catalog but not read the policy, so a
+    grant of another project (or of none) is its id alone, in message and details."""
+    before = slot("functions", open_tickets="h1", escalations="h2")
+    after = slot("functions", open_tickets="h1b", escalations="h2")
+    support, triage = {"role": ["support"]}, {"project": ["shop"], "role": ["triage"]}
+    expected = {
+        "shop": {"grant.1": None, "grant.2": triage},
+        "other": {"grant.1": None, "grant.2": None},
+        None: {"grant.1": support, "grant.2": triage},
+    }
+    for project, shown in expected.items():
+        (found,) = granted_entries.warnings(
+            installed(), ENTRY, "functions", before, after, only_project=project
+        )
+        grants = found.details["grants"]
+        assert {g["grant"]: g.get("principal") for g in grants} == shown, project  # type: ignore[attr-defined, union-attr]
+        assert ("role support" in found.message) is (project is None), found.message
+        assert ("role triage" in found.message) is (project in ("shop", None)), found.message
+        assert ("project shop" in found.message) is (project in ("shop", None)), found.message
+    (found,) = granted_entries.warnings(
+        installed(), ENTRY, "functions", before, after, only_project="other"
+    )
+    assert "grant.1, grant.2 names" in found.message
+
+
+def view_slot(**rows: tuple[str, list[str]]) -> KineticSlot:
+    """A view catalog: ``name=(hash, row functions)``."""
+    items: list[JsonValue] = [
+        {"name": n, "hash": h, "touches": {"functions": list[JsonValue](fns)}}
+        for n, (h, fns) in rows.items()
+    ]
+    return KineticSlot("s", "c", PIN, {"views": items}, kind="views")
+
+
+def test_a_granted_view_warns_when_a_function_its_rows_run_changes_or_goes() -> None:
+    views = view_slot(ticket_overview=("v1", ["open_tickets", "escalations"]), plain=("v2", []))
+    before = slot("functions", open_tickets="a", escalations="b", other="c")
+    changed = slot("functions", open_tickets="a2", escalations="b", other="c2")
+    (found,) = granted_entries.row_function_warnings(installed(), ENTRY, views, before, changed)
+    assert (found.code, found.details["kind"], found.details["name"]) == (
+        "catalog.granted_entry_changed",
+        "view",
+        "ticket_overview",
+    )
+    assert found.details["functions"] == [
+        {"name": "open_tickets", "hash_before": "a", "hash_after": "a2"}
+    ]
+    assert [g["grant"] for g in found.details["grants"]] == ["grant.1"]  # type: ignore[attr-defined, union-attr]
+    assert "open_tickets" in found.message and "ticket_overview" in found.message
+    # a function that is gone is named with a null hash after
+    gone = slot("functions", escalations="b", other="c")
+    (found,) = granted_entries.row_function_warnings(installed(), ENTRY, views, before, gone)
+    assert found.details["functions"] == [
+        {"name": "open_tickets", "hash_before": "a", "hash_after": None}
+    ]
+    # nothing changed, or only a function no granted view runs, or the view is already warned
+    assert granted_entries.row_function_warnings(installed(), ENTRY, views, before, before) == ()
+    other_only = slot("functions", open_tickets="a", escalations="b", other="c2")
+    assert (
+        granted_entries.row_function_warnings(installed(), ENTRY, views, before, other_only) == ()
+    )
+    assert (
+        granted_entries.row_function_warnings(
+            installed(), ENTRY, views, before, changed, skip=frozenset({"ticket_overview"})
+        )
+        == ()
+    )
+    # a view no grant names, and a policy without grants, are not judged
+    ungranted = view_slot(plain=("v2", ["open_tickets"]))
+    assert (
+        granted_entries.row_function_warnings(installed(), ENTRY, ungranted, before, changed) == ()
+    )
+    assert (
+        granted_entries.row_function_warnings(BUILTIN_POLICY_SET, ENTRY, views, before, changed)
+        == ()
+    )
+    assert granted_entries.row_function_warnings(installed(), ENTRY, None, before, changed) == ()
+
+
+def test_a_release_that_compiles_functions_again_judges_the_granted_views_that_run_them() -> None:
+    functions = Republish(
+        slot("functions", open_tickets="a", escalations="b"),
+        slot("functions", open_tickets="a2", escalations="b"),
+        ("open_tickets",),
+    )
+    published_views = view_slot(ticket_overview=("v1", ["open_tickets"]))
+    nothing = Followed(None, [])
+    found = republish_warnings(
+        installed(), ENTRY, (Followed(functions, []), nothing, nothing), published_views
+    )
+    assert [(w.details["kind"], w.details["name"]) for w in found] == [
+        ("function", "open_tickets"),
+        ("view", "ticket_overview"),
+    ]
+    assert found[1].details["functions"][0]["name"] == "open_tickets"  # type: ignore[index]
+    # a view the release compiles again is warned about as a changed view, once
+    views = Republish(
+        published_views, view_slot(ticket_overview=("v1b", ["open_tickets"])), ("ticket_overview",)
+    )
+    found = republish_warnings(
+        installed(), ENTRY, (Followed(functions, []), nothing, Followed(views, [])), published_views
+    )
+    assert [(w.details["kind"], w.details["name"]) for w in found] == [
+        ("function", "open_tickets"),
+        ("view", "ticket_overview"),
+    ]
+    assert "hash_before" in found[1].details
