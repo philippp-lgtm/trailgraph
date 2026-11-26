@@ -154,6 +154,27 @@ def test_whoami_shows_the_level_catalog_and_the_names_the_token_sees(
     assert other["level"] == "read" and "catalog" not in other
 
 
+def test_whoami_shows_the_obligations_the_granted_action_holds_its_writes_to(
+    served: ServerApp, agent: str, reader: str, mover: str
+) -> None:
+    """The token has no write by hand, so the obligations of its own writes are empty; the ones
+    ``do`` will hold the writes of its action to (the built-in reason for a supersede or a
+    retract, the entry's own) are what whoami shows (step 3 review N4)."""
+
+    def obligations(token: str) -> dict[str, Any]:
+        (graph,) = command(served, "whoami", token).json["data"]["permissions"]["graphs"]
+        shown: dict[str, Any] = graph["obligations"]
+        return shown
+
+    assert obligations(agent) == {
+        "write.retract": {"require_reason": True},
+        "write.supersede": {"require_reason": True},
+    }
+    # a reader with an action gets the same; a plain reader writes nothing, so nothing holds it
+    assert obligations(mover) == obligations(agent)
+    assert obligations(reader) == {}
+
+
 def test_start_counts_the_catalog_only_and_says_level_catalog(
     served: ServerApp, agent: str, reader: str
 ) -> None:

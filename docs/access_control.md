@@ -1046,8 +1046,10 @@ every graph whose ontology uses no marking, is answered as before.
   the graph itself, or `catalog.actions` on a read grant, shows its level on the ladder
   (`read` or `write`) and `catalog_only: false` with the ids of the rules that make it a
   reader in `reader_rules`; a caller whose grants name no entry has no `catalog` key, so
-  every other answer is unchanged. `graph start` shows the same level, and counts only the
-  entries its grants name. `permissions.allowed` never lists the entry actions
+  every other answer is unchanged. `obligations` of a caller whose grants name an action it may
+  run also lists what the entry path holds the writes of that action to (a reason, a batch
+  limit), although the caller could write nothing by hand. `graph start` shows the same level,
+  and counts only the entries its grants name. `permissions.allowed` never lists the entry actions
   (`read.view`, `write.action`): they are decided on entries, not on a graph.
   `graph-admin policy explain` answers the same for roles, tokens and projects (`level`,
   `withheld`, `catalog` with the names the grants give, published or not) and has three filters

@@ -15,7 +15,6 @@ from graph_cli.access_control.effective import (
     withheld_actions,
     write_allowance,
     write_grant_types,
-    write_obligations,
 )
 from graph_cli.access_control.terms import TermModel
 from graph_cli.kernel.actions import (
@@ -93,7 +92,7 @@ class ReadInstallation(ReadCatalogs):
                 "level": level,
                 "withheld": withheld_actions(actor, entry.id, layered),
                 "types": limits,
-                "obligations": write_obligations(actor, entry.id, layered),
+                "obligations": self.shown_obligations(actor, entry, layered),
             }
             visible = self._seen_types(actor, entry)
             markings = self._held_markings(actor, entry, layered)
