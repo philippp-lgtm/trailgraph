@@ -871,8 +871,8 @@ Every published function, action and view is, for one caller, in one of three st
   of what it sees. A hidden entry does not exist: not listed, counted, found by `describe
   search`, suggested or named as the replacement of another, and its name, authored text or hints
   are never in an answer or an error (but a view names the function its `rows` section runs, as
-  its definition says: a caller of a granted view reads that name there, see below); `run`, `do`, `view --name`, `call` and `describe` of it
-  answer as for a name that was never published (`function.not_found`, `action.not_found`,
+  its definition says: a caller of a granted view reads that name there, see below); `run`, `do`,
+  `view --name`, `call` and `describe` of it answer as for a name that was never published (`function.not_found`, `action.not_found`,
   `view.not_found`, `tool.not_found`). Hidden depends on what the caller sees and never on the
   rights it holds: a caller who loses a right does not see more or fewer hidden entries. A
   caller that holds a read grant next to its catalog grant, or only `catalog.actions` on a read
@@ -1144,7 +1144,8 @@ own action, `read.function`, in the `read` level.
   themselves are never written).
 - **Listing.** `describe functions`, `describe module`, `describe modules`
   and `describe search` show functions as usable only to callers who may
-  `read.function` on the graph, or on the function through a catalog grant. For everyone else they are *not allowed*
+  `read.function` on the graph, or on the function through a catalog grant. For everyone else they
+  are *not allowed*
   ([Functions, actions and views you may not use](#functions-actions-and-views-you-may-not-use)):
   counted in `not_allowed`, listed with `--include-not-allowed`, found by
   search and shown by `describe function` marked `allowed: false` with

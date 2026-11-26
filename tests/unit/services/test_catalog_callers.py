@@ -50,6 +50,8 @@ roles:
   viewer: {{description: "Catalog only, a view and nothing else"}}
   overview: {{description: "Catalog only, a view whose row function it is not granted"}}
   legacy: {{description: "Catalog only, a deprecated function"}}
+  blind: {{description: "Catalog only, a default view that names a type it cannot see"}}
+  ghost: {{description: "Catalog only, a view the graph does not publish"}}
 grants:
   - entrypoint: server
     principal: {{role: support}}
@@ -88,6 +90,18 @@ grants:
     graphs: [example_graph]
     level: catalog
     catalog: {{functions: [unit_members]}}
+    reads: {READS}
+  - entrypoint: server
+    principal: {{role: blind}}
+    graphs: [example_graph]
+    level: catalog
+    catalog: {{views: [unit_overview]}}
+    reads: ["ppl:*"]
+  - entrypoint: server
+    principal: {{role: ghost}}
+    graphs: [example_graph]
+    level: catalog
+    catalog: {{views: [ghost_view]}}
     reads: {READS}
 no_project: {{"*": write}}
 """
@@ -772,7 +786,7 @@ def test_the_card_and_unseen_classes_are_refused_alike_and_a_granted_default_vie
     unit = department(env)
     task = str(next(e for e in env.create("ops:Task", "t").entities if e.local == "t").id)
     path = read.default_views_path(SUPPORT, env.entry)
-    assert path == EntryPath("view", ("unit_overview",))
+    assert path == EntryPath("view", ("unit_overview",), uniform=True)
     assert read.default_views_path(token("viewer"), env.entry) is None  # a view without a default
     assert read.default_views_path(token("reader"), env.entry) is None
 
@@ -1405,3 +1419,133 @@ def test_a_lookup_opened_through_an_entry_cannot_ask_for_more(
     own = read.open(READER, env.entry, "read.find", RequestMeta.of("lookup", {"graph": "g"}))
     data, _ = read.lookup(own, LookupSpec(text="Eng", match="prefix"), ("Eng",))
     assert data["items"]
+
+
+# ---- review round 1: the nameless form, a changing policy -----------------------------------
+
+
+def nameless(
+    read: ReadService, env: ServiceEnv, who: ActorContext, ref: str
+) -> GraphCliError | tuple[dict[str, object], list[object]]:
+    """``view REF`` the way the command opens it: through the default views its grants name."""
+    path = read.default_views_path(who, env.entry)
+    request = RequestMeta.of("view", {"graph": env.entry.name, "ref": ref})
+    try:
+        opened = read.open(who, env.entry, "read.get", request, through=path)
+        return read.view(opened, ref)  # type: ignore[return-value]
+    except GraphCliError as exc:
+        return exc
+
+
+@pytest.mark.doc_claim("security_model.view_is_read_get")
+def test_the_nameless_form_answers_the_one_refusal_of_the_card_when_an_entry_is_denied(
+    env: ServiceEnv,
+) -> None:
+    """A rule that takes ``read.view`` away makes the granted default view refused: the answer is
+    the refusal of the card (``read.get`` on the graph), that of an entity that has no default view,
+    and it names no view; the audit holds the graph's decision alone."""
+    unit = department(env)
+    task = str(next(e for e in env.create("ops:Task", "t").entities if e.local == "t").id)
+    denying = policy_reader(env, deny=("read.view",))
+    answers = []
+    for ref in (unit, task):  # a class with a granted default view, and one without
+        events = len(env.installation_events())
+        error = nameless(denying, env, SUPPORT, ref)
+        assert isinstance(error, GraphCliError)
+        assert error.code == "access.denied" and error.details["action"] == "read.get"
+        assert error.details["resource"].count("/") == 0 and "unit_overview" not in str(error)
+        (event,) = denials(env, events)
+        assert set(decided(event)) == {"deny"}
+        assert "unit_overview" not in str(event)
+        answers.append((error.code, error.message, error.details))
+    assert answers[0] == answers[1]
+    # a rule on the entry's own need is refused the same way
+    for exact in (("read.get",), ("read.function",)):
+        error = nameless(policy_reader(env, exact=exact), env, SUPPORT, unit)
+        assert isinstance(error, GraphCliError) and error.details["resource"].count("/") == 0
+        assert "unit_overview" not in str(error)
+
+
+def test_a_granted_default_view_that_names_a_hidden_type_is_never_named(
+    env: ServiceEnv, read: ReadService
+) -> None:
+    person = str(next(e for e in env.create("ppl:Employee", "p").entities if e.local == "p").id)
+    blind = token("blind")
+    assert read.default_views_path(blind, env.entry) is None  # it does not exist for this caller
+    events = len(env.installation_events())
+    error = nameless(read, env, blind, person)
+    assert isinstance(error, GraphCliError) and error.details["action"] == "read.get"
+    assert error.details["resource"].count("/") == 0
+    assert "unit_overview" not in str(error) and "unit_overview" not in str(denials(env, events))
+    # the same caller asking for it by name: an unknown view, with no suggestion
+    with pytest.raises(GraphCliError) as caught:
+        opened = open_through(read, env, blind, "view", "unit_overview")
+        read.view(opened, None, name="unit_overview")
+    assert caught.value.code == "view.not_found" and caught.value.details["did_you_mean"] == []
+
+
+def test_the_default_views_of_a_graph_the_caller_cannot_see_are_none(env: ServiceEnv) -> None:
+    """The path is built from what the caller sees: for a graph it may not list there is none, so
+    the refusal is the graph's ``graph.not_found`` and no catalog of the graph is read first."""
+    hidden = policy_reader(env, exact=("read.list",))
+    assert hidden.default_views_path(SUPPORT, env.entry) is None
+    request = RequestMeta.of("view", {"graph": env.entry.name, "ref": "x"})
+    with pytest.raises(GraphCliError) as caught:
+        hidden.open(SUPPORT, env.entry, "read.get", request, through=None)
+    assert caught.value.code == "graph.not_found"
+
+
+def test_a_policy_that_changes_while_a_through_open_decides_does_not_crash_it(
+    env: ServiceEnv,
+) -> None:
+    """``authorize_through`` asks the policy several times; when a refresh lands after the first
+    answers (a deny) and before the last (an allow), the open follows the later one."""
+
+    class Flipping:
+        def __init__(self, first: object, then: object, after: int) -> None:
+            self.first, self.then, self.after, self.calls = first, then, after, 0
+
+        def current(self, graph: object) -> object:
+            self.calls += 1
+            return self.first if self.calls <= self.after else self.then
+
+        def refresh(self) -> None:
+            pass
+
+    def compiled(text: str) -> object:
+        return policy_set(
+            compile_policy(
+                text.encode(), file="i.yaml", graphs={"example_graph": env.entry.id}
+            ).document
+        )
+
+    denying = compiled(POLICY + "deny:\n  - {id: no_fn, action: [read.function]}\n")
+    allowing = compiled(POLICY)
+    for after in range(1, 6):
+        source = Flipping(denying, allowing, after)
+        read = env.make_reader(source)
+        request = RequestMeta.of("run", {"graph": env.entry.name, "name": "members_of_unit"})
+        try:
+            read.open(
+                token("scoped"), env.entry, "read.function", request,
+                through=EntryPath("function", ("members_of_unit",)),
+            )  # fmt: skip
+        except GraphCliError as exc:  # the earlier policy denied it: a refusal, never a crash
+            assert exc.code in ("access.denied", "function.not_found"), exc
+        except AssertionError as exc:  # pragma: no cover - what the bug was
+            raise AssertionError(f"after {after} reads of the policy") from exc
+
+
+def test_a_granted_view_the_graph_does_not_publish_is_unknown_like_any_other(
+    env: ServiceEnv, read: ReadService
+) -> None:
+    ghost = token("ghost")
+    answers = []
+    for name in ("ghost_view", "ghost_viewz"):
+        with pytest.raises(GraphCliError) as caught:
+            opened = open_through(read, env, ghost, "view", name)  # the granted name opens it...
+            read.view(opened, None, name=name)  # ...and fails at the lookup
+        error = caught.value
+        assert error.code == "view.not_found" and error.details["did_you_mean"] == []
+        answers.append(str(error.message).replace(name, "X"))
+    assert answers[0] == answers[1]

@@ -84,8 +84,8 @@ prevents depends on what is verified:
   the card and every entry the grant does not name stay refused or unknown. They hold like any
   rule: only through server tokens (the grant needs `entrypoint: server`, since a local agent with
   a shell reads the files). What an entry needs is decided deny-only: an explicit deny rule, a
-  scope, a type limit or a ceiling still refuses it, and the audit of a refusal names the entry
-  grant next to the rule that denied. An entry outside the grant is `not_found`, as for a name
+  scope, a type limit or a ceiling still refuses it, and the audit of a refusal names the entry,
+  and the grant when the entry decision allowed it, next to the rule that denied. An entry outside the grant is `not_found`, as for a name
   never published. Whoever may publish the graph's catalog decides what a granted name reads
   (see the project admin item). <!-- claim: security_model.catalog_grants -->
 - A caller limited to a catalog cannot list the graph through the one thing it may ask for,

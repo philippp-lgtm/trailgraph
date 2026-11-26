@@ -360,17 +360,22 @@ class ReadCatalogs(ReadAccess):
         )
 
     def default_views_path(self, actor: ActorContext, entry: GraphEntry) -> EntryPath | None:
-        """The default views of the graph that ``actor``'s grants name, for ``view`` without a
-        name (the class of the entity decides which one answers, once the graph is open): ``None``
-        when the grants name none. Names only what the caller is granted. Records nothing."""
+        """The default views of the graph that ``actor``'s grants name and that it sees, for
+        ``view`` without a name (the class of the entity decides which one answers, once the graph
+        is open): ``None`` when there are none. Built from what the caller sees (the classified
+        views are narrowed to the catalog, hidden ones left out, and empty for a graph it cannot
+        see), so a refusal never names a view it may not see. The path is ``uniform``: when every
+        name on it is refused, the answer is the graph's own ``read.get`` refusal, the one the
+        card gets. Records nothing."""
         granted = self._catalog_filter.grants(actor, entry.id, self._policy.current(entry.id))
-        found = self._published_views(entry) if granted.views else None
-        if found is None:
+        if not granted.views:
             return None
         names = tuple(
-            v.name for v in found[0] if v.defn.default and v.name in frozenset(granted.views)
+            c.entry.name
+            for c in self.classified_views(actor, entry)
+            if c.entry.defn.default and c.entry.name in frozenset(granted.views)
         )
-        return EntryPath("view", names) if names else None
+        return EntryPath("view", names, uniform=True) if names else None
 
     def authorize_through(
         self,
@@ -405,6 +410,7 @@ class ReadCatalogs(ReadAccess):
                     actor, own, request, entry, self.entry_not_found(actor, entry, path.kind, path)
                 )
             self.authorize(actor, action, f"graph:{entry.id}", request, entry)  # raises
+            return None  # unless the policy changed on the way: then it allows
         first: tuple[Decision, tuple[Decision, ...]] | None = None
         for ref in named:
             found = self.entry_decisions(actor, entry, ref, (action,))
@@ -413,6 +419,8 @@ class ReadCatalogs(ReadAccess):
             first = first or found
         assert first is not None
         decision, refused = first
+        if path.uniform:  # the graph's own refusal, which names no entry and no grant
+            raise self._record_denial(actor, own, request, entry, denial_error(own))
         before = () if refused[0] is decision else (decision,)
         error = denial_error(refused[0])
         raise self._record_denial(actor, refused[0], request, entry, error, before)

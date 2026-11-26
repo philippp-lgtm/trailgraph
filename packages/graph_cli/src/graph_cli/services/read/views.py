@@ -79,7 +79,10 @@ class ReadViews(ReadEntities, ReadQueries):
         except GraphCliError:
             if not guarded:
                 raise
-            chosen = None  # an entity that is not there, or not seen, is refused like any other
+            # Any error of the resolution, not only the entity's own (unknown, hidden or ambiguous
+            # id): an unreadable catalog or a storage fault is refused as the card is too. That
+            # fails closed: the answer never tells which step failed.
+            chosen = None
         if guarded and chosen is None:
             raise self._card_refused(view, ref)
         if chosen is None:

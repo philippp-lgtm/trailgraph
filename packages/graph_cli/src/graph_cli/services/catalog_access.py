@@ -103,6 +103,9 @@ class EntryPath:
 
     kind: str
     names: tuple[str, ...]
+    # a refusal of every name is the plain refusal of the graph's own right, not the entry's: the
+    # nameless ``view REF`` must not tell which view it tried
+    uniform: bool = False
 
     def refs(self) -> tuple[EntryRef, ...]:
         return tuple(EntryRef(self.kind, n) for n in self.names)
