@@ -35,6 +35,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final
 
+from graph_cli.kernel.actions import ENTRY_KIND_ACTIONS
 from graph_cli.kernel.canonical import HASH_PREFIX, JsonObject, JsonValue, hash_value
 from graph_cli.kernel.changeset import MAX_REASON
 from graph_cli.kernel.errors import GraphCliError
@@ -318,8 +319,14 @@ def function_input(
 def reason_required(entry: ActionEntry, obligations: frozenset[str]) -> bool:
     """Whether a call of the action must give a reason: the action demands one, or a
     ``require_reason`` obligation of the caller's policy applies to one of the write rights its
-    ops need (``obligations`` are the write actions the caller's policy demands a reason for)."""
-    return entry.defn.reason == "required" or any(n.action in obligations for n in entry.needs)
+    ops need (``obligations`` are the write actions the caller's policy demands a reason for), or
+    one applies to ``write.action`` itself, which only a caller who runs actions through its
+    grants is shown."""
+    return (
+        entry.defn.reason == "required"
+        or str(ENTRY_KIND_ACTIONS["action"]) in obligations
+        or any(n.action in obligations for n in entry.needs)
+    )
 
 
 def action_input(

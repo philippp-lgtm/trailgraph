@@ -60,7 +60,10 @@ prevents depends on what is verified:
   The skill, the functions and the actions steer every agent that uses the
   graph, in every project:
   `maintain` on a graph other projects read lets one project's admin write
-  instructions for their agents and choose which queries and which reviewed writes they run. <!-- claim: security_model.project_admin_ceiling -->
+  instructions for their agents and choose which queries and which reviewed writes they run.
+  Tokens whose grants name entries ([catalog grants](access_control.md#catalog-grants)) run exactly
+  what the catalog then says under that name, so the admin also defines what such a token reads and
+  writes, though not which names it holds. <!-- claim: security_model.project_admin_ceiling -->
 - A token bound to a project (`token create --project`) verifies the
   project, so that project's scope is a boundary for the token, and a
   grant to the project (`principal: {project: P}`) reaches it; without a
@@ -78,16 +81,31 @@ prevents depends on what is verified:
   change counts from the next request, as a revoke does, and every change is
   audited ([Audit](audit.md#token-verification)). <!-- claim: security_model.roles_verified -->
 - Catalog grants ([Catalog grants](access_control.md#catalog-grants)) limit a server
-  token to the published functions and views its grant names (actions follow with the writes
-  through entries): it runs them with the entry's own rights, over its own read view, so a
-  function or view reads what the token could not `get` or `find` by hand, while every primitive,
+  token to the published functions, actions and views its grant names: it runs them with the
+  entry's own rights, over its own read view, so a function or view reads what the token could
+  not `get` or `find` by hand (an action writes, see the next item), while every primitive,
   the card and every entry the grant does not name stay refused or unknown. They hold like any
   rule: only through server tokens (the grant needs `entrypoint: server`, since a local agent with
   a shell reads the files). What an entry needs is decided deny-only: an explicit deny rule, a
   scope, a type limit or a ceiling still refuses it, and the audit of a refusal names the entry,
   and the grant when the entry decision allowed it, next to the rule that denied. An entry
-  outside the grant is `not_found`, as for a name never published. Whoever may publish the graph's catalog decides what a granted name reads
-  (see the project admin item). <!-- claim: security_model.catalog_grants -->
+  outside the grant is `not_found`, as for a name never published. Whoever may publish the
+  graph's catalog decides what a granted name reads (see the project admin item). <!-- claim: security_model.catalog_grants -->
+- An action a catalog grant names writes through the grant ([Actions](access_control.md#actions)):
+  `graph do` of it is decided by the token's own rights first and, where they lack an allow, by the
+  entry, `write.action` on the action's resource and then every op of its expansion deny-only. A
+  token therefore writes what the action's template says although it could not write it by hand, so
+  that a reviewed action can be the one way to change a type, while every deny rule, scope, type
+  limit, term or agent-type rule, ceiling and obligation still refuses the whole action
+  (`access.denied`, nothing is written), and a type or attribute the token does not see is never
+  written (its decision is the one on a resource no rule names, which no grant allows). The
+  decisions are made again under the lock after a policy refresh and in a dry run. The audit event
+  of the write names the action (name and hash) and, in every decision, the grant that let the step
+  through; a refusal of an action the caller sees names it too. For a token limited to its catalog,
+  an action the grant does not name is `action.not_found`; a reader with `catalog.actions` keeps
+  its answer for the others. The action's template, preconditions, outputs and refusals are a
+  security boundary for these callers: whoever may publish the graph's actions decides what a
+  granted name writes (see the project admin item). <!-- claim: security_model.catalog_actions -->
 - A caller limited to a catalog cannot list the graph through the one thing it may ask for,
   entities by name, except by trying aliases (the residual below)
   ([References and names](access_control.md#references-and-names-for-a-caller-limited-to-its-catalog)):
@@ -192,8 +210,8 @@ the functions, actions and views the caller may use (and the `lookup` tool only 
 served one: it may find entities, or its catalog grant names an entry with a reference input and
 nothing denies `read.find`), and its schemas hold the enum values, classes and entity attributes of
 the model the caller sees, so a hidden type, attribute or marking never reaches it, and an entry
-the caller sees but may not use is absent. <!-- claim: security_model.tool_manifest_per_caller --> A call of a
-tool (`graph call`) is no way around that: it finds the tool among the entries the caller sees (one it
+the caller sees but may not use is absent. <!-- claim: security_model.tool_manifest_per_caller -->
+A call of a tool (`graph call`) is no way around that: it finds the tool among the entries the caller sees (one it
 does not see is `tool.not_found`, one it may not use is `access.denied`, recorded) and runs the service
 of the command behind it, so who may do it, what is refused and what the audit records are the
 command's. <!-- claim: security_model.tool_call_is_the_command --> What is left
@@ -231,7 +249,8 @@ are accepted and known:
   of these as rights of the caller (they are asked deny-only), which adds one accepted
   point: `graph view REF` answers with the default view where the entity's class has a granted
   default view and with the one refusal of the card otherwise (the entity of a granted entity view
-  that is of another class is `entity.not_found`, like an unknown id). <!-- claim: security_model.view_is_read_get -->
+  that is of another class is `entity.not_found`, like an unknown id).
+  <!-- claim: security_model.view_is_read_get -->
 - **A function, action or view the caller may not use is named.** One that names only what the
   caller sees but needs a right it lacks is listed as not allowed, with its name, summary, `use_when`,
   parameters and the right that is missing; the maintainer's query, operations, conditions, sections
@@ -246,6 +265,13 @@ are accepted and known:
   manifest, the section of the answer and the `view.function_deprecated` warning. No listing,
   search, count, skill function document or `whoami` of that caller names a function its grants
   do not name, and `run` of it is `function.not_found`. <!-- claim: security_model.view_names_row_functions -->
+- **An action a catalog caller runs shows what it touches.** The refusal of a failed precondition
+  quotes the actual values of the attributes it checks on the entities the caller named, an
+  integrity refusal names the visible data it conflicts with, and the answer names the ids of what
+  the action created or changed: the details a caller with write rights gets, now also for a token
+  that could not read those entities by hand (of types it sees). They are not filtered, because an
+  agent needs them to correct a call; an action's `require` conditions are written with that in
+  mind. <!-- claim: security_model.catalog_action_residual -->
 - **A catalog caller can walk aliases and sees facts.** An alias it tries is accepted or
   `entity.not_found`, and aliases are minted in sequence (`DEPT-0001`, `DEPT-0002`, ...), so it can
   walk the aliases of the class of a reference parameter of any entry it may use (a `many`

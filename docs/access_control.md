@@ -873,8 +873,9 @@ Every published function, action and view is, for one caller, in one of three st
   are never in an answer or an error (but a view names the function its `rows` section runs, as
   its definition says: a caller of a granted view reads that name there, see below); `run`, `do`,
   `view --name`, `call` and `describe` of it answer as for a name that was never published
-  (`function.not_found`, `action.not_found`, `view.not_found`, `tool.not_found`). Hidden depends on what the caller sees and never on the
-  rights it holds: a caller who loses a right does not see more or fewer hidden entries. A
+  (`function.not_found`, `action.not_found`, `view.not_found`, `tool.not_found`). Hidden depends on
+  what the caller sees and never on the rights it holds: a caller who loses a right does not see
+  more or fewer hidden entries. A
   caller that holds a read grant next to its catalog grant, or only `catalog.actions` on a read
   grant, is not limited to a catalog, and unnamed entries stay what the read view makes them.
 - **Allowed.** The caller sees everything the entry names and holds the rights it needs.
@@ -884,8 +885,9 @@ Every published function, action and view is, for one caller, in one of three st
   the graph itself, so a named function or view is allowed through its entry decision, with what it
   needs checked deny-only ([Decisions on catalog entries](#decisions-on-catalog-entries)): it is
   not allowed only when a deny rule takes the entry or one of its needs, and `missing` names that
-  right. A named action is still classified by the write rights it needs, which only `do` by hand
-  would use. The rights are `read.function` on the
+  right. A named action is allowed the same way, through `write.action` on its resource and its
+  needs asked deny-only ([Actions](#actions)); a caller that also holds write rights of its own
+  is classified by them first. The rights are `read.function` on the
   graph (a function, and a view with a `rows` section), `read.get` on the graph (every view),
   `read.find` (a set view) and, for an action,
   per unmet need the first denied write decision: the write action on the type, or on the attribute
@@ -1198,13 +1200,37 @@ named by [catalog grants](#catalog-grants)
   `require_reason` and `max_batch` obligations of the policy (and, where the
   policy has rules on the attributes or relations of a type, one more per
   attribute or relation written, [Decisions](#decisions-on-attributes-and-relations)).
-  An action therefore never writes what the caller could not write by hand. A
+  An action therefore never writes what the caller could not write by hand,
+  unless the caller's grants name the action (next item). A
   deny on the type or on a term of one op refuses the whole action with
   `access.denied`, audited like any write denial, and nothing is written; a
   replay or the details of a failed precondition do not reach a caller without
   the rights. When the expansion has no op (an `all: true` unlink with nothing
   to remove), the action is authorized on what it declares to need, by the rule
   of the listing.
+- **Through a grant.** When a [catalog grant](#catalog-grants) names the action, its caller
+  runs it although its own rights lack an allow for what the ops write (a token with
+  `level: catalog`, which writes nothing by hand, or a reader with `catalog.actions`). The
+  decisions are made in this order: the caller's own rights first, so every caller keeps the
+  answer and the audit event it had, and only where a write has no allow, the entry: `write.action`
+  on `graph:<id>/action:<name>`, decided with the request's reason and the op count of the
+  expansion, then every op *deny-only* ([Decisions on catalog
+  entries](#decisions-on-catalog-entries)). The first matching deny rule refuses the whole action
+  with `access.denied` and nothing is written: a type limit (`read` or `none`), a term deny rule, a
+  scope, a rule on an agent type or any other deny, or a deny of `write.action` itself. Obligations
+  count once: `require_reason` and `max_batch` hold on the entry decision and on each op with
+  the same context, so an action of two ops under `max_batch: 2` is allowed and under
+  `max_batch: 1` is refused with `access.batch_too_large`; without a reason the caller is
+  told `access.reason_required`, naming `write.action` when the obligation covers it (`write.*` or
+  `write.action`) and the op's write otherwise. A type or attribute the caller does not
+  see is never written: its decision is the one on a resource no rule names, which no grant
+  allows (an action that names one is hidden from the listing, and a write service asked anyway
+  answers `access.denied`). References and preconditions resolve over what the caller sees, as
+  for any action. The decisions are made again under the lock, after the policy is refreshed, and
+  in a dry run, which gets the same answer without a record. The audit event names the action
+  (`request.action`) and the grant behind every decision ([Audit](audit.md)), a replay by
+  idempotency key is what it was, and a caller whose rights allow the ops by hand, or whose grants
+  do not name the action, is never decided through the entry.
 - **Needs.** What an action needs is derived when its catalog is loaded
   against the graph's pinned ontology, so nothing is republished when the
   ontology or a policy changes. A need on an abstract class or a superclass
@@ -1219,11 +1245,16 @@ named by [catalog grants](#catalog-grants)
   `describe modules` and `describe search` show an action as one the caller may
   run only when, for each need, at least one of its concrete types allows it, with the attributes and
   relations the action writes there where the policy has rules on terms of that
-  type (any-of per need). So an action no argument could run is not listed, and a
+  type (any-of per need). For an action a catalog grant names, a concrete type allows it when
+  the deny-only decision does (no deny rule takes the write), so the need is met through the first
+  type that passes, and `missing` names the first write a deny rule takes. So an action no
+  argument could run is not listed, and a
   listed action can still be refused for an entity of a type the caller may not
   write; the refusal names the resource. The check
   records no decision (no denial event), like the listing of functions, and
-  obligations do not hide an action: one that needs `--reason` is listed.
+  obligations do not hide an action: one that needs `--reason` is listed, and its tool in the
+  manifest demands a `_reason` when a `require_reason` obligation holds for a write the action needs
+  (for a caller through a grant, as the entry path will hold it, `write.action` included).
   An action that fails the check is *not allowed*: counted in `not_allowed`,
   listed with `--include-not-allowed`, found by search and shown by
   `describe action` with `allowed: false` and the first denied write per unmet
@@ -1236,9 +1267,13 @@ named by [catalog grants](#catalog-grants)
   only the featured actions the installing reader may run
   ([Skills](skills.md#per-reader)).
 - **Publishing** the catalog is `maint.graph_configure`, as for the functions.
-- **No writes only through actions.** The policy language cannot let an agent
-  type run reviewed actions while it may not use the primitives: that would
-  let an action grant what its op would not.
+- **Writes only through actions.** A catalog grant is how a token runs reviewed actions while it
+  may not use the primitives: it names the actions one by one, and nothing else of the policy
+  language does (a `writes` list and the type, attribute and relation rules never name
+  `write.action`; only a plain deny rule may). That
+  makes the action's template, preconditions, outputs and refusals a security boundary for such a
+  token: it writes what the template says, so whoever may publish the graph's actions decides
+  what a granted name writes ([Security model](security_model.md#prevention)).
 
 ## Reconcile documents
 

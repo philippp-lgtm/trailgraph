@@ -18,7 +18,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Final
 
-from graph_cli.access_control.authorize import allow_rule_holds, authorize
+from graph_cli.access_control.authorize import allow_rule_holds, authorize, authorize_entry
 from graph_cli.access_control.compiler import CATALOG_BASE_ACTIONS, WRITE_VERBS
 from graph_cli.access_control.documents import (
     CURIE_RE,
@@ -43,7 +43,7 @@ from graph_cli.kernel.actions import (
     level_actions,
 )
 from graph_cli.kernel.actor import ActorContext, Assurance
-from graph_cli.kernel.authz import AuthzContext
+from graph_cli.kernel.authz import AuthzContext, Decision
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import WarningRecord
 from graph_cli.kernel.ids import GraphId
@@ -326,14 +326,40 @@ def write_obligations(
                 break
         if decision is None:
             continue
-        entry: dict[str, JsonValue] = {}
-        if decision.obligations.require_reason:
-            entry["require_reason"] = True
-        if decision.obligations.max_batch is not None:
-            entry["max_batch"] = decision.obligations.max_batch
+        entry = _obligation_entry(decision)
         if entry:
             found[action] = entry
     return found
+
+
+def entry_write_obligations(
+    actor: ActorContext, graph: GraphId, entered: Decision, policy: PolicySet
+) -> dict[str, JsonValue]:
+    """``{action: {require_reason?, max_batch?}}`` of the writes an action the caller's grants name
+    asks on ``graph:<id>``: the write actions are decided deny-only through ``authorize_entry``
+    (``entered`` is the allow of ``authorize`` on the action's entry resource, made under
+    ``policy`` for ``actor``), so the obligations shown are the ones the entry path will hold the
+    ops to, whatever allow rules the caller lacks by hand. A write a rule denies is left out. The
+    entry decision's own obligation is listed under its action (``write.action``)."""
+    found: dict[str, JsonValue] = {}
+    own = _obligation_entry(entered)
+    if own:
+        found[str(entered.action)] = own
+    for action in sorted(LEVEL_WRITE_ACTIONS):
+        decision = authorize_entry(actor, entered, action, f"graph:{graph}", _PROBE, policy)
+        entry = _obligation_entry(decision) if decision.effect == "allow" else {}
+        if entry:
+            found[action] = entry
+    return found
+
+
+def _obligation_entry(decision: Decision) -> dict[str, JsonValue]:
+    entry: dict[str, JsonValue] = {}
+    if decision.obligations.require_reason:
+        entry["require_reason"] = True
+    if decision.obligations.max_batch is not None:
+        entry["max_batch"] = decision.obligations.max_batch
+    return entry
 
 
 def write_grant_types(actor: ActorContext, graph: GraphId, policy: PolicySet) -> tuple[str, ...]:
