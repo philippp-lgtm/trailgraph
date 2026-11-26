@@ -4,9 +4,11 @@
 An entry decision (``authorize`` on ``graph:<id>/<kind>:<name>``) lets a caller run the entry;
 what the entry reads or writes is then decided by ``authorize_entry``: the ceiling and the first
 matching deny rule of every layer, then the obligations, and never an allow rule. The tests pin
-that it never allows what a deny rule, a scope or a ceiling refuses, and that it allows what
-only the default would refuse. The mutation checks (remove the deny loop, remove the ceiling
-check: these tests fail) are recorded in the implementation notes of the change.
+that it never allows what a deny rule, a scope or a ceiling refuses, that it allows what only the
+default would refuse, and that it answers only questions an entry may ask (an allow entry
+decision of the right kind under the same policy, the graph's reads, writes on the graph, its
+types and terms). The mutation checks (remove the deny loop, a guard, the ceiling check: these
+tests fail) are recorded in the implementation notes of the change.
 """
 
 import dataclasses
@@ -18,8 +20,9 @@ from support.txbuilder import actor
 from graph_cli.access_control.authorize import authorize, authorize_entry
 from graph_cli.access_control.compiler import compile_policy
 from graph_cli.access_control.policy import policy_set
+from graph_cli.kernel.actions import ENTRY_KIND_ACTIONS, Action
 from graph_cli.kernel.actor import ActorContext, Assurance, ClientInfo, Entrypoint, Facet
-from graph_cli.kernel.authz import AuthzContext, Obligations
+from graph_cli.kernel.authz import AuthzContext, Decision, Obligations
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import GraphId, parse_id
 from graph_cli.kernel.ports.policy import PolicySet
@@ -32,6 +35,8 @@ TICKET = f"{GRAPH}/type:ex:Ticket"
 CUSTOMER = f"{GRAPH}/type:ex:Customer"
 STATUS = f"{TICKET}/attr:status"
 ACTION = f"{GRAPH}/action:close_ticket"
+FUNCTION = f"{GRAPH}/function:open_tickets"
+VIEW = f"{GRAPH}/view:ticket_overview"
 GRANTED = "grant.1.actions"
 CTX = AuthzContext(op_count=1, has_reason=True, dry_run=False)
 NO_REASON = AuthzContext(op_count=1, has_reason=False, dry_run=False)
@@ -109,6 +114,26 @@ def token(
 SUPPORT = token("support")
 
 
+def passed(
+    *,
+    kind: str = "action",
+    resource: str | None = None,
+    rule: str = GRANTED,
+    policy: PolicySet | None = None,
+) -> Decision:
+    """An entry decision as ``authorize`` makes it for a caller whose grant names the entry,
+    built by hand so that any actor can be asked about (the property tests need entries a given
+    actor was never granted)."""
+    named = {"action": ACTION, "function": FUNCTION, "view": VIEW}[kind]
+    return Decision(
+        "allow",
+        Action(ENTRY_KIND_ACTIONS[kind]),
+        resource or named,
+        rule,
+        (policy or installed()).hash,
+    )
+
+
 def entry(
     who: ActorContext,
     action: str,
@@ -117,7 +142,9 @@ def entry(
     ctx: AuthzContext = CTX,
     policy: PolicySet | None = None,
 ) -> tuple[str, str, str | None]:
-    decision = authorize_entry(who, action, resource, ctx, policy or installed(), GRANTED)
+    decision = authorize_entry(
+        who, passed(policy=policy), action, resource, ctx, policy or installed()
+    )
     return decision.effect, decision.rule_id, decision.code
 
 
@@ -128,7 +155,7 @@ def test_what_no_rule_allows_is_allowed_to_the_entry_and_names_the_granting_rule
     """The caller's grants do not name a write of a type: ``authorize`` refuses it by default,
     and the entry decision (its action was granted by ``grant.1.actions``) allows it."""
     assert authorize(SUPPORT, "write.update", TICKET, CTX, installed()).rule_id == "default.deny"
-    decision = authorize_entry(SUPPORT, "write.update", TICKET, CTX, installed(), GRANTED)
+    decision = authorize_entry(SUPPORT, passed(), "write.update", TICKET, CTX, installed())
     assert decision.effect == "allow"
     assert (decision.action, decision.resource) == ("write.update", TICKET)
     assert decision.rule_id == GRANTED
@@ -136,23 +163,29 @@ def test_what_no_rule_allows_is_allowed_to_the_entry_and_names_the_granting_rule
     assert decision.code is None
     assert decision.obligations == Obligations(max_batch=3)
     assert decision.to_json()["rule_id"] == GRANTED
-    # reads of the graph itself, of a type, with the actions the caller could not use by hand
+    # reads of the graph itself, with the actions the caller could not use by hand
     assert entry(SUPPORT, "read.get", GRAPH)[0] == "allow"
     assert entry(SUPPORT, "read.find", GRAPH)[0] == "allow"
-    assert entry(SUPPORT, "read.get", CUSTOMER)[0] == "allow"
     assert entry(SUPPORT, "write.create", STATUS)[0] == "allow"
     assert entry(SUPPORT, "write.link", f"{TICKET}/rel:ex:about")[0] == "allow"
 
 
-def test_the_decision_names_the_rule_the_caller_passes() -> None:
-    for rule in ("grant.1.functions", "grant.7.actions", "grant.2.views"):
-        decision = authorize_entry(SUPPORT, "read.get", GRAPH, CTX, installed(), rule)
+def test_the_decision_names_the_rule_of_the_entry_decision() -> None:
+    for kind, rule in (
+        ("function", "grant.1.functions"),
+        ("action", "grant.7.actions"),
+        ("view", "grant.2.views"),
+        ("action", "grant.3"),  # a level write grant allows write.action through its glob
+    ):
+        decision = authorize_entry(
+            SUPPORT, passed(kind=kind, rule=rule), "read.get", GRAPH, CTX, installed()
+        )
         assert decision.rule_id == rule
 
 
 def test_the_decision_is_pure_and_repeats() -> None:
-    first = authorize_entry(SUPPORT, "write.update", TICKET, CTX, installed(), GRANTED)
-    assert authorize_entry(SUPPORT, "write.update", TICKET, CTX, installed(), GRANTED) == first
+    first = authorize_entry(SUPPORT, passed(), "write.update", TICKET, CTX, installed())
+    assert authorize_entry(SUPPORT, passed(), "write.update", TICKET, CTX, installed()) == first
 
 
 # ---- a deny rule of any layer wins ----------------------------------------------------
@@ -160,10 +193,10 @@ def test_the_decision_is_pure_and_repeats() -> None:
 
 DENIED = [
     # (who, action, resource, rule): the first matching deny rule, of either layer
-    # graph layer: a type limit (read: no writes), a hidden type (none), a term rule
+    # graph layer: a type limit (read: no writes), a hidden type (none: no writes), a term rule
+    (SUPPORT, "write.update", f"{GRAPH}/type:ex:Secret", "type.ex:Secret"),
     (SUPPORT, "write.update", CUSTOMER, "type.ex:Customer"),
     (SUPPORT, "write.create", CUSTOMER, "type.ex:Customer"),
-    (SUPPORT, "read.get", f"{GRAPH}/type:ex:Secret", "type.ex:Secret"),
     (SUPPORT, "write.update", STATUS, "deny.no_status_update"),
     # installation: deny rules by agent type, role and device
     (token("support", agent_type="explore"), "write.update", TICKET, "deny.no_explore_writes"),
@@ -172,11 +205,9 @@ DENIED = [
     (token("support", device="dev-1"), "read.find", GRAPH, "deny.no_device_find"),
     # scopes: none takes every read and write, read takes the writes
     (token("support", project="frozen"), "read.get", GRAPH, "scope.frozen.example_graph"),
-    (token("support", project="frozen"), "read.get", TICKET, "scope.frozen.example_graph"),
     (token("support", project="frozen"), "write.update", TICKET, "scope.frozen.example_graph"),
     (token("support", project="readonly"), "write.update", TICKET, "scope.readonly.example_graph"),
     (token("support", project="readonly"), "write.create", STATUS, "scope.readonly.example_graph"),
-    (token("support", project="readonly"), "write.action", ACTION, "scope.readonly.example_graph"),
 ]
 
 
@@ -199,10 +230,16 @@ def test_the_first_matching_rule_names_the_denial() -> None:
 
 def test_a_scope_of_another_project_or_graph_does_not_deny() -> None:
     assert entry(token("support", project="open"), "write.update", TICKET)[0] == "allow"
+    # another graph, with an entry decision of its own: the scope of this graph does not apply
     other = f"graph:{OTHER}"
-    assert entry(token("support", project="frozen"), "read.get", other)[0] == "allow"
+    elsewhere = passed(resource=f"{other}/action:close_ticket")
+
+    def decide(who: ActorContext, action: str, resource: str) -> str:
+        return authorize_entry(who, elsewhere, action, resource, CTX, installed()).effect
+
+    assert decide(token("support", project="frozen"), "read.get", other) == "allow"
     assert (
-        entry(token("support", project="readonly"), "write.update", f"{other}/type:ex:Ticket")[0]
+        decide(token("support", project="readonly"), "write.update", f"{other}/type:ex:Ticket")
         == "allow"
     )
 
@@ -230,37 +267,33 @@ def test_a_deny_with_exceptions_holds_where_no_exception_matches() -> None:
 
 
 def test_no_maintenance_action_is_reachable_through_an_entry() -> None:
-    """The ceilings of the app and the server hold whatever an entry granted."""
-    server = token("support")
-    app = actor()
-    for who, rule in ((server, "ceiling.server_no_maint"), (app, "ceiling.app_no_maint")):
+    """An entry needs no ``maint.*`` action: asking for one is a bug, never an allow (the
+    ceilings of the app and the server would deny it anyway, but it is not even asked)."""
+    for who in (token("support"), actor(), maint_actor()):
         for action in ("maint.audit_verify", "maint.graph_configure", "maint.repair"):
-            assert entry(who, action, "installation") == ("deny", rule, "access.ceiling")
-            assert entry(who, action, GRAPH) == ("deny", rule, "access.ceiling")
+            for resource in ("installation", GRAPH):
+                with pytest.raises(GraphCliError) as info:
+                    authorize_entry(who, passed(), action, resource, CTX, installed())
+                assert info.value.code == "internal.error", (action, resource)
 
 
 def test_a_project_admin_keeps_its_ceiling() -> None:
     admin = dataclasses.replace(
         maint_actor(), project=Facet(Assurance.VERIFIED, id="open", source="token")
     )
-    # graph-level maintenance of a graph and read.get are the whole of its rights
-    assert entry(admin, "maint.reindex", GRAPH)[0] == "allow"
+    # read.get of a graph is within what a project admin gets
     assert entry(admin, "read.get", GRAPH)[0] == "allow"
     for action, resource in (
         ("write.update", TICKET),
-        ("read.function", f"{GRAPH}/function:open_tickets"),
-        ("maint.token_create", "installation"),
-        ("maint.reindex", "installation"),
-        ("read.get", "installation"),
+        ("write.create", GRAPH),
+        ("read.function", GRAPH),
+        ("read.find", GRAPH),
     ):
         assert entry(admin, action, resource) == (
             "deny",
             "ceiling.project_maint",
             "access.ceiling",
-        ), (
-            action,
-            resource,
-        )
+        ), (action, resource)
 
 
 # ---- obligations -----------------------------------------------------------------------
@@ -294,7 +327,6 @@ def test_an_obligation_on_write_star_counts_the_entry_decision_once() -> None:
     the op count of the expansion each time, not summed."""
     ctx = dataclasses.replace(CTX, op_count=3)
     assert authorize(SUPPORT, "write.action", ACTION, ctx, installed()).effect == "allow"
-    assert entry(SUPPORT, "write.action", ACTION, ctx=ctx)[0] == "allow"
     assert entry(SUPPORT, "write.update", TICKET, ctx=ctx)[0] == "allow"
     over = dataclasses.replace(CTX, op_count=4)
     assert authorize(SUPPORT, "write.action", ACTION, over, installed()).code == (
@@ -314,21 +346,119 @@ def test_a_dry_run_is_decided_like_the_real_run() -> None:
 # ---- what is asked must be well formed ------------------------------------------------
 
 
+def _refused(entry_decision: Decision, action: str, resource: str, policy: PolicySet) -> None:
+    with pytest.raises(GraphCliError) as info:
+        authorize_entry(SUPPORT, entry_decision, action, resource, CTX, policy)
+    assert info.value.code == "internal.error", (entry_decision, action, resource)
+
+
 def test_malformed_questions_are_bugs() -> None:
-    for action, resource, rule in (
-        ("write.delete", TICKET, GRANTED),
-        ("write.update", "graph:nope", GRANTED),
-        ("write.update", f"{GRAPH}/function:Bad", GRANTED),
-        ("write.update", TICKET, ""),
+    for action, resource in (
+        ("write.delete", TICKET),
+        ("write.update", "graph:nope"),
+        ("write.update", f"{GRAPH}/function:Bad"),
     ):
-        with pytest.raises(GraphCliError) as info:
-            authorize_entry(SUPPORT, action, resource, CTX, installed(), rule)
-        assert info.value.code == "internal.error", (action, resource, rule)
+        _refused(passed(), action, resource, installed())
 
 
-def test_an_extension_action_of_a_declared_namespace_is_decided_too() -> None:
-    assert entry(SUPPORT, "ext.notes.tag", GRAPH)[0] == "allow"
-    assert entry(token("support", project="frozen"), "ext.notes.tag", GRAPH)[0] == "deny"
+def test_the_entry_decision_must_be_an_allow() -> None:
+    denial = Decision(
+        "deny",
+        Action("write.action"),
+        ACTION,
+        "default.deny",
+        installed().hash,
+        code="access.denied",
+    )
+    _refused(denial, "read.get", GRAPH, installed())
+
+
+def test_the_entry_decision_must_be_made_on_an_entry_resource() -> None:
+    for resource in (GRAPH, TICKET, STATUS, "installation", f"{GRAPH}/type:ex:Ticket"):
+        _refused(passed(resource=resource), "read.get", GRAPH, installed())
+
+
+def test_the_entry_decision_must_carry_the_action_of_its_kind() -> None:
+    for kind, wrong in (
+        ("action", "read.function"),
+        ("function", "write.action"),
+        ("view", "read.function"),
+        ("function", "read.get"),
+    ):
+        named = {"action": ACTION, "function": FUNCTION, "view": VIEW}[kind]
+        mismatched = Decision("allow", Action(wrong), named, GRANTED, installed().hash)
+        _refused(mismatched, "read.get", GRAPH, installed())
+    # the right action on the wrong kind of entry
+    swapped = Decision("allow", Action("read.function"), ACTION, GRANTED, installed().hash)
+    _refused(swapped, "read.get", GRAPH, installed())
+
+
+def test_the_entry_decision_must_be_made_under_the_same_policy() -> None:
+    """After a policy refresh a decision from before grants nothing (the lock-time re-decision
+    must ask ``authorize`` on the entry again)."""
+    before = installed(layer=False)
+    assert before.hash != installed().hash
+    _refused(passed(policy=before), "read.get", GRAPH, installed())
+    # the same policy: accepted
+    assert (
+        authorize_entry(SUPPORT, passed(policy=before), "read.get", GRAPH, CTX, before).effect
+        == "allow"
+    )
+
+
+def test_the_entry_decision_must_name_its_rule() -> None:
+    _refused(passed(rule=""), "read.get", GRAPH, installed())
+
+
+def test_the_question_must_be_about_the_graph_of_the_entry() -> None:
+    other = f"graph:{OTHER}"
+    for action, resource in (
+        ("read.get", other),
+        ("write.update", f"{other}/type:ex:Ticket"),
+        ("write.create", other),
+    ):
+        _refused(passed(), action, resource, installed())
+
+
+def test_an_entry_never_asks_another_entry_a_marking_or_the_installation() -> None:
+    marking = f"marking:{EXAMPLE}/ex:secret"
+    for action, resource in (
+        ("read.function", FUNCTION),
+        ("read.view", VIEW),
+        ("write.action", ACTION),
+        ("read.get", marking),
+        ("write.update", marking),
+        ("read.get", "installation"),
+        ("write.update", "installation"),
+    ):
+        _refused(passed(), action, resource, installed())
+
+
+def test_what_a_caller_sees_stays_with_authorize() -> None:
+    """``read.get`` is asked on the graph itself only: the visibility of a type is decided by
+    ``authorize`` (``visibility()``), never deny-only."""
+    for resource in (TICKET, CUSTOMER, STATUS, f"{GRAPH}/type:ex:Secret"):
+        _refused(passed(), "read.get", resource, installed())
+
+
+def test_only_the_reads_and_writes_an_entry_needs_are_asked() -> None:
+    for action in ("read.list", "read.describe", "read.history", "read.query", "read.native"):
+        if action == "read.native":
+            continue  # not in the taxonomy: covered by the unknown-action case below
+        _refused(passed(), action, GRAPH, installed())
+    for action in ("read.find", "read.function", "read.traverse"):
+        _refused(passed(), action, TICKET, installed())  # reads only on the graph itself
+    for action in ("ext.notes.tag", "maint.repair"):
+        _refused(passed(), action, GRAPH, installed())
+    _refused(passed(), "read.native", GRAPH, installed())  # unknown action
+
+
+def test_the_questions_of_an_entry_are_decided_deny_only() -> None:
+    for action in ("read.get", "read.find", "read.function", "read.traverse"):
+        assert entry(SUPPORT, action, GRAPH)[0] == "allow", action
+    for action in ("write.create", "write.update", "write.link", "write.supersede"):
+        for resource in (GRAPH, TICKET, STATUS):
+            assert entry(SUPPORT, action, resource)[0] in ("allow", "deny"), (action, resource)
 
 
 # ---- the property: never more than the deny rules leave --------------------------------
@@ -346,47 +476,27 @@ ACTORS = [
     actor(),
     maint_actor(),
 ]
+
+
+def _questions(graph: str) -> list[tuple[str, str]]:
+    types = (f"{graph}/type:ex:Ticket", f"{graph}/type:ex:Customer", f"{graph}/type:ex:Secret")
+    return [
+        *(
+            (action, graph)
+            for action in ("read.get", "read.find", "read.function", "read.traverse")
+        ),
+        *(
+            (action, resource)
+            for action in ("write.create", "write.update", "write.retract", "write.link")
+            for resource in (graph, *types, f"{types[0]}/attr:status")
+        ),
+    ]
+
+
+# the entry decision of each graph, and what it may ask on it
 QUESTIONS = [
-    (action, resource)
-    for action in (
-        "read.list",
-        "read.get",
-        "read.find",
-        "read.function",
-        "read.view",
-        "write.create",
-        "write.update",
-        "write.retract",
-        "write.action",
-        "maint.repair",
-        "ext.notes.tag",
-    )
-    for resource in (
-        "installation",
-        GRAPH,
-        f"graph:{OTHER}",
-        TICKET,
-        CUSTOMER,
-        STATUS,
-        f"{GRAPH}/type:ex:Secret",
-        ACTION,
-        f"{GRAPH}/function:open_tickets",
-    )
+    (f"graph:{g}", question) for g in (EXAMPLE, OTHER) for question in _questions(f"graph:{g}")
 ]
-
-
-def _valid(action: str, resource: str) -> bool:
-    return not (
-        action in ("read.function", "read.view", "write.action")
-        and resource
-        in (
-            "installation",
-            TICKET,
-            CUSTOMER,
-            STATUS,
-            f"{GRAPH}/type:ex:Secret",
-        )
-    )
 
 
 @pytest.mark.parametrize("who", range(len(ACTORS)))
@@ -398,11 +508,10 @@ def test_an_entry_decision_never_allows_what_authorize_refuses_by_a_rule(who: in
     caller = ACTORS[who]
     policy = installed()
     differing = 0
-    for action, resource in QUESTIONS:
-        if not _valid(action, resource):
-            continue
+    for graph, (action, resource) in QUESTIONS:
         plain = authorize(caller, action, resource, CTX, policy)
-        through = authorize_entry(caller, action, resource, CTX, policy, GRANTED)
+        decision = passed(resource=f"{graph}/action:close_ticket")
+        through = authorize_entry(caller, decision, action, resource, CTX, policy)
         if plain.effect == "allow":
             assert through.effect == "allow", (action, resource)
             assert through.obligations == plain.obligations

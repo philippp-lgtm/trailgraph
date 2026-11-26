@@ -19,11 +19,13 @@ Order:
    predicts the real outcome.
 
 ``authorize_entry`` is the same decision without step 4, for what a catalog entry needs:
-a caller whose grant names a function, action or view (an *entry decision*, made by
-``authorize`` on the entry resource ``graph:<id>/<kind>:<name>``) runs it with the entry's
-rights, so what the entry reads or writes is not looked up as an allow rule of its own. The
-ceiling, every deny rule and the obligations still hold, and an allow is never produced by
-the policy there: the decision names the rule that allowed the entry (``granted_by``).
+a caller who passed an *entry decision* (``authorize`` on the entry resource
+``graph:<id>/<kind>:<name>``: any rule that allows it, a catalog grant among them) runs the
+entry with the entry's rights, so what the entry reads or writes is not looked up as an allow
+rule of its own. The ceiling, every deny rule and the obligations still hold, an allow is never
+produced by the policy there (the decision names the rule of the entry decision), and only what
+an entry needs can be asked: the graph's reads, writes on the graph and its types and terms.
+What a caller sees (types, markings) stays with ``authorize``.
 
 The documents of a ``PolicySet`` are its layers (installation, then the
 graph's own policy). Only the installation layer grants; every other rule
@@ -40,6 +42,7 @@ are loaded (``access_control.documents``), so reaching here is a bug.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Final
 
@@ -53,7 +56,9 @@ from graph_cli.access_control.documents import (
     strings,
 )
 from graph_cli.kernel.actions import (
+    ENTRY_KIND_ACTIONS,
     EXT_ACTION_RE,
+    LEVEL_WRITE_ACTIONS,
     PROJECT_ADMIN_ACTIONS,
     Action,
     is_known_action,
@@ -85,29 +90,69 @@ def authorize(
     return _decide(actor, Action(action), resource, resource, ctx, policy)
 
 
+# What a granted entry may ask: reads of the graph itself, and the write actions of the ladder on
+# the graph, its types and their terms. Never an entry action (an entry grants no other entry),
+# a read of a type or a marking (what a caller sees stays with ``authorize``), a maintenance or
+# extension action, or anything outside the entry's graph.
+_ENTRY_READS: Final = frozenset({"read.get", "read.find", "read.function", "read.traverse"})
+_ENTRY_RESOURCE_RE: Final = re.compile(r"^(graph:[^/]+)/(function|action|view):[^/:]+$")
+
+
 def authorize_entry(
     actor: ActorContext,
+    entry: Decision,
     action: str,
     resource: str,
     ctx: AuthzContext,
     policy: PolicySet,
-    granted_by: str,
 ) -> Decision:
     """The decision on what a granted catalog entry needs (``action`` on ``resource``, say
     ``write.update`` on a type, ``read.get`` on the graph), made *deny-only*: the ceiling, then
     the first matching deny rule of every layer, then the obligations; no allow rule is looked
-    up. ``granted_by`` is the id of the rule that allowed the entry itself (the allow decision
-    of ``authorize`` on the entry resource); an allow names it as its rule, so the audit shows
-    which grant let the step through. Only a caller that holds such an entry decision may ask:
-    nothing here allows by itself, so a policy that denies the step (a type limit, a scope, a
-    term or agent-type rule, the ceiling) still refuses it. Recorded like every decision."""
+    up. ``entry`` is the allow decision of ``authorize`` on the entry resource
+    (``graph:<id>/<kind>:<name>``, with the action of its kind); an allow names its rule as its
+    own, so the audit shows which grant let the step through. Nothing here allows by itself, so a
+    policy that denies the step (a type limit, a scope, a term or agent-type rule, the ceiling)
+    still refuses it.
+
+    A question outside what an entry needs is a bug (``internal.error``): ``entry`` must be an
+    allow of the right kind made under this very policy (a decision from before a policy refresh
+    grants nothing); ``resource`` must be the entry's graph or a type or term of it, and
+    ``action`` a read of the graph (``read.get``, ``read.find``, ``read.function``,
+    ``read.traverse``) or a write action of the ladder, never an entry action, a read of a type
+    or marking, ``maint.*`` or ``ext.*``. Recorded like every decision."""
     if not (is_known_action(action) or EXT_ACTION_RE.match(action)):
         raise GraphCliError("internal.error", f"unknown action {action!r}")
     if not RESOURCE_RE.match(resource):
         raise GraphCliError("internal.error", f"malformed resource {resource!r}")
-    if not granted_by:
-        raise GraphCliError("internal.error", "an entry decision names the rule that granted it")
-    return _decide(actor, Action(action), resource, resource, ctx, policy, granted_by)
+    found = _ENTRY_RESOURCE_RE.match(entry.resource) if RESOURCE_RE.match(entry.resource) else None
+    if (
+        entry.effect != "allow"
+        or found is None
+        or entry.action != ENTRY_KIND_ACTIONS[found.group(2)]
+        or not entry.rule_id
+    ):
+        raise GraphCliError(
+            "internal.error",
+            "an entry decision is an allow on the entry, by the action of its kind",
+        )
+    if entry.policy_hash != policy.hash:
+        raise GraphCliError("internal.error", "the entry decision was made under another policy")
+    graph = found.group(1)
+    if not _entry_needs(action, resource, graph):
+        raise GraphCliError(
+            "internal.error", f"{action} on {resource} is not something an entry needs"
+        )
+    return _decide(actor, Action(action), resource, resource, ctx, policy, entry.rule_id)
+
+
+def _entry_needs(action: str, resource: str, graph: str) -> bool:
+    """Whether ``action`` on ``resource`` is something an entry of ``graph`` may ask."""
+    if action in _ENTRY_READS:
+        return resource == graph
+    if action in LEVEL_WRITE_ACTIONS:
+        return resource == graph or resource.startswith(f"{graph}/type:")
+    return False
 
 
 # Appended to the resource of ``authorize_unlisted_type`` and ``authorize_unlisted_attribute``:
