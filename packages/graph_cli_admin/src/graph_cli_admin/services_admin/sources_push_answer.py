@@ -15,9 +15,15 @@ from dataclasses import dataclass
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import WarningRecord
-from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot, SkillSlot
+from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot, SkillSlot, SlotKind
 from graph_cli.kinetic.format import FILE_SUFFIX
-from graph_cli_admin.services_admin import authored_views, functions, marking_warnings, skill
+from graph_cli_admin.services_admin import (
+    authored_views,
+    functions,
+    granted_entries,
+    marking_warnings,
+    skill,
+)
 from graph_cli_admin.services_admin.sources import base_document
 from graph_cli_admin.services_admin.sources_push_state import Catalogs, Locked
 
@@ -162,9 +168,10 @@ def push_warnings(
     after: GraphEntry,
     linted: tuple[WarningRecord, ...] = (),
 ) -> tuple[WarningRecord, ...]:
-    """The warnings of the push: the release's, then the pushed functions', actions', views' and
-    skill's; ``linted`` (the lint of the published skill against pushed functions, when the push
-    leaves the skill alone) comes last. ``linted`` is computed before the writes, with the other
+    """The warnings of the push: the release's, then the pushed functions', actions', views' (and
+    what replacing the catalogs does to the entries a catalog grant names) and skill's;
+    ``linted`` (the lint of the published skill against pushed functions, when the push leaves
+    the skill alone) comes last. ``linted`` is computed before the writes, with the other
     checks; the rest here after the writes and the new base: a warning check that raises fails
     the command late, with the push done."""
     warnings = locked.planned.warnings if locked.planned is not None else ()
@@ -182,6 +189,15 @@ def push_warnings(
         )
     if catalogs.views is not None:
         warnings += authored_views.deprecated_warnings(catalogs.views, catalogs.view_functions)
+    policy = locked.ctx.policy.current(locked.entry.id)
+    slots: tuple[tuple[SlotKind, KineticSlot | None, KineticSlot | None], ...] = (
+        ("functions", locked.current.functions, catalogs.functions),
+        ("actions", locked.current.actions, catalogs.actions),
+        ("views", locked.current.views, catalogs.views),
+    )
+    for kind, published, pushed in slots:
+        if pushed is not None:  # the catalogs a push replaces: what it does to granted entries
+            warnings += granted_entries.warnings(policy, locked.entry, kind, published, pushed)
     if checked is not None:
         warnings += checked.warnings(after, locked.ws.skill.name)
     return warnings + linted

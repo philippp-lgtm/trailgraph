@@ -25,7 +25,7 @@ from graph_cli.services.describe import (
     describe_relations,
     describe_type,
 )
-from graph_cli_admin.services_admin import policy, tokens, view
+from graph_cli_admin.services_admin import actions, policy, tokens, view
 from graph_cli_admin.services_admin.functions import publish
 from graph_cli_admin.services_admin.view import (
     ActivityTrail,
@@ -624,6 +624,90 @@ def test_the_policies_show_the_types_each_caller_sees(tmp_path: Path) -> None:
     data = policies_json(ctx, source_of_env(env))
     own = data["layers"][1]["rules"]  # type: ignore[index]
     assert {r["id"]: r["kind"] for r in own}["type.nas:WebPage"] == "type_limit"  # type: ignore[index]
+
+
+CATALOG_POLICY = """\
+schema: graph_cli.policy/1
+id: installation
+roles:
+  catalog_agent: {description: "Runs two functions and an action"}
+  reader: {description: "Reads the graph"}
+grants:
+  - entrypoint: server
+    principal: {role: catalog_agent}
+    graphs: [GRAPH]
+    level: catalog
+    catalog:
+      functions: [items_by_condition, ghost_report]
+      actions: [move_item]
+    reads: [inv:Item, inv:Location]
+  - {entrypoint: server, principal: {role: reader}, graphs: [GRAPH], level: read}
+no_project: {"*": write}
+"""
+
+
+def test_the_policies_show_the_level_catalog_and_the_names_each_caller_is_granted(
+    tmp_path: Path,
+) -> None:
+    env = ServiceEnv("files", "inventory", tmp_path / "root")
+    ctx = admin_context(env.root)
+    publish(ctx, graph_ref=env.name, source=FUNCTIONS, reason=None, dry_run=False)
+    actions.publish(
+        ctx, graph_ref=env.name, source=FIXTURES / "actions" / "inventory" / "valid",
+        reason=None, dry_run=False,
+    )  # fmt: skip
+    authored = tmp_path / "installation.yaml"
+    authored.write_text(CATALOG_POLICY.replace("GRAPH", env.name))
+    policy.apply(ctx, file=authored, graph_ref=None, reason="test")
+    installed = dataclasses.replace(ctx, policy=FilePolicySource(env.root))  # sees the roles
+    for name, roles in (("narrow", ["catalog_agent"]), ("both", ["catalog_agent", "reader"])):
+        tokens.create(installed, name=name, project=None, expires=None, reason=None, roles=roles)
+    tokens.create(
+        installed, name="plain", project=None, expires=None, reason=None, roles=["reader"]
+    )
+    data = policies_json(ctx, source_of_env(env))
+    access = {c.get("token"): c for c in data["callers"]}  # type: ignore[union-attr, index, misc]
+    hashes = {
+        f["name"]: f["hash"]  # type: ignore[index]
+        for f in functions_json(source_of_env(env))["functions"]  # type: ignore[union-attr]
+    }
+    _, shown = actions.show(ctx, graph_ref=env.name)
+    action_hashes = {a["name"]: a["hash"] for a in shown["actions"]}  # type: ignore[index, union-attr]
+    narrow = access["narrow"]
+    assert narrow["level"] == "catalog" and narrow["withheld"] == []
+    assert narrow["catalog"] == {
+        "functions": [
+            {"name": "ghost_report", "published": False, "hash": None},  # grants nothing yet
+            {
+                "name": "items_by_condition",
+                "published": True,
+                "hash": hashes["items_by_condition"],
+            },
+        ],
+        "actions": [
+            {
+                "name": "move_item",
+                "published": True,
+                "hash": action_hashes["move_item"],
+            }
+        ],
+        "views": [],
+        "catalog_only": True,
+        "reader_rules": [],
+    }
+    assert action_hashes["move_item"].startswith("sha256:")
+    # a token that also reads the graph is no catalog caller: the grant limits nothing for it
+    assert access["both"]["level"] == "read"
+    assert access["both"]["catalog"]["catalog_only"] is False  # type: ignore[index]
+    assert access["both"]["catalog"]["reader_rules"] == ["grant.2"]  # type: ignore[index]
+    assert "catalog" not in access["plain"] and "catalog" not in access[None]
+    # the rules that name an entry are grants of the graph's layer too
+    rules = {r["id"]: r for r in data["layers"][0]["rules"]}  # type: ignore[index]
+    assert rules["grant.1.functions"]["resource"] == [  # type: ignore[index]
+        f"graph:{env.entry.id}/function:ghost_report",
+        f"graph:{env.entry.id}/function:items_by_condition",
+    ]
+    assert rules["grant.1.actions"]["kind"] == "grant"  # type: ignore[index]
 
 
 def source_of_env(env: ServiceEnv) -> view.ViewSource:

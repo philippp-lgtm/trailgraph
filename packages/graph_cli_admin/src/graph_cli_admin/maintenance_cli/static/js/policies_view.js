@@ -44,9 +44,31 @@ function shortHash(hash) {
 function accessLevel(caller) {
   const box = frag(code(caller.level));
   if (caller.withheld.length) box.append(" ", el("span", "small", "withheld: "), frag(...caller.withheld.flatMap((a, i) => i ? [", ", code(a)] : [code(a)])));
+  if (caller.catalog) box.append(catalogText(caller.catalog));
   if (caller.reads) box.append(readsText(caller.reads));
   if (caller.markings) box.append(markingsText(caller.markings));
   if (caller.writes) box.append(writesText(caller.writes));
+  return box;
+}
+
+// The entries a caller's catalog grants name, per kind; a name the graph has not published yet
+// grants nothing and says so. A caller that also reads the graph is no catalog caller: the
+// grant limits nothing for it and the rules that make it a reader are named.
+function catalogText(catalog) {
+  const box = el("span", "small", "");
+  for (const kind of ["functions", "actions", "views"]) {
+    if (!catalog[kind].length) continue;
+    box.append(el("br"), `${kind}: `);
+    catalog[kind].forEach((entry, index) => {
+      if (index) box.append(", ");
+      box.append(code(entry.name));
+      if (!entry.published) box.append(" ", badge("not published", true));
+    });
+  }
+  if (!catalog.catalog_only) {
+    box.append(el("br"), "also reads the graph through ");
+    box.append(listOf(catalog.reader_rules, rule => code(rule)));
+  }
   return box;
 }
 
@@ -123,6 +145,12 @@ function resourceText(pattern) {
   if (marking) {
     const owner = policies.graphs[marking[1]] || marking[1];
     return frag("marking ", code(marking[2]), " in ", marking[1] === policies.graph.id ? el("strong", null, owner) : el("span", null, owner));
+  }
+  const entry = /^graph:([0-9a-f-]{36})\/(function|action|view):(.+)$/.exec(pattern);
+  if (entry) {
+    const owner = policies.graphs[entry[1]] || entry[1];
+    const graph = entry[1] === policies.graph.id ? el("strong", null, owner) : el("span", null, owner);
+    return frag(entry[3] === "*" ? `every ${entry[2]}` : frag(`${entry[2]} `, code(entry[3])), " in ", graph);
   }
   const found = /^graph:([0-9a-f-]{36})(\*|\/type:([^/]+)(?:\/(attr|rel):(.+))?)?$/.exec(pattern);
   if (!found) return code(pattern);

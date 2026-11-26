@@ -564,13 +564,16 @@ def test_policy_explain_shows_the_level_the_names_and_the_decision_on_an_entry(
 
     shown = explain("--role", "catalog_agent")
     assert shown.data["level"] == "catalog" and shown.data["withheld"] == []
-    assert shown.data["catalog"] == {
+    listed = shown.data["catalog"]
+    assert {k: [e["name"] for e in listed[k]] for k in ("functions", "actions", "views")} == {
         "functions": ["items_by_condition"],
         "actions": ["move_item"],
         "views": ["item_catalog"],
-        "catalog_only": True,
-        "reader_rules": [],
     }
+    assert all(
+        e["published"] and e["hash"] for k in ("functions", "actions", "views") for e in listed[k]
+    )
+    assert (listed["catalog_only"], listed["reader_rules"]) == (True, [])
     for flag, name, rule in (
         ("--function", "items_by_condition", "grant.1.functions"),
         ("--view", "item_catalog", "grant.1.views"),

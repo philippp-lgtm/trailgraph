@@ -62,8 +62,13 @@ prevents depends on what is verified:
   `maintain` on a graph other projects read lets one project's admin write
   instructions for their agents and choose which queries and which reviewed writes they run.
   Tokens whose grants name entries ([catalog grants](access_control.md#catalog-grants)) run exactly
-  what the catalog then says under that name, so the admin also defines what such a token reads and
-  writes, though not which names it holds. <!-- claim: security_model.project_admin_ceiling -->
+  what the catalog then says under that name, so whoever may publish a graph's catalog defines what
+  a catalog grant lets a token read and write, though not which names it holds. A publish that
+  removes or changes an entry a grant names warns (`catalog.granted_entry_removed`,
+  `catalog.granted_entry_changed`, [republishing](access_control.md#catalog-grants)) but is not
+  refused: the grant names, it does not pin, so the warning and `policy explain` (the entry's
+  current hash) are what a maintainer has until finer publish rights exist.
+  <!-- claim: security_model.project_admin_ceiling -->
 - A token bound to a project (`token create --project`) verifies the
   project, so that project's scope is a boundary for the token, and a
   grant to the project (`principal: {project: P}`) reaches it; without a

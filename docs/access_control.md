@@ -536,6 +536,25 @@ no_project: {"*": write}
   same role, token or project). Scopes and deny rules narrow the result, and an
   explicit deny wins: a deny rule on `read.function`, `read.view` or `write.action`
   takes the entries away like any other right.
+- **Republishing a granted entry.** A grant names an entry, never its content: the token
+  runs whatever the graph publishes under that name, so whoever may publish the graph's
+  catalog (graph maintainers, and project admins with `maintain` on the graph) defines what
+  the grant reads and writes. A publish therefore warns, never refuses, when it touches an
+  entry an installed grant names, so that a maintainer sees what it does to the tokens behind
+  the grant. `graph-admin graph functions publish`, `graph-admin graph actions publish`,
+  `graph-admin graph views publish` and `graph-admin graph push` warn `catalog.granted_entry_removed` when the new catalog lacks an entry the published one
+  has, and `catalog.granted_entry_changed` when the entry stays and its hash changes (its
+  sources, the model it resolves against or its status); each names the entry and the grants
+  (`grant.<n>` with the facts of its principal), the second both hashes. A removed entry that
+  named a `replaced_by` in the published catalog gives it in the warning, and the grant does
+  not follow it: a replacement may read and write otherwise, so a policy names it itself (a
+  renamed entry is the removal of the old name and a new, ungranted entry). The warnings
+  also show on a dry run and in remote mode, and an entry the catalog did not hold before
+  is not warned about (`policy.entry_unknown` said that its grant gave nothing). A release
+  that must compile the catalogs again for renamed terms republishes the same sources and does not
+  warn.
+  `graph-admin policy explain` shows the other direction: for each granted name `published`
+  and the entry's current `hash`, to compare with the hash a publish reported.
 
 ## Roles
 
@@ -1052,7 +1071,9 @@ every graph whose ontology uses no marking, is answered as before.
   and counts only the entries its grants name. `permissions.allowed` never lists the entry actions
   (`read.view`, `write.action`): they are decided on entries, not on a graph.
   `graph-admin policy explain` answers the same for roles, tokens and projects (`level`,
-  `withheld`, `catalog` with the names the grants give, published or not) and has three filters
+  `withheld`, `catalog` with the names the grants give, published or not, each as `{name,
+  published, hash}`: whether the graph publishes the entry now and its current hash, `null`
+  when it does not; `whoami` lists names only) and has three filters
   that ask one decision on one entry: `--function F` (`read.function`), `--view V`
   (`read.view`) and `--entry-action A` (`write.action`; `--action` stays the policy action),
   each excluding the others and every other question. The compiled rules `grant.<n>.functions`,
@@ -1061,7 +1082,9 @@ every graph whose ontology uses no marking, is answered as before.
   add` and `enroll create` do not warn `admin.token_not_granted` for a token whose roles hold
   one, and an enrollment code lists the graph.
 - The [live view](live_view.md) shows `reads` and `markings` next to the level
-  of a caller.
+  of a caller, and for a catalog caller `level: catalog` with the entries its grants name
+  (a name the graph has not published is marked). `token list` shows no level, since a level
+  belongs to a graph: `policy explain --token` answers it per graph.
 
 ## History
 

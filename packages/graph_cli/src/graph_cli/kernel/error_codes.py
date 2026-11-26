@@ -967,6 +967,18 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         False,
         "A catalog grant names an entry the graph has not published.",
     ),
+    ErrorSpec(
+        "catalog.granted_entry_removed",
+        _C.WARNING,
+        False,
+        "A publish removes an entry a catalog grant names.",
+    ),
+    ErrorSpec(
+        "catalog.granted_entry_changed",
+        _C.WARNING,
+        False,
+        "A publish changes an entry a catalog grant names.",
+    ),
     ErrorSpec("entity.superseded", _C.WARNING, False, "The entity is superseded."),
     ErrorSpec("entity.retracted", _C.WARNING, False, "The entity is retracted."),
     ErrorSpec("entity.alias_renamed", _C.WARNING, False, "The alias was renamed."),
