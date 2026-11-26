@@ -1,7 +1,7 @@
 """S: the publish warnings of catalog grants through the admin API (graph-admin in remote mode):
 the server runs the same checks, so a publish that removes or changes an entry a grant names
 answers with the same warnings, and a dry run shows them without publishing (catalog callers
-plan, step 4)."""
+plan, steps 4 and 5), and of an ontology release that compiles a granted entry again."""
 
 import shutil
 from pathlib import Path
@@ -13,6 +13,7 @@ from support.admin import admin, init
 from support.admin_api import command, served, upload_tree
 from support.app import create_graph
 from support.fixtures import FIXTURES
+from support.moved_supplier import BARE_FUNCTION, INVENTORY, moved_source, write_folder
 from support.policies import write_policy
 from support.server import call
 
@@ -183,3 +184,63 @@ def test_whoever_publishes_the_catalog_defines_what_a_granted_name_reads(
     (folder / "items_by_condition.yaml").unlink()
     assert codes(publish()) == ["catalog.granted_entry_removed"]
     assert columns() == "function.not_found"
+
+
+RELEASE_POLICY = """\
+schema: graph_cli.policy/1
+id: installation
+roles:
+  catalog_agent: {description: "Runs one function of example_graph"}
+grants:
+  - entrypoint: server
+    principal: {role: catalog_agent}
+    graphs: [example_graph]
+    level: catalog
+    catalog: {functions: [suppliers_by_name]}
+    reads: [inv:Item]
+scopes:
+  example_project: {example_graph: write}
+no_project: {"*": none}
+"""
+
+
+def test_a_remote_release_warns_about_the_granted_entries_it_compiles_again(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> None:
+    """The ontology release through the admin API: the catalogs it republishes for a renamed
+    term give a granted function another hash, and the answer says so, on a dry run as well."""
+    init(run_cli, isolated_env)
+    created = admin(
+        run_cli, "graph", "create", "example_graph", "--ontology", str(INVENTORY / "1.1.0")
+    )
+    assert created.code == 0, created.envelope
+    functions = write_folder(tmp_path, "functions", {"suppliers_by_name": BARE_FUNCTION})
+    assert (
+        admin(run_cli, "graph", "functions", "publish", "example_graph", str(functions)).code == 0
+    )
+    path = write_policy(tmp_path / "policies", "installation.yaml", RELEASE_POLICY)
+    assert admin(run_cli, "policy", "apply", str(path), "--reason", "release").code == 0
+    root = admin(run_cli, "token", "create", "root", "--scope", "admin").data["token"]
+    app = served({"env": isolated_env}, tmp_path)
+    source = moved_source(tmp_path)
+
+    def release(**more: Any) -> Any:
+        args = {
+            "graph": "example_graph",
+            "source": upload_tree(app, root, source),
+            "--module": "inventory",
+            **more,
+        }
+        return command(app, "ontology/release", root, args=args)
+
+    dry = release(**{"--dry-run": True})
+    assert codes(dry) == ["catalog.granted_entry_changed"]
+    (changed,) = [w for w in dry.json["warnings"] if w["code"].startswith("catalog.")]
+    assert changed["details"]["name"] == "suppliers_by_name"
+    assert changed["details"]["grants"] == [
+        {"grant": "grant.1", "principal": {"role": "catalog_agent"}}
+    ]
+    assert dry.json["data"]["pinned"] is False
+    done = release()
+    assert codes(done) == ["catalog.granted_entry_changed"]
+    assert done.json["data"]["pinned"] is True

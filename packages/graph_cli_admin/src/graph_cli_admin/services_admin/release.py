@@ -69,6 +69,7 @@ action publish under one lock, checking all before the first write.
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
@@ -95,7 +96,12 @@ from graph_cli.ontology_layer.semver import Version
 from graph_cli.services.migration import build_migration_tx, migration_record
 from graph_cli.services.term_model import extended_types, term_model
 from graph_cli.temporal_knowledge.name_map import Hop
-from graph_cli_admin.services_admin import marking_names, marking_warnings, renamed_terms
+from graph_cli_admin.services_admin import (
+    granted_entries,
+    marking_names,
+    marking_warnings,
+    renamed_terms,
+)
 from graph_cli_admin.services_admin import migration as migrations
 from graph_cli_admin.services_admin.catalog_follow import (
     Followed,
@@ -427,8 +433,10 @@ def plan(
                 raise views_broken(hint_problems(followed_views.problems), bump_details)
     warnings = module_bump_warnings(old_model, compiled.model, report) + rename_notes
     warnings += marking_notes
-    warnings += policies_affected(
-        ctx.policy.current(entry.id), entry, compiled.model, published_actions
+    policy = ctx.policy.current(entry.id)
+    warnings += policies_affected(policy, entry, compiled.model, published_actions)
+    warnings += republish_warnings(
+        policy, entry, (followed_functions, followed_actions, followed_views)
     )
     if bump == "excessive":
         warnings += (
@@ -846,6 +854,24 @@ def follow_published(
         follow(actions, model, pin, recompile=recompile, function_names=names),
         follow(views, model, pin, recompile=recompile, functions=entries),
     )
+
+
+def republish_warnings(
+    policy: PolicySet, entry: GraphEntry, followed: Sequence[Followed]
+) -> tuple[WarningRecord, ...]:
+    """What the catalogs a release compiles again do to the entries a catalog grant names
+    (catalog callers plan Q8): the same sources compiled against the new model give another
+    entry hash, and the callers of the grant run the new definition
+    (``catalog.granted_entry_changed``, the code of a publish). An entry stays in a republished
+    catalog, so ``catalog.granted_entry_removed`` is not expected; the helper judges both."""
+    found: tuple[WarningRecord, ...] = ()
+    for each in followed:
+        if each.republish is not None:
+            slot = each.republish.slot
+            found += granted_entries.warnings(
+                policy, entry, slot.kind, each.republish.current, slot
+            )
+    return found
 
 
 def policies_affected(

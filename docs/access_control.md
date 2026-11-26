@@ -550,9 +550,12 @@ no_project: {"*": write}
   not follow it: a replacement may read and write otherwise, so a policy names it itself (a
   renamed entry is the removal of the old name and a new, ungranted entry). The warnings
   also show on a dry run and in remote mode, and an entry the catalog did not hold before
-  is not warned about (`policy.entry_unknown` said that its grant gave nothing). A release
-  that must compile the catalogs again for renamed terms republishes the same sources and does not
-  warn.
+  is not warned about (`policy.entry_unknown` said that its grant gave nothing). An
+  `ontology release` (and a `graph-admin graph push` that carries one, also on a dry run) that must compile
+  the catalogs again for renamed terms republishes the same sources against the new model; a
+  granted entry that compiles to another hash warns `catalog.granted_entry_changed` as well, an
+  entry no grant names does not. A recompile keeps every entry of a catalog, so the release
+  has no `catalog.granted_entry_removed` of its own.
   `graph-admin policy explain` shows the other direction: for each granted name `published`
   and the entry's current `hash`, to compare with the hash a publish reported.
 

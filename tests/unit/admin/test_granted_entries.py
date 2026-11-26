@@ -16,6 +16,8 @@ from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot, SlotKind
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.records import OntologyPin
 from graph_cli_admin.services_admin import granted_entries
+from graph_cli_admin.services_admin.catalog_follow import Followed, Republish
+from graph_cli_admin.services_admin.release import republish_warnings
 
 EXAMPLE = GraphId(parse_id("0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a"))
 OTHER = GraphId(parse_id("0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b"))
@@ -204,3 +206,27 @@ def test_the_codes_are_registered_warnings() -> None:
     for code in ("catalog.granted_entry_removed", "catalog.granted_entry_changed"):
         spec = lookup_error_code(code)
         assert spec is not None and spec.category is ErrorCategory.WARNING
+
+
+def test_a_release_judges_each_catalog_it_compiles_again_by_the_same_rules() -> None:
+    """``release.republish_warnings`` hands the published and the recompiled slot of each
+    republished catalog to ``warnings``: a changed hash warns, so does an entry the recompiled
+    catalog would lack (not expected of a recompile, judged all the same); a catalog the
+    release leaves alone is not looked at."""
+    functions = Republish(
+        slot("functions", open_tickets="a", escalations="b"),
+        slot("functions", open_tickets="a2", escalations="b"),
+        ("open_tickets",),
+    )
+    views = Republish(slot("views", ticket_overview="v"), slot("views"), ("ticket_overview",))
+    found = republish_warnings(
+        installed(),
+        ENTRY,
+        (Followed(functions, []), Followed(None, []), Followed(views, [])),
+    )
+    assert [(w.code, w.details["kind"], w.details["name"]) for w in found] == [
+        ("catalog.granted_entry_changed", "function", "open_tickets"),
+        ("catalog.granted_entry_removed", "view", "ticket_overview"),
+    ]
+    assert republish_warnings(installed(), ENTRY, (Followed(None, []),) * 3) == ()
+    assert republish_warnings(BUILTIN_POLICY_SET, ENTRY, (Followed(functions, []),)) == ()
