@@ -1549,3 +1549,27 @@ def test_a_granted_view_the_graph_does_not_publish_is_unknown_like_any_other(
         assert error.code == "view.not_found" and error.details["did_you_mean"] == []
         answers.append(str(error.message).replace(name, "X"))
     assert answers[0] == answers[1]
+
+
+def test_a_lookup_for_an_action_slot_is_asked_among_the_actions_the_caller_sees(
+    env: ServiceEnv, read: ReadService
+) -> None:
+    """Until actions are usable through a grant (step 3) a granted action is classified by the
+    write rights it needs: its slot is not one the lookup serves, and an action outside the
+    catalog is as unknown as one that does not exist, with suggestions among the catalog only."""
+    answers = []
+    for use in (
+        "action:assign_position.person",  # published, not granted
+        "action:assign_positionz.person",  # never published
+        "action:create_task.assignee",  # granted, not usable yet
+    ):
+        with pytest.raises(GraphCliError) as caught:
+            opened, lookup = lookup_view(read, env, SUPPORT, use)
+            read.lookup(opened, lookup, ("x",), for_use=use)
+        error = caught.value
+        assert error.code == "action.not_found", use
+        assert_hidden_absent(
+            error.details["did_you_mean"], {"assign_position", "hand_over_position"}
+        )
+        answers.append(error.message.replace(use.split(":")[1].split(".")[0], "X"))
+    assert answers[0] == answers[1]
