@@ -1096,7 +1096,8 @@ def test_a_deny_of_the_reads_leaves_a_catalog_caller_no_level_like_a_reader() ->
     installed = policy(SUPPORT, READER, tail=tail)
     assert graph_level(token("support"), EXAMPLE, installed) == "none"
     assert effective_level(token("support"), EXAMPLE, installed) == "none"
-    assert withheld_actions(token("support"), EXAMPLE, installed) == []
+    # what its grant does allow and a rule denied is withheld; the primitives were never granted
+    assert withheld_actions(token("support"), EXAMPLE, installed) == ["read.describe", "read.list"]
     assert graph_level(token("reader"), EXAMPLE, installed) == "none"
     assert catalog_grants(token("support"), EXAMPLE, installed).catalog_only
     # a deny that leaves list and describe alone leaves the level
@@ -1114,7 +1115,13 @@ def test_a_deny_of_the_reads_leaves_a_catalog_caller_no_level_like_a_reader() ->
     no_describe = (
         'no_project: {"*": write}\ndeny:\n  - {id: nd, role: [support], action: [read.describe]}\n'
     )
-    assert graph_level(token("support"), EXAMPLE, policy(SUPPORT, tail=no_describe)) == "none"
+    denied = policy(SUPPORT, tail=no_describe)
+    assert graph_level(token("support"), EXAMPLE, denied) == "none"
+    # the level the caller is told follows (``graph start``): none, with only the describe right
+    # withheld, not a ``read`` level and every primitive it was never granted
+    assert effective_level(token("support"), EXAMPLE, denied) == "none"
+    assert withheld_actions(token("support"), EXAMPLE, denied) == ["read.describe"]
+    assert withheld_actions(token("support"), EXAMPLE, kept) == []
 
 
 def test_a_scope_that_takes_the_graph_away_takes_the_catalog_level_too() -> None:

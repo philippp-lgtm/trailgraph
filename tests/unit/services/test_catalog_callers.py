@@ -874,3 +874,88 @@ def test_the_skill_of_a_catalog_reader_holds_a_deprecated_function_only_when_gra
     assert "unit_members" not in str(support_docs)
     reader_docs, _ = read.skill_model(token("reader"), env.entry, request)
     assert "unit_members" in str(reader_docs)  # a reader's document is the catalog as it is
+
+
+@pytest.mark.doc_claim("security_model.view_names_row_functions")
+def test_the_row_function_of_a_granted_view_is_named_by_the_surfaces_of_that_view_only(
+    env: ServiceEnv, read: ReadService
+) -> None:
+    """Accepted residual leak (Q7): a view names the function its ``rows`` section runs, so the
+    caller of a granted view learns that name from the view's own surfaces. Pinned here: those
+    surfaces name it, and no surface of functions does (the caller is not granted it)."""
+    from support.catalog_leaks import mentions
+
+    who, row = OVERVIEW, "members_of_unit"
+    unit = department(env)
+    model = read.visible_model(who, env.entry)
+    allowed_views = read.views(who, env.entry)
+    assert allowed_views is not None
+    # the surfaces of the view
+    detail = describe.describe_view(env.entry, model, allowed_views, "unit_overview")
+    manifest = heads(
+        model, (), (), allowed_views, frozenset(), rows=read.view_row_functions(who, env.entry)
+    )
+    opened = open_through(read, env, who, "view", "unit_overview")
+    answer, _ = read.view(opened, unit, name="unit_overview")
+    request = RequestMeta.of("skill", {"graph": env.entry.name})
+    documents, _ = read.skill_model(who, env.entry, request)
+    for surface in (detail, manifest, answer):
+        assert mentions(surface, row)
+    # the surfaces of functions name nothing the grants do not
+    denied = Denied.of(*(classified(env, read, who)[k] for k in ("functions", "actions", "views")))  # type: ignore[arg-type]
+    for surface in (
+        describe.describe_functions(
+            env.entry,
+            model,
+            read.functions(who, env.entry),
+            denied=denied.functions,
+            include_not_allowed=True,
+        ),
+        search_model(env.entry, model, "members", kinds=("function",), denied=denied)[0],
+        documents.get("functions"),
+        documents["views"],  # the skill's view document is reduced: no section names it
+        read.whoami(who)["permissions"]["graphs"],  # type: ignore[index]
+        [t for t in manifest if t.kind == "function"],
+    ):
+        assert not mentions(surface, row)
+
+
+@pytest.mark.doc_claim("security_model.view_names_row_functions")
+def test_the_deprecation_of_a_row_function_is_the_warning_of_its_granted_view(
+    env: ServiceEnv, read: ReadService
+) -> None:
+    from support.catalog_policies import publish_functions
+    from support.views import function_sources
+
+    sources = function_sources()
+    sources["members_of_unit.yaml"] += "status: deprecated\n"
+    publish_functions(env, sources)
+    unit = department(env)
+    opened = open_through(read, env, OVERVIEW, "view", "unit_overview")
+    _, warnings = read.view(opened, unit, name="unit_overview")
+    (deprecated,) = [w for w in warnings if w.code == "view.function_deprecated"]
+    assert deprecated.details["function"] == "members_of_unit"
+    assert (
+        deprecated.details["replaced_by"] is None
+    )  # a replacement outside the catalog is not named
+
+
+def test_a_granted_name_the_graph_does_not_publish_is_unknown_like_any_other(
+    env: ServiceEnv, read: ReadService
+) -> None:
+    """``legacy`` is granted ``unit_members``, which this graph has not published: the entry
+    decision allows the name, the lookup among what the caller sees finds nothing, and the answer
+    is that of a name that never existed (no suggestion of an unnamed entry)."""
+    legacy = token("legacy")
+    answers = []
+    for name in ("unit_members", "unit_memberz"):
+        with pytest.raises(GraphCliError) as caught:
+            # the granted name opens the graph and fails at the lookup, the other at the door
+            read.run(
+                open_through(read, env, legacy, "function", name), name, [], limit=10, offset=0
+            )
+        error = caught.value
+        assert error.code == "function.not_found"
+        assert error.details["did_you_mean"] == []
+        answers.append(str(error.message).replace(name, "X"))
+    assert answers[0] == answers[1]

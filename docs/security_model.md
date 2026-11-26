@@ -228,6 +228,12 @@ are accepted and known:
   conditions or literals; `missing` names the right and the visible type, attribute or relation
   it is needed on
   ([Functions, actions and views you may not use](access_control.md#functions-actions-and-views-you-may-not-use)). <!-- claim: security_model.not_allowed_named -->
+- **A granted view names the function its rows run.** A caller limited to its catalog runs the
+  `rows` functions of a view it is granted without being granted them (the view is the reviewed
+  boundary), so the view's own surfaces name them: `describe view`, the view's tool in the
+  manifest, the section of the answer and the `view.function_deprecated` warning. No listing,
+  search, count, skill function document or `whoami` of that caller names a function its grants
+  do not name, and `run` of it is `function.not_found`. <!-- claim: security_model.view_names_row_functions -->
 - **Activity shows, data does not.** The envelope's `seq` counts every
   transaction of the graph, hidden ones included. A revision whose only change
   was an edge to a hidden entity appears in `history` with an empty `changed`.

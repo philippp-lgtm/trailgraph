@@ -79,6 +79,15 @@ records the decisions on types alone, so its events are unchanged. The shape che
 resource string, and the policy hash of these decisions is verified like that of any other
 ([Policy verification](#policy-verification)).
 
+A refused read through a [catalog entry](access_control.md#decisions-on-catalog-entries)
+(`run`, `view --name`, `call`) is a `denied` event of the installation stream like any denial
+of a read. When the entry decision allowed it and a deny rule took what the entry needs, the
+event holds both decisions: the allow on `graph:<id>/<kind>:<name>` naming the grant rule
+(`grant.<n>.functions` or `grant.<n>.views`) and the denial of the rule. A name outside the
+catalog of a caller limited to it is recorded as the denial of the graph's own right
+(`default.deny` on `graph:<id>`), which names no entry; the caller is answered `not_found`.
+Reads that are allowed record nothing, as before.
+
 For a graph with [read limits](access_control.md#read-limits) a write also decides
 `read.get` on the type of every operation (the visibility of the type, see [What a caller
 can see](access_control.md#what-a-caller-can-see)) and records it next to the write decision;

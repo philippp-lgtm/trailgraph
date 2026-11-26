@@ -670,8 +670,9 @@ before), `read.view` for a view and `write.action` for an action.
   an entry needs: `read.get`, `read.find`, `read.function` and `read.traverse` on the
   graph itself, and, for an action only, the write actions of the levels on the graph,
   its types and their terms. A function or a view never writes, even where a plain
-  `level: read` grant lets its holder run every function through the glob. What the caller sees stays with the ordinary decision: the visibility of a
-  type (`read.get` on it) and the markings it holds are never decided deny-only.
+  `level: read` grant lets its holder run every function through the glob. What the caller
+  sees stays with the ordinary decision: the visibility of a type (`read.get` on it) and the
+  markings it holds are never decided deny-only.
 
 ### Decisions on attributes and relations
 
@@ -868,7 +869,8 @@ Every published function, action and view is, for one caller, in one of three st
   do not name is hidden too, however harmless it is, because for that caller the catalog is part
   of what it sees. A hidden entry does not exist: not listed, counted, found by `describe
   search`, suggested or named as the replacement of another, and its name, authored text or hints
-  are never in an answer or an error; `run`, `do`, `view --name`, `call` and `describe` of it
+  are never in an answer or an error (but a view names the function its `rows` section runs, as
+  its definition says: a caller of a granted view reads that name there, see below); `run`, `do`, `view --name`, `call` and `describe` of it
   answer as for a name that was never published (`function.not_found`, `action.not_found`,
   `view.not_found`, `tool.not_found`). Hidden depends on what the caller sees and never on the
   rights it holds: a caller who loses a right does not see more or fewer hidden entries. A
@@ -984,10 +986,11 @@ every graph whose ontology uses no marking, is answered as before.
   marking.
 - **`level: catalog` and `catalog`.** For a caller whose grants on a graph are
   [catalog grants](#catalog-grants) only, `whoami` shows `level: catalog` (no rung of the
-  ladder, so `withheld` is empty: the primitives were never granted, a deny rule took nothing
-  away; a caller a scope or a deny rule takes the graph from, so that it cannot list and
-  describe it, is at `none` like a reader in the same position) and `catalog`: the names `functions`, `actions` and `views` its grants give that it
-  sees (a name the graph has not published, or that names a type outside its `reads`, is
+  ladder, so `withheld` names no primitive: they were never granted, a deny rule took nothing
+  away, and only a denied `read.list` or `read.describe` is withheld; a caller a scope or a
+  deny rule takes the graph from, so that it cannot list and describe it, is at `none` like a
+  reader in the same position) and `catalog`: the names `functions`, `actions` and `views`
+  its grants give that it sees (a name the graph has not published, or that names a type outside its `reads`, is
   absent), `catalog_only: true` and `reader_rules: []`. A caller that also holds a grant of
   the graph itself, or `catalog.actions` on a read grant, shows its level on the ladder
   (`read` or `write`) and `catalog_only: false` with the ids of the rules that make it a
