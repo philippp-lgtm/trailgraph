@@ -8,6 +8,7 @@ from typing import Any
 from graph_cli.access_control.effective import write_obligations
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext, Decision
+from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry
@@ -25,6 +26,7 @@ from graph_cli.services.catalog_access import (
     Classified,
     allowed_entries,
     first_denial,
+    narrow,
 )
 from graph_cli.services.read.access import ACCESS_DENIED_HINT, ReadAccess, denial_error
 from graph_cli.services.read.graph_read import ActionCatalog
@@ -41,7 +43,71 @@ class ReadCatalogs(ReadAccess):
         ``classified_functions``."""
         if self._function_denials(actor, entry):
             return None
-        return self._visible_functions(entry, self.read_view(actor, entry))
+        return self.callable_functions(actor, entry, self.read_view(actor, entry))
+
+    def callable_functions(
+        self, actor: ActorContext, entry: GraphEntry, view: ReadView
+    ) -> tuple[FunctionEntry, ...] | None:
+        """The functions of the catalog the actor sees: those that fit its read view (the
+        hidden layer) and, for a caller whose grants are catalog grants only, those they name
+        (the catalog layer), ``None`` when there are none. What a lookup of a function by name
+        searches, so an entry outside the catalog is ``function.not_found`` and is never suggested
+        or named as a replacement; no right is checked here (``open`` did)."""
+        found = self._visible_functions(entry, view)
+        scope = self.catalog_scope(actor, entry)
+        return found if scope is None else narrow(found or (), scope, "function") or None
+
+    def seen_catalog(self, actor: ActorContext, entry: GraphEntry) -> dict[str, JsonValue] | None:
+        """The entries ``actor``'s grants name that it sees, ``{functions, actions, views}`` of
+        sorted names (for ``whoami``), with ``catalog_only`` (whether the catalog bounds what the
+        caller sees of the graph) and ``reader_rules``, the rules that make it a reader when it is
+        not: ``None`` when its grants name no entry. A granted name the graph
+        has not published, or that names something the actor cannot see, is not among them: the
+        catalog is shown as the caller sees it, not as its policy says. A graph whose catalogs
+        cannot be read shows none. Records nothing."""
+        granted = self._catalog_filter.grants(actor, entry.id, self._policy.current(entry.id))
+        if not granted:
+            return None
+        found: dict[str, JsonValue] = {
+            "functions": [],
+            "actions": [],
+            "views": [],
+            "catalog_only": granted.catalog_only,
+            "reader_rules": list(granted.reader_rules),
+        }
+        try:
+            published = self.published_actions(entry)
+            seen = {
+                "functions": {c.entry.name for c in self.classified_functions(actor, entry)},
+                "actions": {
+                    c.entry.name
+                    for c in (
+                        ()
+                        if published is None
+                        else self.classified_actions(actor, entry, published)
+                    )
+                },
+                "views": {c.entry.name for c in self.classified_views(actor, entry)},
+            }
+        except GraphCliError:
+            return found  # fail closed: whoami still answers
+        for kind, names in (
+            ("functions", granted.functions),
+            ("actions", granted.actions),
+            ("views", granted.views),
+        ):
+            found[kind] = [n for n in names if n in seen[kind]]
+        return found
+
+    def view_row_functions(
+        self, actor: ActorContext, entry: GraphEntry
+    ) -> tuple[FunctionEntry, ...]:
+        """The functions that fit the actor's read view, whatever its catalog: the ones a view
+        types and runs its ``rows`` sections with. An allowed view runs its row functions
+        without them being granted (the outer entry is the reviewed boundary), so this list is
+        never narrowed to the catalog; it is no listing and names nothing to the caller. Records
+        nothing."""
+        return self._visible_functions(entry, self.read_view(actor, entry)) or ()
 
     def classified_functions(
         self, actor: ActorContext, entry: GraphEntry
@@ -54,7 +120,9 @@ class ReadCatalogs(ReadAccess):
             return ()
         denials = self._function_denials(actor, entry)
         view = self.read_view(actor, entry)
-        return tuple(Classified(e, denials) for e in self._visible_functions(entry, view) or ())
+        return tuple(
+            Classified(e, denials) for e in self.callable_functions(actor, entry, view) or ()
+        )
 
     def _function_denials(self, actor: ActorContext, entry: GraphEntry) -> tuple[Decision, ...]:
         """The decisions that deny every function of the graph to the actor (a probe)."""
@@ -214,12 +282,13 @@ class ReadCatalogs(ReadAccess):
         needs = self.action_needs(entry, catalog)
         view = self.read_view(actor, entry) if limits else UNLIMITED
         hidden = self._hidden_actions(entry, catalog, view) if view.limited else frozenset()
+        named = narrow(catalog.entries, self.catalog_scope(actor, entry), "action")
         found: list[Classified[ActionEntry]] = []
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
             fine = self._fine.of(policy, entry.id)
             ctx = AuthzContext(op_count=1, has_reason=True, dry_run=False)
-            for action in catalog.entries:
+            for action in named:
                 if action.name in hidden:
                     continue
                 denials: list[Decision] = []
@@ -353,6 +422,9 @@ class ReadCatalogs(ReadAccess):
         if any(e.functions for e in entries):
             fits = frozenset(f.name for f in self._visible_functions(entry, view) or ())
             entries = tuple(e for e in entries if fits.issuperset(e.functions))
+        # the catalog layer comes last: the row functions of a view are judged over what the
+        # read view shows, not over what the caller's grants name
+        entries = narrow(entries, self.catalog_scope(actor, entry), "view")
         get = self._probe(actor, entry, "read.get") if entries else None
         find = (
             self._probe(actor, entry, "read.find") if any(not e.entity for e in entries) else None

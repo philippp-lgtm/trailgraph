@@ -97,6 +97,10 @@ ENTRY_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{1,62}$")
 
 # B6.11 access levels: a closed ladder per graph, expanded to action globs.
 ACCESS_LEVELS: Final = ("none", "read", "write")
+# The level of a caller whose grants on a graph are catalog grants only: not a rung of the
+# ladder (it reaches no action of ``read``), shown by ``whoami``, ``start`` and ``policy explain``.
+CATALOG_LEVEL: Final = "catalog"
+LEVELS_SHOWN: Final = (*ACCESS_LEVELS, CATALOG_LEVEL)
 # A project scope may also say ``maintain`` for a named graph: ``write`` for the
 # project's callers, plus these actions for an admin token bound to the project.
 MAINTAIN_LEVEL: Final = "maintain"

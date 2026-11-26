@@ -194,11 +194,11 @@ lists `require_reason`. Details: [references/history.md](references/history.md).
 ## Access
 
 - `graph whoami --json` shows who you act as and, per graph in
-  `data.permissions.graphs`: your `level` (`read` or `write`), actions withheld
-  anyway (`withheld`), types you may only read, obligations (`require_reason`,
-  `max_batch`), all you may write (`writes`: verbs, attributes, relations per
-  type) and, if limited to some types, those you see (`reads`). Check it first.
-  A field you cannot see is unknown to you; `markings` lists the ones you hold.
+  `data.permissions.graphs`: your `level` (`read`, `write` or `catalog`: only the entries
+  in `catalog`), actions withheld anyway (`withheld`), types you may only read, obligations
+  (`require_reason`, `max_batch`), all you may write (`writes`: verbs, attributes,
+  relations per type) and, if limited to some types, those you see (`reads`). Check it
+  first. A field you cannot see is unknown to you; `markings` lists the ones you hold.
 - A graph you may not use does not exist for you (`graph.not_found`). A function,
   action or view you may see but not use is marked `allowed: false` with
   `missing`; running it gives `access.denied`: tell the user, never work around it.

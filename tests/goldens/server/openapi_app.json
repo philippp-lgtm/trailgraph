@@ -6917,7 +6917,8 @@
                   "enum": [
                     "none",
                     "read",
-                    "write"
+                    "write",
+                    "catalog"
                   ]
                 },
                 "withheld": {
@@ -8147,7 +8148,8 @@
                       "enum": [
                         "none",
                         "read",
-                        "write"
+                        "write",
+                        "catalog"
                       ]
                     },
                     "withheld": {
@@ -8206,6 +8208,45 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "catalog": {
+                      "type": "object",
+                      "properties": {
+                        "functions": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "actions": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "views": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "catalog_only": {
+                          "type": "boolean"
+                        },
+                        "reader_rules": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "functions",
+                        "actions",
+                        "views",
+                        "catalog_only",
+                        "reader_rules"
+                      ]
                     }
                   },
                   "required": [

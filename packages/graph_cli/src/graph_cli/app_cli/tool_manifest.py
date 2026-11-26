@@ -239,6 +239,7 @@ def heads(
     *,
     only: str | None = None,
     refs: Sequence[RefInput] = (),
+    rows: Sequence[FunctionEntry] | None = None,
 ) -> tuple[ToolHead, ...]:
     """Every tool the caller may use: functions, then actions, then views, each by name, then the
     ``lookup`` tool. With ``only`` just the tool of that name is built (a function's head resolves
@@ -247,8 +248,13 @@ def heads(
 
     ``refs`` are the reference inputs the ``lookup`` tool serves (``lookup_refs``, over every
     entry the caller may use, whatever ``only`` says): the tool is built, and the descriptions of
-    those inputs name it, only when there are some."""
+    those inputs name it, only when there are some.
+
+    ``rows`` are the functions that type the ``rows`` sections of the views (``functions`` when
+    not given): a view runs its row functions without them being granted, so for a caller limited
+    to its catalog they are more than the function tools listed."""
     lookup = bool(refs)
+    row_functions = functions if rows is None else rows
 
     def wanted(kind: str, entry: FunctionEntry | ActionEntry | ViewEntry) -> bool:
         return only is None or describe_tools.tool_name(kind, entry.name) == only
@@ -267,7 +273,7 @@ def heads(
             if wanted(ACTION, e)
         ),
         *(
-            describe_tools.view_head(e, model, views, functions, known, lookup=lookup)
+            describe_tools.view_head(e, model, views, row_functions, known, lookup=lookup)
             for e in _by_name(views)
             if wanted(VIEW, e)
         ),
@@ -313,15 +319,21 @@ def tool_head(
     none: tuple[Any, ...] = ()
     parts = {k: none for k in KINDS}
     parts[kind] = tuple(allowed_entries(seen))
-    if kind == VIEW:  # the rows sections of a view are typed by the functions it runs
-        parts[FUNCTION] = tuple(allowed_entries(classified(reader, actor, entry, FUNCTION)))
+    rows = reader.view_row_functions(actor, entry) if kind == VIEW else None
     own = {k: tuple(e for e in parts[k] if e.name == name) if k == kind else none for k in KINDS}
     refs = lookup_refs(
         model, own[FUNCTION], own[ACTION], own[VIEW], find=reader.may(actor, entry, "read.find")
     )
     tool = describe_tools.tool_name(kind, name)
     found = heads(
-        model, parts[FUNCTION], parts[ACTION], parts[VIEW], obligations, only=tool, refs=refs
+        model,
+        parts[FUNCTION],
+        parts[ACTION],
+        parts[VIEW],
+        obligations,
+        only=tool,
+        refs=refs,
+        rows=rows,
     )
     if len(found) != 1:
         raise GraphCliError(
@@ -389,15 +401,17 @@ def build_manifest(
     obligations: frozenset[str],
     selection: Selection | None = None,
     find: bool = False,
+    rows: Sequence[FunctionEntry] | None = None,
 ) -> dict[str, JsonValue]:
     """The manifest (``graph_cli.model/1``) of the entries the caller may use, over the model it
-    sees; ``find``: the caller holds ``read.find``, which lists the ``lookup`` tool. A wanted name
-    that is no visible tool is ``tool.not_found``; ``term.unknown`` for an unknown module.
+    sees; ``find``: the caller holds ``read.find``, which lists the ``lookup`` tool; ``rows``: see
+    ``heads``. A wanted name that is no visible tool is ``tool.not_found``; ``term.unknown`` for
+    an unknown module.
     ``version`` is the hash of the tools and errors listed."""
     selection = selection or Selection()
     module = ModuleIndex(model).filter(selection.module)
     refs = lookup_refs(model, functions, actions, views, find=find)
-    available = heads(model, functions, actions, views, obligations, refs=refs)
+    available = heads(model, functions, actions, views, obligations, refs=refs, rows=rows)
     problem = missing_tools(selection.tools, [h.name for h in available])
     if problem is not None:
         raise problem

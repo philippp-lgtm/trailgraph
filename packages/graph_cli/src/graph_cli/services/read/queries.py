@@ -196,7 +196,7 @@ class ReadQueries(ReadCatalogs):
         normalized query text is parsed and resolved against the current pin: text that no
         longer does is ``function.stale``. The rows are paged and signalled like ``query``;
         the activity signal names the function, never a value."""
-        visible = self._visible_functions(view.entry, view.read_view)
+        visible = self.callable_functions(view.actor, view.entry, view.read_view)
         function = find_entry(visible, name)
         self.usage.function = {"name": name, "hash": function.hash}
         warnings: list[WarningRecord] = []

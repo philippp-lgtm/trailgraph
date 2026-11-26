@@ -961,6 +961,12 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         False,
         "A grant of the whole graph also covers the callers of a catalog grant.",
     ),
+    ErrorSpec(
+        "policy.entry_unknown",
+        _C.WARNING,
+        False,
+        "A catalog grant names an entry the graph has not published.",
+    ),
     ErrorSpec("entity.superseded", _C.WARNING, False, "The entity is superseded."),
     ErrorSpec("entity.retracted", _C.WARNING, False, "The entity is retracted."),
     ErrorSpec("entity.alias_renamed", _C.WARNING, False, "The alias was renamed."),

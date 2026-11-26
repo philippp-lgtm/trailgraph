@@ -31,14 +31,14 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.records import RequestMeta
-from graph_cli.services.read.access import ReadAccess
+from graph_cli.services.read.catalogs import ReadCatalogs
 from graph_cli.services.read.graph_read import graph_json
 from graph_cli.services.term_model import term_model
 
 _NO_GRAPH = "graph:00000000-0000-0000-0000-000000000000"  # whoami: a graph no policy names
 
 
-class ReadInstallation(ReadAccess):
+class ReadInstallation(ReadCatalogs):
     def graphs(
         self, actor: ActorContext, request: RequestMeta, *, allowed: Sequence[str] | None
     ) -> tuple[list[JsonValue], int, tuple[WarningRecord, ...]]:
@@ -113,6 +113,9 @@ class ReadInstallation(ReadAccess):
             writes = write_allowance(actor, entry.id, layered, terms, level=level)
             if writes is not None:
                 item["writes"] = writes
+            seen = self.seen_catalog(actor, entry)
+            if seen is not None:
+                item["catalog"] = seen
             graphs.append(item)
         return {
             "actor": actor.to_json(),

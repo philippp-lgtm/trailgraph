@@ -1056,6 +1056,62 @@ def test_levels_obligations_and_withheld_skip_the_entry_actions() -> None:
     assert withheld_actions(token("closer"), EXAMPLE, closer) == []
 
 
+def test_a_catalog_grant_cannot_exist_without_a_graph() -> None:
+    """Token creation asks ``read.get`` on a made-up graph when the installation has none: a
+    catalog grant names graphs of the installation, so with none it is not compilable and the
+    question never needs a catalog branch."""
+    with pytest.raises(GraphCliError) as info:
+        compile_policy(source(SUPPORT), file="p.yaml", graphs={})
+    assert info.value.code == "policy.invalid"
+
+
+def test_a_catalog_caller_is_at_the_level_catalog_and_withholds_nothing() -> None:
+    """``catalog`` is no rung of the ladder: the caller holds no read action of the graph
+    beyond listing and describing it, so ``graph_level`` and ``effective_level`` would say
+    ``none`` or ``read`` and ``withheld_actions`` would list every primitive it was never
+    granted. Rights add up: any grant of the graph itself puts the caller on the ladder."""
+    installed = policy(SUPPORT, READER, WRITER, CLOSER)
+    support = token("support")
+    assert graph_level(support, EXAMPLE, installed) == "catalog"
+    assert effective_level(support, EXAMPLE, installed) == "catalog"
+    assert withheld_actions(support, EXAMPLE, installed) == []
+    # the other graph: no grant, the ladder as ever
+    assert graph_level(support, OTHER, installed) == "none"
+    assert effective_level(support, OTHER, installed) == "none"
+    # a reader that also holds the catalog grant, a writer, a read grant with catalog.actions
+    assert graph_level(token("support", "reader"), EXAMPLE, installed) == "write"
+    assert graph_level(token("closer"), EXAMPLE, installed) == "read"
+    assert effective_level(token("support", "closer"), EXAMPLE, installed) == "read"
+    assert graph_level(token("closer", "reader"), EXAMPLE, installed) == "write"
+
+
+def test_a_deny_rule_does_not_change_the_level_of_a_catalog_caller() -> None:
+    """The level follows the grants: a deny of every read takes entries away at decision time
+    but the caller is still a catalog caller, with nothing withheld that was granted."""
+    tail = (
+        'no_project: {"*": write}\ndeny:\n  - {id: no_reads, role: [support], action: ["read.*"]}\n'
+    )
+    installed = policy(SUPPORT, tail=tail)
+    assert graph_level(token("support"), EXAMPLE, installed) == "catalog"
+    assert withheld_actions(token("support"), EXAMPLE, installed) == []
+    # and the entry grants stay named
+    assert catalog_grants(token("support"), EXAMPLE, installed).catalog_only
+
+
+def test_a_scope_that_takes_the_graph_away_is_still_a_catalog_level_until_the_decisions_deny() -> (
+    None
+):
+    installed = policy(
+        SUPPORT,
+        tail='scopes:\n  frozen: {example_graph: none}\nno_project: {"*": write}\n',
+    )
+    # the level answers from the grants; the scope is shown by ``scope`` and by every decision
+    assert graph_level(token("support", project="frozen"), EXAMPLE, installed) == "catalog"
+    assert authorize(
+        token("support", project="frozen"), "read.list", GRAPH, CTX, installed
+    ).code == ("access.denied")
+
+
 def test_a_write_level_grant_allows_write_action_only_through_the_glob() -> None:
     """``level: write`` expands to ``write.*`` (it covers ``write.action``), ``level: read``
     expands to named reads: ``read.view`` is not among them."""

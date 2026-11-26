@@ -493,7 +493,9 @@ no_project: {"*": write}
 - **Grammar.** `level: catalog` needs `catalog`, a mapping from `functions`,
   `actions` and `views` to lists of entry names (lowercase letters, digits and
   `_`, starting with a letter, as for the published entries), with at least one
-  name. A name the graph does not publish grants nothing until it is published.
+  name. A name the graph does not publish grants nothing until it is published, and
+  `graph-admin policy check` and `apply` warn `policy.entry_unknown` for each (graph, kind,
+  name) the graph's published catalog lacks.
   The grant also needs `entrypoint: server` (locally a caller with a shell reads
   the files, so the limit would only pretend), graphs named one by one (`"*"` is
   refused: entries belong to a graph) and `reads`, the types its entries may read
@@ -857,14 +859,25 @@ caller sees in full but lacks a right for is *not allowed*, not hidden
 
 Every published function, action and view is, for one caller, in one of three states.
 
-- **Hidden.** It names a type, relation, attribute, enum, module or function the caller cannot see
-  (read limits, markings). It does not exist for that caller: not listed, not counted, not found by
-  `describe search`, not suggested, and its name, authored text or hints are never in an answer or
-  an error. Hidden depends on what the caller sees and never on the rights it holds; a caller who
-  loses a right does not see more or fewer hidden entries.
+- **Hidden.** The caller does not see it. What a caller sees is decided by two things, in this
+  order. First its read view: an entry that names a type, relation, attribute, enum, module or
+  function the caller cannot see (read limits, markings) is hidden. Then, for a caller whose
+  grants on the graph are [catalog grants](#catalog-grants) only, the catalog: an entry its grants
+  do not name is hidden too, however harmless it is, because for that caller the catalog is part
+  of what it sees. A hidden entry does not exist: not listed, counted, found by `describe
+  search`, suggested or named as the replacement of another, and its name, authored text or hints
+  are never in an answer or an error; `run`, `do`, `view --name`, `call` and `describe` of it
+  answer as for a name that was never published (`function.not_found`, `action.not_found`,
+  `view.not_found`, `tool.not_found`). Hidden depends on what the caller sees and never on the
+  rights it holds: a caller who loses a right does not see more or fewer hidden entries. A
+  caller that holds a read grant next to its catalog grant, or only `catalog.actions` on a read
+  grant, is not limited to a catalog, and unnamed entries stay what the read view makes them.
 - **Allowed.** The caller sees everything the entry names and holds the rights it needs.
 - **Not allowed.** The caller sees everything the entry names but lacks a right. Only such an entry
-  is named as unusable, so nothing hidden can leak through it. The rights are `read.function` on the
+  is named as unusable, so nothing hidden can leak through it. A catalog caller sees exactly the
+  entries its grants name, classified like any entry by the rights below, which it does not hold
+  on the graph itself: until `run`, `view --name` and `do` decide it through its entry grants,
+  a named entry is not allowed. The rights are `read.function` on the
   graph (a function, and a view with a `rows` section), `read.get` on the graph (every view),
   `read.find` (a set view) and, for an action,
   per unmet need the first denied write decision: the write action on the type, or on the attribute
@@ -872,6 +885,10 @@ Every published function, action and view is, for one caller, in one of three st
   `max_batch`) never makes an entry not allowed: an action that needs `--reason` is allowed. An
   action whose unmet need has no right to name, because every type that could meet it is outside
   what the caller sees, is hidden.
+
+The functions a view runs in its `rows` sections are judged by the read view, not by the catalog:
+a view the catalog names is classified whether or not its functions are named too, and its rows
+are typed and resolved over what the read view shows.
 
 What each command does with a not-allowed entry:
 
@@ -960,6 +977,27 @@ every graph whose ontology uses no marking, is answered as before.
   grant kind. A project admin token is refused with `access.ceiling` and lists
   `markings: []`; a token with no project that is a maintainer holds every
   marking.
+- **`level: catalog` and `catalog`.** For a caller whose grants on a graph are
+  [catalog grants](#catalog-grants) only, `whoami` shows `level: catalog` (no rung of the
+  ladder, so `withheld` is empty: the primitives were never granted, a deny rule took nothing
+  away) and `catalog`: the names `functions`, `actions` and `views` its grants give that it
+  sees (a name the graph has not published, or that names a type outside its `reads`, is
+  absent), `catalog_only: true` and `reader_rules: []`. A caller that also holds a grant of
+  the graph itself, or `catalog.actions` on a read grant, shows its level on the ladder
+  (`read` or `write`) and `catalog_only: false` with the ids of the rules that make it a
+  reader in `reader_rules`; a caller whose grants name no entry has no `catalog` key, so
+  every other answer is unchanged. `graph start` shows the same level, and counts only the
+  entries its grants name. `permissions.allowed` never lists the entry actions
+  (`read.view`, `write.action`): they are decided on entries, not on a graph.
+  `graph-admin policy explain` answers the same for roles, tokens and projects (`level`,
+  `withheld`, `catalog` with the names the grants give, published or not) and has three filters
+  that ask one decision on one entry: `--function F` (`read.function`), `--view V`
+  (`read.view`) and `--entry-action A` (`write.action`; `--action` stays the policy action),
+  each excluding the others and every other question. The compiled rules `grant.<n>.functions`,
+  `.views` and `.actions` show as the grant that named the entry.
+- **Tokens and enrollment.** A catalog grant counts as granted: `token create`, `token role
+  add` and `enroll create` do not warn `admin.token_not_granted` for a token whose roles hold
+  one, and an enrollment code lists the graph.
 - The [live view](live_view.md) shows `reads` and `markings` next to the level
   of a caller.
 

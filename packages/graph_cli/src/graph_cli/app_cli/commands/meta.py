@@ -13,6 +13,7 @@ from graph_cli.cli_kit.inventory import build_inventory
 from graph_cli.cli_kit.output_schemas import BOOLEAN, INTEGER, STRING, array, enum, obj, ref
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
+from graph_cli.kernel.actions import LEVELS_SHOWN
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.records import RequestMeta
 
@@ -34,7 +35,7 @@ WHOAMI_OUTPUT: Final = obj(
                     obj(
                         {
                             "graph": STRING,
-                            "level": enum("none", "read", "write"),
+                            "level": enum(*LEVELS_SHOWN),
                             "withheld": STRINGS,
                             "types": obj(extra=STRING),
                             "obligations": _OBLIGATIONS,
@@ -48,6 +49,17 @@ WHOAMI_OUTPUT: Final = obj(
                             # access_control.effective.marking_allowance: the markings held,
                             # when the graph's model uses some the caller lacks
                             "markings": STRINGS,
+                            # access_control.effective.catalog_grants: the entries its grants
+                            # name that the caller sees
+                            "catalog": obj(
+                                {
+                                    "functions": STRINGS,
+                                    "actions": STRINGS,
+                                    "views": STRINGS,
+                                    "catalog_only": BOOLEAN,
+                                    "reader_rules": STRINGS,
+                                }
+                            ),
                         },
                     )
                 ),

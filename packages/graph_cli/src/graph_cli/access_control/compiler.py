@@ -133,6 +133,7 @@ from graph_cli.access_control.terms import (
 )
 from graph_cli.kernel.actions import (
     ACCESS_LEVELS,
+    CATALOG_LEVEL,
     ENTRY_KIND_ACTIONS,
     ENTRY_NAME_RE,
     ENTRY_PLURALS,
@@ -207,7 +208,6 @@ GRANT_ENTRYPOINTS: Final = ("app", "server")
 # ``level: catalog``: the actions its base rule ``grant.<n>`` allows on the graph itself, the
 # kinds of entry a ``catalog`` key lists in the order their rules are compiled, and the entry
 # kind and the action each of them is decided with.
-CATALOG_LEVEL: Final = "catalog"
 CATALOG_BASE_ACTIONS: Final = ("read.list", "read.describe")
 CATALOG_KINDS: Final = ("functions", "views", "actions")
 _CATALOG_ENTRIES: Final = {

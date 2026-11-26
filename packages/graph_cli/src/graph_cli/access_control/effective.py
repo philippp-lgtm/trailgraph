@@ -34,6 +34,7 @@ from graph_cli.access_control.documents import (
 from graph_cli.access_control.terms import TermModel, TypeTerms, marking_resource, term_resource
 from graph_cli.kernel.actions import (
     ACCESS_LEVELS,
+    CATALOG_LEVEL,
     ENTRY_KIND_ACTIONS,
     ENTRY_NAME_RE,
     ENTRY_PLURALS,
@@ -55,7 +56,11 @@ _UNDECLARED_MARKING: Final = "probe:undeclared"  # a marking no model declares
 
 
 def graph_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> str:
-    """The highest level of the ladder whose every action is allowed on ``graph:<id>``."""
+    """The highest level of the ladder whose every action is allowed on ``graph:<id>``, or
+    ``catalog`` for a caller whose grants on the graph are catalog grants only (it holds no right
+    on the graph itself beyond listing and describing it, which no rung of the ladder describes)."""
+    if catalog_grants(actor, graph, policy).catalog_only:
+        return CATALOG_LEVEL
     resource = f"graph:{graph}"
     reached = ACCESS_LEVELS[0]
     for level in ACCESS_LEVELS[1:]:
@@ -76,9 +81,10 @@ def effective_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> s
 
     ``graph_level`` demands every action of a level, so one denied read action (say
     ``read.function``) drops it to ``none`` for a caller who reads the graph; this is the level to
-    tell that caller, with ``withheld_actions`` naming what is missing below it."""
+    tell that caller, with ``withheld_actions`` naming what is missing below it. A caller whose
+    grants are catalog grants only is at ``catalog`` (see ``graph_level``)."""
     reached = graph_level(actor, graph, policy)
-    if reached == ACCESS_LEVELS[-1]:
+    if reached in (ACCESS_LEVELS[-1], CATALOG_LEVEL):
         return reached
     resource = f"graph:{graph}"
 
@@ -105,7 +111,10 @@ def withheld_actions(actor: ActorContext, graph: GraphId, policy: PolicySet) -> 
     """The ladder actions denied on ``graph:<id>`` in a class (read, write) of which at
     least one action is allowed: what deny rules take away from a granted level, which
     ``graph_level`` alone cannot show (a denied ``read.history`` leaves the level at
-    ``none`` while the graph stays readable)."""
+    ``none`` while the graph stays readable). Nothing is withheld from a catalog-only caller: the
+    primitives were never granted to it, so a deny rule took nothing away."""
+    if catalog_grants(actor, graph, policy).catalog_only:
+        return []
     resource = f"graph:{graph}"
     ladder = [a for a in level_actions("write") if not a.endswith("*")] + sorted(
         LEVEL_WRITE_ACTIONS

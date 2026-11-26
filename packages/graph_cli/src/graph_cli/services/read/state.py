@@ -22,6 +22,7 @@ from graph_cli.kinetic.entries import FunctionEntry
 from graph_cli.kinetic.params import Problem
 from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.services.action_rights import FineTypes
+from graph_cli.services.catalog_access import CatalogFilter
 from graph_cli.services.models import ModelCache
 from graph_cli.services.names import NameMapCache, NameMaps
 from graph_cli.services.read.graph_read import ActionCatalog, GraphRead
@@ -90,6 +91,7 @@ class ReadState:
         self._fine = FineTypes()
         self._visibility = Visibility()
         self._hidden = HiddenCatalog()
+        self._catalog_filter = CatalogFilter()  # the second layer, apart from ``_hidden``
         self._terms: dict[tuple[GraphId, OntologyPin], TermModel] = {}  # per graph and pin
         self._names = NameMaps(catalog, audit, self._models, name_maps)  # read-time mapping, M7
 
