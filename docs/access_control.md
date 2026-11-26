@@ -640,6 +640,14 @@ before), `read.view` for a view and `write.action` for an action.
   `writes` lists and deny rules on types, attributes and relations never name
   `write.action` (their `write.*` still covers it, and is never decided there).
   An obligation may name it. A rule that breaks this is `policy.invalid`.
+- **Two decisions.** What a token may do through an entry is decided in two steps.
+  The entry itself is an ordinary decision on its resource: the grant names it or
+  it does not. What the entry then needs, the reads and writes its definition
+  stands for, is decided *deny-only*: the ceiling, the first matching deny rule of
+  every layer and the obligations are applied, and no allow rule is looked up; the
+  decision names the grant that allowed the entry as its rule. An explicit deny
+  therefore always wins: a token never gets through an entry what a deny rule, a
+  scope, a type limit or a ceiling refuses it.
 
 ### Decisions on attributes and relations
 

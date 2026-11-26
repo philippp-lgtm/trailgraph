@@ -329,7 +329,7 @@ the admin skills ([Skills](skills.md#admin-skills)).
 
 | Module | Content |
 | --- | --- |
-| `access_control.authorize` | `authorize()`: ceiling, deny rules, allow rules, obligations |
+| `access_control.authorize` | `authorize()`: ceiling, deny rules, allow rules, obligations; `authorize_entry()`, the same decision without the allow lookup, for what a granted catalog entry needs |
 | `access_control.documents` | the compiled `graph_cli.policy/1` grammar, with the resources of catalog entries, checked with a path per problem, `fine_types` (the types some rule names terms of) and `read_limited` (whether some rule decides the visibility of types) |
 | `access_control.compiler` | authored YAML to compiled documents |
 | `access_control.policy` | the built-in policy, `policy_set` (the layers of one decision and their hash) |

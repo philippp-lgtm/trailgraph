@@ -18,6 +18,13 @@ Order:
    turns the allow into a deny. Dry-runs get the same answer, so a dry-run
    predicts the real outcome.
 
+``authorize_entry`` is the same decision without step 4, for what a catalog entry needs:
+a caller whose grant names a function, action or view (an *entry decision*, made by
+``authorize`` on the entry resource ``graph:<id>/<kind>:<name>``) runs it with the entry's
+rights, so what the entry reads or writes is not looked up as an allow rule of its own. The
+ceiling, every deny rule and the obligations still hold, and an allow is never produced by
+the policy there: the decision names the rule that allowed the entry (``granted_by``).
+
 The documents of a ``PolicySet`` are its layers (installation, then the
 graph's own policy). Only the installation layer grants; every other rule
 narrows, so "the installation allows and the graph allows" is "some allow
@@ -76,6 +83,31 @@ def authorize(
     if not RESOURCE_RE.match(resource):
         raise GraphCliError("internal.error", f"malformed resource {resource!r}")
     return _decide(actor, Action(action), resource, resource, ctx, policy)
+
+
+def authorize_entry(
+    actor: ActorContext,
+    action: str,
+    resource: str,
+    ctx: AuthzContext,
+    policy: PolicySet,
+    granted_by: str,
+) -> Decision:
+    """The decision on what a granted catalog entry needs (``action`` on ``resource``, say
+    ``write.update`` on a type, ``read.get`` on the graph), made *deny-only*: the ceiling, then
+    the first matching deny rule of every layer, then the obligations; no allow rule is looked
+    up. ``granted_by`` is the id of the rule that allowed the entry itself (the allow decision
+    of ``authorize`` on the entry resource); an allow names it as its rule, so the audit shows
+    which grant let the step through. Only a caller that holds such an entry decision may ask:
+    nothing here allows by itself, so a policy that denies the step (a type limit, a scope, a
+    term or agent-type rule, the ceiling) still refuses it. Recorded like every decision."""
+    if not (is_known_action(action) or EXT_ACTION_RE.match(action)):
+        raise GraphCliError("internal.error", f"unknown action {action!r}")
+    if not RESOURCE_RE.match(resource):
+        raise GraphCliError("internal.error", f"malformed resource {resource!r}")
+    if not granted_by:
+        raise GraphCliError("internal.error", "an entry decision names the rule that granted it")
+    return _decide(actor, Action(action), resource, resource, ctx, policy, granted_by)
 
 
 # Appended to the resource of ``authorize_unlisted_type`` and ``authorize_unlisted_attribute``:
@@ -137,9 +169,11 @@ def _decide(
     named: str,
     ctx: AuthzContext,
     policy: PolicySet,
+    granted_by: str | None = None,
 ) -> Decision:
     """The decision of ``authorize``; rules are matched against ``resource``, the decision
-    names ``named``."""
+    names ``named``. With ``granted_by`` no allow rule is looked up and an allow names that
+    rule (``authorize_entry``)."""
     action = str(checked)
 
     def deny(rule_id: str, code: str) -> Decision:
@@ -164,26 +198,28 @@ def _decide(
     )
     if denied is not None:
         return deny(_text(denied, "id"), "access.denied")
-    verified = principal_facts(actor, verified_only=True)
-    allowed = next(
-        (
-            rule
-            for document in documents
-            for rule in rules(document)
-            if rule.get("effect") == "allow"
-            and _matches(rule, verified, facts, action, resource)
-            and (not project_admin or "project" in _principal(rule))
-        ),
-        None,
-    )
-    if allowed is None:
-        return deny(DEFAULT_DENY_RULE, "access.denied")
+    if granted_by is None:
+        verified = principal_facts(actor, verified_only=True)
+        allowed = next(
+            (
+                rule
+                for document in documents
+                for rule in rules(document)
+                if rule.get("effect") == "allow"
+                and _matches(rule, verified, facts, action, resource)
+                and (not project_admin or "project" in _principal(rule))
+            ),
+            None,
+        )
+        if allowed is None:
+            return deny(DEFAULT_DENY_RULE, "access.denied")
+        granted_by = _text(allowed, "id")
     obligations = _obligations(documents, action)
     if obligations.require_reason and not ctx.has_reason:
         return deny(REASON_RULE, "access.reason_required")
     if obligations.max_batch is not None and ctx.op_count > obligations.max_batch:
         return deny(BATCH_RULE, "access.batch_too_large")
-    return Decision("allow", checked, named, _text(allowed, "id"), policy.hash, obligations)
+    return Decision("allow", checked, named, granted_by, policy.hash, obligations)
 
 
 def allow_rule_holds(rule: Mapping[str, JsonValue], actor: ActorContext) -> bool:
