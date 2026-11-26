@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-<!-- BEGIN MANAGED by meta: profile project; blocks language, documentation, user_specific, naming; sha256 3412d697026c. Do not edit up to END MANAGED: change the blocks in meta. -->
+<!-- BEGIN MANAGED by meta: profile project; blocks language, documentation, user_specific, licensing, naming; sha256 c0e4c02130b2. Do not edit up to END MANAGED: change the blocks in meta. -->
 ## Language
 
 All content in git-tracked files is written in English:
@@ -29,12 +29,6 @@ That covers, for example:
 - Credentials, tokens, API keys, account or tenant IDs
 - Personal workflow preferences, schedules, contacts, private URLs
 
-The one exception is the licensing: `LICENSE.md`, `CLA.md` and the license
-section of `README.md` may name the copyright holder by the GitHub account
-(not a real name) and give the contact address for license requests. Nothing
-else from that list goes there, and no other file repeats either; link to
-`LICENSE.md` instead.
-
 Where it goes instead:
 
 | Destination | Use for |
@@ -52,6 +46,14 @@ Examples in tracked files must be generic. Never use names, paths, or
 structures from `local/`, `CLAUDE.local.md`, or other untracked or
 user-specific content as examples. Prefer neutral placeholders (e.g.
 `data_models`, `example_service`) or names of tracked files.
+
+## Licensing exception
+
+The one exception to the rule on user-specific information above:
+`LICENSE.md`, `CLA.md` and the license section of `README.md` may name the
+copyright holder by the GitHub account (not a real name) and give the
+contact address for license requests. Nothing else from that list goes
+there, and no other file repeats either; link to `LICENSE.md` instead.
 
 ## Naming conventions
 
