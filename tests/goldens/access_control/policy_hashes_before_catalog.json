@@ -1,0 +1,275 @@
+{
+ "policies": {
+  "doc_00": {
+   "graphs": {
+    "example_graph": "00000000-0000-0000-0000-000000000001",
+    "other_graph": "00000000-0000-0000-0000-000000000002"
+   },
+   "hash": "sha256:d8461c5925d7654d7c0adcc6c1b5a5922cb0a6a1c7931effc5874a35502164de",
+   "source": "schema: graph_cli.policy/1\nid: installation\nroles:\n  reader: {description: \"Reporting apps: read every graph\"}\n  importer: {description: \"Importers: write into example_graph\"}\ngrants:\n  - {principal: {name: owner_name}, graphs: \"*\", level: write}\n  - {entrypoint: server, principal: {role: reader}, graphs: \"*\", level: read}\n  - {entrypoint: server, principal: {role: importer}, graphs: [example_graph], level: write}\n  - {entrypoint: server, principal: {project: example_project}, graphs: [example_graph], level: write}\nscopes:\n  example_project: {example_graph: maintain, other_graph: read}\nno_project: {\"*\": read}\ndeny:\n  - {id: no_explore_writes, agent_type: [explore], action: [\"write.*\"]}\n  - {id: importer_no_retract, role: [importer], action: [\"write.retract\", \"write.supersede\"]}\n"
+  },
+  "doc_01": {
+   "graphs": {
+    "example_graph": "00000000-0000-0000-0000-000000000001",
+    "other_graph": "00000000-0000-0000-0000-000000000002"
+   },
+   "hash": "sha256:5230949eb79b917ce60629b12438ead43ec0c3601c05a3f63424a38539e9e2a3",
+   "source": "schema: graph_cli.policy/1\nid: graph\ntypes:\n  \"files:File\": read\nobligations:\n  - {action: [\"write.*\"], max_batch: 200}\ndeny:\n  - {id: importer_no_files, role: [importer], action: [\"write.*\"], type: [\"files:File\"]}\n"
+  },
+  "doc_02": {
+   "graphs": {
+    "example_graph": "00000000-0000-0000-0000-000000000001",
+    "other_graph": "00000000-0000-0000-0000-000000000002"
+   },
+   "hash": "sha256:e98ba54c31ad9e9c8fce11336ad4bbccaeed8ebfe5d872ab8f117a0d4feb3c5f",
+   "source": "schema: graph_cli.policy/1\nid: installation\nroles:\n  importer: {description: \"Importers: findings and their sources in example_graph\"}\ngrants:\n  - entrypoint: server\n    principal: {role: importer}\n    graphs: [example_graph]\n    level: read\n    writes:\n      ex:Finding:\n        create: [title, summary, status]\n        update: [status, notes]\n        link: [ex:about]\n        transition: true\n      ex:Source:\n        create: true\n        link: true\nscopes:\n  example_project: {example_graph: write}\nno_project: {\"*\": read}\n"
+  },
+  "doc_03": {
+   "graphs": {
+    "example_graph": "00000000-0000-0000-0000-000000000001",
+    "other_graph": "00000000-0000-0000-0000-000000000002"
+   },
+   "hash": "sha256:74508762c196a94ed0741c84d083b58e8274be4bad710980e12ed242402d4b05",
+   "source": "schema: graph_cli.policy/1\nid: graph\ndeny:\n  - {id: no_salary, role: [importer], action: [\"write.update\"], type: [\"ex:Person\"], attribute: [salary]}\n"
+  },
+  "doc_04": {
+   "graphs": {
+    "example_graph": "00000000-0000-0000-0000-000000000001",
+    "other_graph": "00000000-0000-0000-0000-000000000002"
+   },
+   "hash": "sha256:d0a79cb794091b2e4b41bad7713ece33efda763e773cca4282dcebab2723cef2",
+   "source": "schema: graph_cli.policy/1\nid: installation\nroles:\n  reporting: {description: \"Reporting apps: findings and sources of example_graph\"}\n  auditor: {description: \"Auditors: every type of example_graph\"}\ngrants:\n  - entrypoint: server\n    principal: {role: reporting}\n    graphs: [example_graph]\n    level: read\n    reads: [ex:Finding, ex:Source]\n  - {entrypoint: server, principal: {role: auditor}, graphs: [example_graph], level: read}\nscopes:\n  example_project: {example_graph: read}\nno_project: {\"*\": none}\n"
+  },
+  "doc_05": {
+   "graphs": {
+    "example_graph": "00000000-0000-0000-0000-000000000001",
+    "other_graph": "00000000-0000-0000-0000-000000000002"
+   },
+   "hash": "sha256:8229fd03839bc978b755211b4295c26ae9e364344e093c11dce3851bd52a9382",
+   "source": "schema: graph_cli.policy/1\nid: graph\ndeny:\n  - {id: hide_people, role: [reporting], action: [\"read.get\"], type: [\"ex:Person\"]}\n"
+  },
+  "doc_06": {
+   "graphs": {
+    "example_graph": "00000000-0000-0000-0000-000000000001",
+    "other_graph": "00000000-0000-0000-0000-000000000002"
+   },
+   "hash": "sha256:c1a3ba4a8f4728b00ebd1944f1ff2db91710d7d00a4abbb755fdcb297498eb1d",
+   "source": "schema: graph_cli.policy/1\nid: installation\nroles:\n  hr: {description: \"HR: personal data of example_graph\"}\n  reporting: {description: \"Reporting apps: example_graph without personal data\"}\ngrants:\n  - entrypoint: server\n    principal: {role: hr}\n    graphs: [example_graph]\n    level: write\n    markings: [ex:personal]\n  - {entrypoint: server, principal: {role: reporting}, graphs: [example_graph], level: read}\nscopes:\n  example_project: {example_graph: write}\nno_project: {\"*\": none}\n"
+  },
+  "doc_07": {
+   "graphs": {
+    "example_graph": "00000000-0000-0000-0000-000000000001",
+    "other_graph": "00000000-0000-0000-0000-000000000002"
+   },
+   "hash": "sha256:f8d805de668b6c939398245c0a3e8af5204f3d7574decd4fdf6c51986f728b9a",
+   "source": "schema: graph_cli.policy/1\nid: installation\ngrants:\n  - {entrypoint: app, graphs: [example_graph], level: write, markings: [ex:personal]}\nno_project: {\"*\": write}\n"
+  },
+  "test_compiler.DENY_ONE_READ": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:8119e9f6062fbd363b69d49f3fb7fd36707bbf448b3ed3903b77c2cfa92317ce",
+   "source": "schema: graph_cli.policy/1\nid: installation\ngrants:\n  - {principal: {name: tester}, graphs: \"*\", level: write}\nno_project: {\"*\": write}\ndeny:\n  - {id: no_function, agent_type: [explore, builder], action: [\"read.function\"]}\n  - {id: no_writes, agent_type: [explore], action: [\"write.*\"]}\n"
+  },
+  "test_compiler.GRAPH_POLICY": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:98ce62f3fc6708e43c179727a8b91b4551964c0324f192fe16ab9dd32d843e2f",
+   "source": "schema: graph_cli.policy/1\nid: graph\ntypes:\n  \"files:File\": read\nobligations:\n  - {action: [\"write.transition\"], require_reason: true}\n  - {action: [\"write.*\"], max_batch: 200}\ndeny:\n  - {id: no_retract_by_explore, agent_type: explore, action: [write.retract], type: [\"inv:*\"]}\n"
+  },
+  "test_compiler.INSTALLATION": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:f6901e3a70c349cad0355eb6995f9add914c25aa1d93f8776b48296622a3581a",
+   "source": "schema: graph_cli.policy/1\nid: installation\ngrants:\n  - {principal: {name: tester}, graphs: \"*\", level: write}\nscopes:\n  example_project: {example_graph: write, other_graph: read}\n  another_project: {other_graph: write}\nno_project: {\"*\": read}\ndeny:\n  - {id: no_explore_writes, agent_type: [explore], action: [\"write.*\"]}\n"
+  },
+  "test_compiler.PROJECTS": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:5ecb60cb9f01f2b0830aad6140ca7063d4cf5a2e422ec87fa63047ecb806c564",
+   "source": "schema: graph_cli.policy/1\nid: installation\ngrants:\n  - {entrypoint: server, principal: {project: another_project}, graphs: [other_graph], level: write}\n  - {principal: {name: tester}, graphs: \"*\", level: write}\nscopes:\n  example_project: {example_graph: write, other_graph: read}\n  another_project: {other_graph: maintain, example_graph: maintain}\nno_project: {\"*\": read}\ndeny:\n  - {id: no_explore_writes, agent_type: [explore], action: [\"write.*\"]}\n"
+  },
+  "test_compiler.SERVER_GRANTS": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:cdd7ba0f65015790a41b733a4fc64d7f02c97265b92e73d0d117d6597528b6e6",
+   "source": "schema: graph_cli.policy/1\nid: installation\ngrants:\n  - {principal: {name: tester}, graphs: \"*\", level: write}\n  - {entrypoint: server, principal: {id: \"token:ci\"}, graphs: [example_graph], level: write}\n  - {entrypoint: [server, app], graphs: [other_graph], level: read}\nno_project: {\"*\": write}\n"
+  },
+  "test_fine_resources.GRAPH_LIMIT": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:8b7eeed4ef258d49f4e6473934374f0f3c8338f5bafdef0adb9d6daadf7b77ee",
+   "source": "schema: graph_cli.policy/1\nid: graph\ntypes:\n  \"nas:Note\": read\n"
+  },
+  "test_fine_resources.GRAPH_TERMS": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:cc6690c25da3f613593faeb0793c825e4be52a4daa77f874529260a0b059ab84",
+   "source": "schema: graph_cli.policy/1\nid: graph\ndeny:\n  - {id: no_body, role: [editor], action: [write.update], type: [nas:Note], attribute: [body]}\n  - {id: no_scan_title, action: [write.update, write.create], type: [nas:Scan],\n     attribute: [title]}\n  - {id: no_broader, action: [write.link], type: [nas:Topic], relation: [nas:broader]}\n  - {id: no_any_body, action: [\"write.*\"], type: [nas:Note], attribute: [kind], role: [tagger]}\n"
+  },
+  "test_fine_resources.INSTALLATION": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:d5cbe19bc7fb3bbee84733b1babbc96a6120933fc6fd1715508425a42be3ea90",
+   "source": "schema: graph_cli.policy/1\nid: installation\nroles:\n  importer: {description: \"Importers: notes and topics\"}\n  tagger: {description: \"Taggers: retag notes\"}\n  editor: {description: \"Editors: write every graph\"}\ngrants:\n  - entrypoint: server\n    principal: {role: importer}\n    graphs: [example_graph]\n    level: read\n    writes:\n      nas:Note:\n        create: [title, body, kind]\n        update: [body]\n        link: [nas:about]\n        transition: true\n      nas:Topic: {create: true}\n  - entrypoint: server\n    principal: {role: tagger}\n    graphs: [example_graph]\n    level: read\n    writes:\n      nas:Note: {update: [kind]}\n  - {entrypoint: server, principal: {role: editor}, graphs: [example_graph], level: write}\nscopes:\n  example_project: {example_graph: write}\n  another_project: {example_graph: read}\nno_project: {\"*\": read}\n"
+  },
+  "test_markings.GRAPH_LAYER": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:f289aaa4c1081b199133fb76021398bb51f0449e3c5ff6b20a1b8e71002407fe",
+   "source": "schema: graph_cli.policy/1\nid: graph\ntypes:\n  \"ex:Team\": none\ndeny:\n  - {id: no_team_edit, role: [editor, wide], action: [write.update], type: [ex:Person],\n     attribute: [team]}\n  - {id: no_person_reads, role: [leads], action: [read.*], type: [ex:Person]}\n"
+  },
+  "test_markings.INSTALLATION": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:ecf7ebc8d13e907104a4041333efee18a74dcfecd64dedadbe24e791c51e8fb9",
+   "source": "schema: graph_cli.policy/1\nid: installation\nroles:\n  hr: {description: \"HR: personal data of people\"}\n  leads: {description: \"Team leads: internal notes\"}\n  reporting: {description: \"Reporting: people without personal data\"}\n  editor: {description: \"Editors: update some people attributes\"}\n  wide: {description: \"Wide editors: update every people attribute\"}\ngrants:\n  - {entrypoint: server, principal: {role: hr}, graphs: [example_graph], level: write,\n     markings: [ex:personal]}\n  - {entrypoint: server, principal: {role: leads}, graphs: [example_graph], level: read,\n     markings: [ex:team_internal]}\n  - {entrypoint: server, principal: {role: reporting}, graphs: \"*\", level: read}\n  - entrypoint: server\n    principal: {role: editor}\n    graphs: [example_graph]\n    level: read\n    writes:\n      ex:Person: {update: [name, team]}\n  - entrypoint: server\n    principal: {role: wide}\n    graphs: [example_graph]\n    level: read\n    writes:\n      ex:Person: {update: true}\nscopes:\n  frozen_project: {example_graph: none}\n  ops: {example_graph: maintain}\nno_project: {\"*\": write}\ndeny:\n  - {id: no_explorers, agent_type: [explore], action: [\"read.*\", \"write.*\"], graph: \"*\"}\n"
+  },
+  "test_read_limits.GRAPH_LAYER": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:440e9eb9af420d4eaac55317399c3018808275bb130def9be76e074cffe80dec",
+   "source": "schema: graph_cli.policy/1\nid: graph\ntypes:\n  \"nas:Scan\": none\ndeny:\n  - {id: hide_notes, role: [reporting], action: [read.get], type: [nas:Note]}\n"
+  },
+  "test_read_limits.INSTALLATION": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:38dfc2cab8549c93351877d2f22741385afe6bb8ef0131aa92ef2581926674ba",
+   "source": "schema: graph_cli.policy/1\nid: installation\nroles:\n  reporting: {description: \"Reporting: notes and topics only\"}\n  auditor: {description: \"Auditors: read everything\"}\n  curator: {description: \"Curators: read and write books only\"}\ngrants:\n  - entrypoint: server\n    principal: {role: reporting}\n    graphs: [example_graph]\n    level: read\n    reads: [nas:Topic, nas:Note]\n  - {entrypoint: server, principal: {role: auditor}, graphs: [example_graph], level: read}\n  - entrypoint: server\n    principal: {role: curator}\n    graphs: [example_graph, other_graph]\n    level: read\n    reads: [\"nas:*\"]\n    writes:\n      nas:Book: {create: true}\nscopes:\n  frozen_project: {example_graph: none}\nno_project: {\"*\": read}\n"
+  },
+  "test_roles.GRANT_HEAVY_GRAPH": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:b380931d2493b70746327335f9ecbb999551e91028d92c16fbcaa80469a95268",
+   "source": "schema: graph_cli.policy/1\nid: graph\ntypes:\n  \"files:File\": read\n  \"inv:*\": read\n  \"ex:Finding\": write\nobligations:\n  - {action: [\"write.transition\"], require_reason: true}\ndeny:\n  - {id: no_retract_by_explore, agent_type: explore, action: [write.retract], type: [\"inv:*\"]}\n  - {id: no_decision_writes, role: [importer], action: [\"write.*\"],\n     type: [\"ex:Decision\", \"ex:Note\"]}\n  - {id: no_alias, agent_type: [explore], action: [\"write.alias\", \"write.supersede\"],\n     type: [\"ex:*\"]}\n"
+  },
+  "test_roles.GRANT_HEAVY_INSTALLATION": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:d9a8bc9c978df9be1d65073fd5da3c956c66f2ca93c73708ec22d779ace68700",
+   "source": "schema: graph_cli.policy/1\nid: installation\nroles:\n  importer: {description: \"Importers: findings in example_graph\"}\n  tagger: {description: \"Taggers: read every graph\"}\ngrants:\n  - {principal: {name: tester}, graphs: \"*\", level: write}\n  - {entrypoint: app, graphs: [example_graph, other_graph], level: read}\n  - {entrypoint: server, principal: {project: example_project},\n     graphs: [example_graph], level: write}\n  - {entrypoint: server, principal: {role: importer}, graphs: [example_graph], level: write}\n  - {entrypoint: server, principal: {role: tagger}, graphs: \"*\", level: read}\n  - {entrypoint: server, principal: {role: tagger, project: example_project},\n     graphs: [other_graph, third_graph], level: write}\n  - {entrypoint: [server, app], principal: {id: \"token:ci\"}, graphs: [third_graph], level: read}\nmaintainers:\n  - {name: boss}\nscopes:\n  example_project: {example_graph: write, other_graph: read, third_graph: maintain}\n  another_project: {other_graph: write, \"*\": read}\nno_project: {\"*\": read, third_graph: none}\ndeny:\n  - {id: no_explore_writes, agent_type: [explore], action: [\"write.*\"]}\n  - {id: no_server_retract, entrypoint: server, principal_name: ci,\n     action: [\"write.retract\"], graph: [example_graph]}\n  - {id: importer_no_retract, role: [importer], action: [\"write.retract\", \"write.supersede\"]}\n  - {id: no_device_unlink, device_id: dev-1, action: [\"write.unlink\"], graph: \"*\"}\nobligations:\n  - {action: [\"write.*\"], max_batch: 100}\n  - {action: [\"write.retract\"], require_reason: true}\n"
+  },
+  "test_roles.GRAPH_POLICY": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:40558d539284ac18829d9206409e03045cb4b6554e096668863face886f3693e",
+   "source": "schema: graph_cli.policy/1\nid: graph\ndeny:\n  - {id: importer_findings_only, role: [importer], action: [\"write.*\"], type: [\"ex:Decision\"]}\n"
+  },
+  "test_roles.INSTALLATION": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:2c9e956f4d10f301ea4e3ef087741705d54bd1403e724313b29d95ae9bdc59cb",
+   "source": "schema: graph_cli.policy/1\nid: installation\nroles:\n  reader: {description: \"Reporting apps: read every graph\"}\n  importer: {description: \"Importers: write into example_graph\"}\ngrants:\n  - {entrypoint: server, principal: {role: reader}, graphs: \"*\", level: read}\n  - {entrypoint: server, principal: {role: importer}, graphs: [example_graph], level: write}\n  - {entrypoint: server, principal: {role: reader, project: example_project},\n     graphs: [other_graph], level: write}\nno_project: {\"*\": write}\ndeny:\n  - {id: importer_no_retract, role: [importer], action: [\"write.retract\", \"write.supersede\"]}\n"
+  },
+  "test_roles.MARKINGS_INSTALLATION": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:c499430a79c979581e87e3d0aa8306a6431e8b444c5278d011e36ed6112839fe",
+   "source": "schema: graph_cli.policy/1\nid: installation\nroles:\n  hr: {description: \"HR: personal data of people\"}\n  reporting: {description: \"Reporting: people without personal data\"}\ngrants:\n  - {principal: {name: tester}, graphs: \"*\", level: write}\n  - entrypoint: server\n    principal: {role: hr}\n    graphs: [example_graph, other_graph]\n    level: read\n    reads: [\"ex:*\", \"files:File\"]\n    writes:\n      ex:Person:\n        create: [name, email]\n        update: [email, team]\n        supersede: true\n    markings: [ex:team_internal, ex:personal]\n  - {entrypoint: server, principal: {role: reporting}, graphs: [example_graph], level: write,\n     markings: [ex:personal]}\nmaintainers:\n  - {name: boss}\nno_project: {\"*\": read}\n"
+  },
+  "test_roles.PRE_ROLES_GRAPH": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:9bb9346e7c0b28fcdb1338df9220f26302b7817b37d5df7ddc2b0805311bc3c3",
+   "source": "schema: graph_cli.policy/1\nid: graph\ntypes:\n  \"files:File\": read\nobligations:\n  - {action: [\"write.transition\"], require_reason: true}\ndeny:\n  - {id: no_retract_by_explore, agent_type: explore, action: [write.retract], type: [\"inv:*\"]}\n"
+  },
+  "test_roles.PRE_ROLES_INSTALLATION": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:341e48abf1fc83a583a6859197b554535c1469f0c9b43cedaa1fb4054cdb3bcb",
+   "source": "schema: graph_cli.policy/1\nid: installation\ngrants:\n  - {principal: {name: tester}, graphs: \"*\", level: write}\n  - {entrypoint: server, principal: {project: example_project},\n     graphs: [example_graph], level: write}\n  - {entrypoint: server, principal: {id: \"token:ci\"}, graphs: [example_graph], level: read}\n  - {entrypoint: [server, app], graphs: [other_graph], level: read}\nmaintainers:\n  - {name: boss}\nscopes:\n  example_project: {example_graph: write, other_graph: read, third_graph: maintain}\n  another_project: {other_graph: write}\nno_project: {\"*\": read}\ndeny:\n  - {id: no_explore_writes, agent_type: [explore], action: [\"write.*\"]}\n  - {id: no_server_retract, entrypoint: server, principal_name: ci,\n     action: [\"write.retract\"], graph: [example_graph]}\nobligations:\n  - {action: [\"write.*\"], max_batch: 100}\n"
+  },
+  "test_write_allowance.GRAPH_LAYER": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:a5a2228876ec156e113f4be0bd2fc971c9aa2c7ec477970c812af043810fb11c",
+   "source": "schema: graph_cli.policy/1\nid: graph\ntypes:\n  \"nas:Topic\": read\nobligations:\n  - {action: [write.create], require_reason: true}\n  - {action: [\"write.*\"], max_batch: 3}\n"
+  },
+  "test_write_allowance.INSTALLATION": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:3baaf396e47c98e19c9255f78329262d0d4faefbf11391dab80cb25cbf4f13fa",
+   "source": "schema: graph_cli.policy/1\nid: installation\nroles:\n  importer: {description: \"Importers: notes and topics\"}\n  tagger: {description: \"Taggers: update notes\"}\n  maintainer: {description: \"Everything\"}\ngrants:\n  - entrypoint: server\n    principal: {role: importer}\n    graphs: [example_graph]\n    level: read\n    writes:\n      nas:Note: {create: [title, body, kind], update: [body], link: [nas:about], retract: true}\n      nas:Topic: {create: true, alias: true}\n  - entrypoint: server\n    principal: {role: tagger}\n    graphs: [example_graph]\n    level: read\n    writes:\n      nas:Note: {update: [kind], transition: [status]}\n      nas:Missing: {create: true}\n  - {entrypoint: server, principal: {role: maintainer}, graphs: [example_graph], level: write}\nno_project: {\"*\": write}\n"
+  },
+  "test_write_grants.GRAPH_POLICY": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:a4c6cfb5596a0ff3b020e2be8084149e100e71dbfa9f2bf7baf34d9e1dcea70e",
+   "source": "schema: graph_cli.policy/1\nid: graph\ndeny:\n  - {id: no_body, role: [importer], action: [write.update, write.create], type: [nas:Note],\n     attribute: [kind, body]}\n  - {id: no_cites, action: [write.link], type: [nas:Topic, nas:Note], relation: [nas:cites]}\n  - {id: no_unlink, action: [write.unlink], type: [nas:Note], relation: [nas:about]}\n  - {id: no_any_write, action: [\"write.*\"], type: [nas:Note], relation: [nas:about]}\n"
+  },
+  "test_write_grants.INSTALLATION": {
+   "graphs": {
+    "example_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a",
+    "other_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b",
+    "third_graph": "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
+   },
+   "hash": "sha256:032f0cdb80777893f581e0226c6ace3c8d8fd2fe15cf382ca1d8dbf9c0829a6e",
+   "source": "schema: graph_cli.policy/1\nid: installation\nroles:\n  importer: {description: \"Importers: notes and topics\"}\n  tagger: {description: \"Taggers: update notes\"}\ngrants:\n  - entrypoint: server\n    principal: {role: importer}\n    graphs: [example_graph]\n    level: read\n    writes:\n      nas:Note:\n        create: [title, body, kind]\n        update: [body, kind]\n        link: [nas:about]\n        unlink: false\n        transition: [status]\n        retract: true\n      nas:Topic:\n        create: true\n        link: true\n        supersede: true\n        alias: true\n  - entrypoint: server\n    principal: {role: tagger}\n    graphs: [example_graph, other_graph]\n    level: read\n    writes:\n      nas:Note: {update: [kind]}\nno_project: {\"*\": read}\n"
+  }
+ }
+}

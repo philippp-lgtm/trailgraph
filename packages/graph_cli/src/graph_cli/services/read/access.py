@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from graph_cli.access_control.authorize import authorize
+from graph_cli.access_control.effective import CatalogGrants
 from graph_cli.audit import events
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext, Decision
@@ -85,6 +86,13 @@ class ReadAccess(ReadState):
                 lambda: self._models.load_for_read(entry)[0],
                 lambda: self._models.used_markings(entry),
             )
+
+    def catalog_scope(self, actor: ActorContext, entry: GraphEntry) -> CatalogGrants | None:
+        """The entries ``actor``'s grants name when they are catalog grants only (everything the
+        caller sees of the graph's catalog is among them), ``None`` otherwise. Cached per policy
+        hash, graph and actor key; a pure read of the policy, nothing is decided or recorded."""
+        with self.timings.phase("authorize"):
+            return self._catalog_filter.scope(actor, entry.id, self._policy.current(entry.id))
 
     def visible_types(self, actor: ActorContext, entry: GraphEntry) -> frozenset[str] | None:
         """The concrete types ``actor`` sees in the graph, ``None`` for no limit (the type

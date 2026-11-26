@@ -112,6 +112,7 @@ def describe_tools(
         views=found.views or (),
         obligations=obligations,
         find=context(state).reader.may(view.actor, view.entry, "read.find"),
+        rows=context(state).reader.view_row_functions(view.actor, view.entry),
         selection=Selection(
             tools=tool,
             kinds=(kind,) if kind else (),

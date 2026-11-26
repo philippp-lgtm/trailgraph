@@ -329,11 +329,15 @@ class ReadViews(ReadEntities, ReadQueries):
         warn ``view.section_failed``; any other error ends the call. The warning comes with
         every page that runs the section. The function runs on the reader's snapshot and model
         within ``budget``, the section's share of what one call may spend."""
+        # the row function is found over what the read view shows (an allowed view runs its row
+        # functions without them being granted), but a replacement is named only when the caller's
+        # catalog has it
         visible = self._visible_functions(view.entry, view.read_view)
         function = find_entry(visible, section.function)
         if function.deprecated and function.name not in deprecated:
             deprecated.add(function.name)
-            replaced = seen_replacement(function.defn.replaced_by, visible)
+            seen = self.callable_functions(view.actor, view.entry, view.read_view)
+            replaced = seen_replacement(function.defn.replaced_by, seen)
             failures.append(
                 WarningRecord(
                     "view.function_deprecated",

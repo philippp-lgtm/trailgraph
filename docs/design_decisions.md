@@ -145,8 +145,8 @@ are not audited by default, and every write pays for an extra synced append.
 ## Access is decided by policy, and the limits are stated
 
 **Decision.** Two policy layers decide each request on an action and a
-resource. An installation policy grants a level (none, read or write) per
-principal and narrows it per project. A graph policy narrows further inside
+resource. An installation policy grants a level (none, read or write, or
+a catalog of named entries) per principal and narrows it per project. A graph policy narrows further inside
 one graph: read-only or hidden types, obligations such as a required reason,
 and deny rules. An explicit deny wins and the default is deny. Finer tools
 (write allow lists, read limits, markings, roles) refine this. A graph the

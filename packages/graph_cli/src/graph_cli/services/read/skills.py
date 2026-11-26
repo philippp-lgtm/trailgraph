@@ -125,12 +125,16 @@ class ReadSkills(ReadCatalogs):
             # What the reader's view hides goes first, the right second: a reader that sees no
             # function must not learn through ``read.function`` that the graph has any.
             document: JsonObject | None = found[1].compiled
-            if view.limited:
-                hidden = self._hidden_functions(entry, found, view)
+            scope = self.catalog_scope(actor, entry)
+            if view.limited or scope is not None:
+                hidden = self._hidden_functions(entry, found, view) if view.limited else frozenset()
+                named = None if scope is None else frozenset(scope.functions)
                 kept = [
                     e
                     for e in req_list(found[1].compiled, "functions")
-                    if isinstance(e, dict) and e.get("name") not in hidden
+                    if isinstance(e, dict)
+                    and e.get("name") not in hidden
+                    and (named is None or e.get("name") in named)
                 ]
                 document = {**found[1].compiled, "functions": kept} if kept else None
             if document is not None:

@@ -13,16 +13,19 @@ of ``authorize()`` calls.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from typing import Final
 
 from graph_cli.access_control.authorize import allow_rule_holds, authorize
-from graph_cli.access_control.compiler import WRITE_VERBS
+from graph_cli.access_control.compiler import CATALOG_BASE_ACTIONS, WRITE_VERBS
 from graph_cli.access_control.documents import (
     CURIE_RE,
     INSTALLATION_LAYER,
     fine_types,
-    is_write_glob,
+    glob,
+    is_term_write_glob,
     layer_of,
     read_limited,
     rules,
@@ -31,8 +34,12 @@ from graph_cli.access_control.documents import (
 from graph_cli.access_control.terms import TermModel, TypeTerms, marking_resource, term_resource
 from graph_cli.kernel.actions import (
     ACCESS_LEVELS,
+    CATALOG_LEVEL,
+    ENTRY_KIND_ACTIONS,
+    ENTRY_NAME_RE,
+    ENTRY_PLURALS,
+    LEVEL_WRITE_ACTIONS,
     PROJECT_MAINT_ACTIONS,
-    WRITE_ACTIONS,
     level_actions,
 )
 from graph_cli.kernel.actor import ActorContext, Assurance
@@ -49,13 +56,19 @@ _UNDECLARED_MARKING: Final = "probe:undeclared"  # a marking no model declares
 
 
 def graph_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> str:
-    """The highest level of the ladder whose every action is allowed on ``graph:<id>``."""
+    """The highest level of the ladder whose every action is allowed on ``graph:<id>``, or
+    ``catalog`` for a caller whose grants on the graph are catalog grants only (it holds no right
+    on the graph itself beyond listing and describing it, which no rung of the ladder describes)
+    and the decisions still let it list and describe the graph: a catalog caller a scope or a deny
+    rule takes the graph from is at ``none``, like a reader in the same position."""
+    if _catalog_level(actor, graph, policy):
+        return CATALOG_LEVEL
     resource = f"graph:{graph}"
     reached = ACCESS_LEVELS[0]
     for level in ACCESS_LEVELS[1:]:
         actions = [a for a in level_actions(level) if not a.endswith("*")]
         if level == "write":
-            actions += sorted(WRITE_ACTIONS)
+            actions += sorted(LEVEL_WRITE_ACTIONS)
         if not all(
             authorize(actor, a, resource, _PROBE, policy).effect == "allow" for a in actions
         ):
@@ -64,15 +77,27 @@ def graph_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> str:
     return reached
 
 
+def _catalog_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> bool:
+    """Whether ``actor`` is at the level ``catalog`` on ``graph``: its grants there are catalog
+    grants only and ``read.list`` and ``read.describe`` on ``graph:<id>`` are allowed to it."""
+    resource = f"graph:{graph}"
+    return (
+        catalog_grants(actor, graph, policy).catalog_only
+        and authorize(actor, "read.list", resource, _PROBE, policy).effect == "allow"
+        and authorize(actor, "read.describe", resource, _PROBE, policy).effect == "allow"
+    )
+
+
 def effective_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> str:
     """What the actor can do on ``graph:<id>`` in one word: ``write`` when any write action is
     allowed next to some read, ``read`` when any read action is, else ``none``.
 
     ``graph_level`` demands every action of a level, so one denied read action (say
     ``read.function``) drops it to ``none`` for a caller who reads the graph; this is the level to
-    tell that caller, with ``withheld_actions`` naming what is missing below it."""
+    tell that caller, with ``withheld_actions`` naming what is missing below it. A caller whose
+    grants are catalog grants only is at ``catalog`` (see ``graph_level``)."""
     reached = graph_level(actor, graph, policy)
-    if reached == ACCESS_LEVELS[-1]:
+    if reached in (ACCESS_LEVELS[-1], CATALOG_LEVEL):
         return reached
     resource = f"graph:{graph}"
 
@@ -82,7 +107,7 @@ def effective_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> s
     reads = [a for a in level_actions("read") if not a.endswith("*")]
     if not holds(reads):
         return reached
-    return "write" if holds(sorted(WRITE_ACTIONS)) else "read"
+    return "write" if holds(sorted(LEVEL_WRITE_ACTIONS)) else "read"
 
 
 def maintains(actor: ActorContext, graph: GraphId, policy: PolicySet) -> bool:
@@ -99,9 +124,14 @@ def withheld_actions(actor: ActorContext, graph: GraphId, policy: PolicySet) -> 
     """The ladder actions denied on ``graph:<id>`` in a class (read, write) of which at
     least one action is allowed: what deny rules take away from a granted level, which
     ``graph_level`` alone cannot show (a denied ``read.history`` leaves the level at
-    ``none`` while the graph stays readable)."""
+    ``none`` while the graph stays readable). Nothing is withheld from a catalog-only caller: the
+    primitives were never granted to it, so a deny rule took nothing away."""
+    if _catalog_level(actor, graph, policy):
+        return []
     resource = f"graph:{graph}"
-    ladder = [a for a in level_actions("write") if not a.endswith("*")] + sorted(WRITE_ACTIONS)
+    ladder = [a for a in level_actions("write") if not a.endswith("*")] + sorted(
+        LEVEL_WRITE_ACTIONS
+    )
     withheld: list[str] = []
     for area in ("read.", "write."):
         actions = [a for a in ladder if a.startswith(area)]
@@ -111,6 +141,159 @@ def withheld_actions(actor: ActorContext, graph: GraphId, policy: PolicySet) -> 
         if len(denied) < len(actions):
             withheld += denied
     return sorted(withheld)
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogGrants:
+    """What the allow rules that match an actor name of the entries of one graph.
+
+    ``functions``, ``actions`` and ``views`` are the granted names, sorted and unique;
+    ``catalog_only`` tells that every grant the actor has on the graph is a catalog grant
+    (``level: catalog``): the actor holds no right on the graph itself beyond listing and
+    describing it, so what its grants do not name does not exist for it. Names are the
+    grants', whether the entries are published or a deny rule takes a right away."""
+
+    functions: tuple[str, ...] = ()
+    actions: tuple[str, ...] = ()
+    views: tuple[str, ...] = ()
+    catalog_only: bool = False
+    # the ids of the allow rules that make the actor a reader of the graph (empty for a catalog-only
+    # actor): what a ``whoami`` or an ``explain`` shows to say why the catalog limits nothing
+    reader_rules: tuple[str, ...] = ()
+
+    def names(self, kind: str) -> tuple[str, ...]:
+        """The granted names of ``kind`` (``function``, ``action`` or ``view``)."""
+        if kind == "function":
+            return self.functions
+        if kind == "action":
+            return self.actions
+        if kind == "view":
+            return self.views
+        raise ValueError(f"unknown entry kind {kind!r}")
+
+    def __bool__(self) -> bool:
+        return bool(self.functions or self.actions or self.views)
+
+
+_ENTRY_KIND_OF: Final = ENTRY_PLURALS
+
+
+def catalog_grants(actor: ActorContext, graph: GraphId, policy: PolicySet) -> CatalogGrants:
+    """The catalog entries of ``graph`` that the grants of ``actor`` name, and whether it is
+    *catalog-only* there.
+
+    Decided from the compiled allow rules whose principal matches the actor as ``authorize``
+    matches it (``allow_rule_holds``), never from a decision: a rule that names an entry
+    resource of the graph (``graph:<id>/function:<name>``, ``/action:`` or ``/view:``) grants
+    that name, and a rule that covers ``graph:<id>`` itself with any action beyond listing and
+    describing it is a grant of the graph proper (a ``read`` or ``write`` level, the
+    maintainers' rule). The actor is catalog-only when it has entry grants and no grant of the
+    graph proper. A deny rule is no grant, so a ``read.get`` deny never turns a reader into a
+    catalog caller. Pure and cheap (no decision is made): cache it per policy hash and actor."""
+    resource = f"graph:{graph}"
+    prefixes = {kind: f"{resource}/{kind}:" for kind in _ENTRY_KIND_OF}
+    found: dict[str, set[str]] = {kind: set() for kind in _ENTRY_KIND_OF}
+    proper: set[str] = set()
+    for document in policy.documents:
+        for rule in rules(document):
+            if rule.get("effect") != "allow" or not allow_rule_holds(rule, actor):
+                continue
+            patterns = strings(rule, "resource")
+            for kind, prefix in prefixes.items():
+                # a rule grants the entry only through an action that covers the action of its
+                # kind (a hand-built rule may name another one, which authorize never allows)
+                if not any(glob(a, ENTRY_KIND_ACTIONS[kind]) for a in strings(rule, "action")):
+                    continue
+                for pattern in patterns:
+                    name = pattern[len(prefix) :]
+                    if pattern.startswith(prefix) and ENTRY_NAME_RE.match(name):
+                        found[kind].add(name)
+            if any(glob(p, resource) for p in patterns) and any(
+                a not in CATALOG_BASE_ACTIONS for a in strings(rule, "action")
+            ):
+                proper.add(str(rule.get("id")))
+    names = {_ENTRY_KIND_OF[kind]: tuple(sorted(found[kind])) for kind in found}
+    return CatalogGrants(
+        functions=names["functions"],
+        actions=names["actions"],
+        views=names["views"],
+        catalog_only=any(found.values()) and not proper,
+        reader_rules=tuple(sorted(proper)) if any(found.values()) else (),
+    )
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class CatalogOverlap:
+    """A catalog grant (``catalog`` rule id, say ``grant.2``) on ``graph`` whose callers are
+    certainly also covered by a rule that grants the graph itself (``other``)."""
+
+    graph: str
+    catalog: str
+    other: str
+
+
+_CATALOG_RULE_RE: Final = re.compile(r"^(grant\.[0-9]+)\.(?:functions|views|actions)$")
+
+
+def catalog_overlaps(documents: Iterable[Mapping[str, JsonValue]]) -> tuple[CatalogOverlap, ...]:
+    """The catalog grants of the installation layer of ``documents`` that another grant of the
+    same graph certainly covers: an allow rule that covers ``graph:<id>`` with an action beyond
+    listing and describing, whose principal matches every actor the catalog grant's does (it
+    names no fact the catalog grant lacks and each of its values contains the grant's). Rights
+    add up, so for those callers the grant limits nothing: its ``reads`` and ``markings`` count
+    for every read, not only inside its entries. Only certain cases are found (a rule with an
+    ``unless`` condition is skipped; whether two different roles meet in one token is a question
+    of tokens, not of the policy). Pure over the documents; sorted."""
+    found: set[CatalogOverlap] = set()
+    for document in documents:
+        if layer_of(document) != INSTALLATION_LAYER:
+            continue
+        allows = [r for r in rules(document) if r.get("effect") == "allow"]
+        for rule in allows:
+            matched = _CATALOG_RULE_RE.match(str(rule.get("id")))
+            if matched is None:
+                continue
+            base = next((r for r in allows if r.get("id") == matched.group(1)), None)
+            if base is None or any(a not in CATALOG_BASE_ACTIONS for a in strings(base, "action")):
+                continue  # a read grant with catalog.actions is a reader: it limits nothing anyway
+            graphs = {
+                m.group(1)
+                for p in strings(rule, "resource")
+                if (m := _ENTRY_GRAPH_RE.match(p)) is not None
+            }
+            for graph in graphs:
+                for other in allows:
+                    other_id = str(other.get("id"))
+                    if other_id == matched.group(1) or other_id.startswith(f"{matched.group(1)}."):
+                        continue
+                    if (
+                        "unless" not in other
+                        and any(glob(p, f"graph:{graph}") for p in strings(other, "resource"))
+                        and any(a not in CATALOG_BASE_ACTIONS for a in strings(other, "action"))
+                        and _principal_implies(rule.get("principal"), other.get("principal"))
+                    ):
+                        found.add(CatalogOverlap(graph, matched.group(1), other_id))
+    return tuple(sorted(found))
+
+
+_ENTRY_GRAPH_RE: Final = re.compile(r"^graph:([^/]+)/(?:function|action|view):")
+
+
+def _principal_implies(narrow: JsonValue, wide: JsonValue) -> bool:
+    """Whether every actor whose facts match the principal ``narrow`` also matches ``wide``:
+    ``wide`` names no fact ``narrow`` lacks, and each value of ``narrow`` is among those of
+    ``wide``."""
+    near = narrow if isinstance(narrow, Mapping) else {}
+    far = wide if isinstance(wide, Mapping) else {}
+    for key, expected in far.items():
+        if key not in near:
+            return False
+        found = near[key]
+        have = found if isinstance(found, list) else [found]
+        wanted = expected if isinstance(expected, list) else [expected]
+        if not all(value in wanted for value in have):
+            return False
+    return True
 
 
 def write_obligations(
@@ -123,7 +306,7 @@ def write_obligations(
     sees its ``require_reason`` and ``max_batch`` too."""
     found: dict[str, JsonValue] = {}
     granted = write_grant_types(actor, graph, policy)
-    for action in sorted(WRITE_ACTIONS):
+    for action in sorted(LEVEL_WRITE_ACTIONS):
         resources = [f"graph:{graph}", *(f"graph:{graph}/type:{t}" for t in granted)]
         decision = None
         for resource in resources:
@@ -156,7 +339,7 @@ def write_grant_types(actor: ActorContext, graph: GraphId, policy: PolicySet) ->
         for rule in rules(document):
             if (
                 rule.get("effect") != "allow"
-                or not any(is_write_glob(a) for a in strings(rule, "action"))
+                or not any(is_term_write_glob(a) for a in strings(rule, "action"))
                 or not allow_rule_holds(rule, actor)
             ):
                 continue

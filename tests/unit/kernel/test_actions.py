@@ -4,10 +4,14 @@ import pytest
 
 from graph_cli.kernel.actions import (
     ACTIONS,
+    ENTRY_ACTIONS,
+    ENTRY_NAME_RE,
+    LEVEL_WRITE_ACTIONS,
     MAINT_ACTIONS,
     READ_ACTIONS,
     RESERVED_ACTIONS,
     WRITE_ACTIONS,
+    actions_above,
     capability_class,
     extension_state_action,
     is_known_action,
@@ -18,9 +22,9 @@ from graph_cli.kernel.errors import GraphCliError
 
 
 def test_taxonomy_sizes_and_disjointness() -> None:
-    assert (len(READ_ACTIONS), len(WRITE_ACTIONS), len(MAINT_ACTIONS)) == (10, 8, 18)
+    assert (len(READ_ACTIONS), len(WRITE_ACTIONS), len(MAINT_ACTIONS)) == (11, 9, 18)
     # B14.11: maint.token_create, maint.token_revoke, maint.token_update
-    assert len(ACTIONS) == 36
+    assert len(ACTIONS) == 38
     assert RESERVED_ACTIONS <= ACTIONS
 
 
@@ -69,3 +73,30 @@ def test_function_is_part_of_the_read_level() -> None:
     assert "read.function" in level_actions("read")
     assert "read.function" in level_actions("write")
     assert "read.function" not in RESERVED_ACTIONS
+
+
+def test_entry_actions_are_in_the_taxonomy_but_in_no_level() -> None:
+    """``read.view`` and ``write.action`` are decided on catalog entries and named only by a
+    ``catalog`` grant: no level expands to them, so a policy compiled before them keeps its
+    document and hash (the pins are in ``test_catalog_grants``)."""
+    assert {"read.view", "write.action"} == ENTRY_ACTIONS
+    assert ENTRY_ACTIONS <= READ_ACTIONS | WRITE_ACTIONS
+    assert ENTRY_ACTIONS.isdisjoint(RESERVED_ACTIONS)
+    for level in ("none", "read", "write"):
+        expanded = level_actions(level)
+        assert not ENTRY_ACTIONS & set(expanded), level
+    # the area globs of a level still cover them: a scope takes them away with the rest
+    assert {"write.*", "read.*"} <= set(actions_above("none"))
+    assert "write.*" in actions_above("read")
+    assert WRITE_ACTIONS - {"write.action"} == LEVEL_WRITE_ACTIONS
+    assert capability_class("read.view") == "read"
+    assert capability_class("write.action") == "write"
+
+
+def test_the_entry_name_pattern_is_the_one_of_the_catalog_formats() -> None:
+    from graph_cli.kinetic.format import NAME_RE
+
+    assert NAME_RE is ENTRY_NAME_RE
+    assert ENTRY_NAME_RE.match("open_tickets")
+    for bad in ("x", "Open", "1abc", "a-b", "a" * 64, ""):
+        assert not ENTRY_NAME_RE.match(bad), bad

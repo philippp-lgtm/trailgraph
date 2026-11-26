@@ -18,7 +18,7 @@ from graph_cli.cli_kit.output_schemas import (
 )
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
-from graph_cli.kernel.actions import ACCESS_LEVELS
+from graph_cli.kernel.actions import LEVELS_SHOWN
 from graph_cli_admin.maintenance_cli.commands.common import (
     CHANGE_ERRORS,
     DATA_ROOT,
@@ -74,6 +74,9 @@ def explain(
     attribute: str | None,
     relation: str | None,
     marking: str | None,
+    function: str | None,
+    view: str | None,
+    entry_action: str | None,
     data_root: str | None,
 ) -> Result:
     outcome = policy.explain(
@@ -88,6 +91,9 @@ def explain(
         attribute=attribute,
         relation=relation,
         marking=marking,
+        function=function,
+        view=view,
+        entry_action=entry_action,
     )
     return Result(data=outcome.data, warnings=outcome.warnings)
 
@@ -152,7 +158,7 @@ EXPLAIN_OUTPUT: Final = obj(
         "roles": STRINGS,  # the roles explained for; a token's own for --token
         "scope": NULLABLE_STRING,
         "policy_hash": STRING,
-        "level": enum(*ACCESS_LEVELS),
+        "level": enum(*LEVELS_SHOWN),
         "withheld": STRINGS,
         "maintains": BOOLEAN,
         "resource": STRING,
@@ -167,6 +173,16 @@ EXPLAIN_OUTPUT: Final = obj(
         # for a caller who lacks a marking the graph's model uses: the markings it holds
         "markings": STRINGS,
         "writes": obj(extra=obj(extra={"anyOf": [{"const": True}, array(STRING)]})),
+        # for a caller whose grants name catalog entries of the graph: the names granted
+        "catalog": obj(
+            {
+                "functions": STRINGS,
+                "actions": STRINGS,
+                "views": STRINGS,
+                "catalog_only": BOOLEAN,  # false: the caller is also a reader of the graph
+                "reader_rules": STRINGS,  # ... made so by these rules
+            }
+        ),
     },
 )
 
@@ -308,6 +324,25 @@ SPECS: Final = (
                 "Decide on one marking of the graph, by CURIE (needs --action read.get):"
                 " does the caller hold it. Excludes --type, --attribute and --relation.",
             ),
+            ParamSpec(
+                "--function",
+                "string",
+                "Decide on one published function of the graph (read.function on the entry):"
+                " does the caller's grant name it. Excludes --view, --entry-action, --action,"
+                " --type, --attribute, --relation and --marking.",
+            ),
+            ParamSpec(
+                "--view",
+                "string",
+                "Decide on one published view of the graph (read.view on the entry), as"
+                " --function does.",
+            ),
+            ParamSpec(
+                "--entry-action",
+                "string",
+                "Decide on one published action of the graph (write.action on the entry), as"
+                " --function does; --action stays the policy action.",
+            ),
             ParamSpec("--file", "file", "Explain an authored policy instead of the installed one."),
             DATA_ROOT,
         ),
@@ -330,6 +365,10 @@ SPECS: Final = (
                 "Whether the caller holds one marking.",
             ),
             Example(
+                "graph-admin policy explain --graph <graph> --role <value> --function <name>",
+                "Whether a role's catalog grant names one function.",
+            ),
+            Example(
                 "graph-admin policy explain --graph <graph> --role <value> --role <value>"
                 " --project <value>",
                 "What a server token of a project that holds roles gets.",
@@ -347,7 +386,9 @@ SPECS: Final = (
         " markings it holds, never one it lacks) for a caller who lacks a marking the graph's"
         " model uses, and `writes` for a caller whose write allow list applies, over what it sees:"
         " per type the verbs it may write and, for create, update, link, unlink and transition,"
-        " `true` or the allowed attributes or relations.",
+        " `true` or the allowed attributes or relations. A caller whose grants on the graph"
+        " are catalog grants only (`level: catalog`) has `level: catalog`, no `withheld`, and"
+        " `catalog`: the names its grants give, whether published or not.",
         remote="hooked",
     ),
 )

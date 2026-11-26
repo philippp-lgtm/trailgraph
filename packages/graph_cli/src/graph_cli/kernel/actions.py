@@ -27,6 +27,7 @@ READ_ACTIONS: Final = frozenset(
         "describe",
         "query",
         "function",
+        "view",  # entry-only: see ENTRY_ACTIONS
         "audit_own",
         "native",
     )
@@ -42,6 +43,7 @@ WRITE_ACTIONS: Final = frozenset(
         "supersede",
         "retract",
         "alias",
+        "action",  # entry-only: see ENTRY_ACTIONS
     )
 )
 MAINT_ACTIONS: Final = frozenset(
@@ -74,8 +76,31 @@ RESERVED_ACTIONS: Final = frozenset(
 )
 ACTIONS: Final[frozenset[Action]] = READ_ACTIONS | WRITE_ACTIONS | MAINT_ACTIONS
 
+# Catalog entries (a published function, action or view) are resources of their own,
+# ``graph:<id>/<kind>:<name>``. ``read.view`` and ``write.action`` are decided on them and on no
+# other resource, and no level expands to them, so a policy written before them keeps its
+# document and its hash. A ``catalog`` grant names them one by one; a rule whose glob covers them
+# (``write.*`` of a write level or the built-in app rule, ``*`` of the maintainers) allows them
+# too. ``read.function`` is a level action that is also decided on a function entry.
+ENTRY_ACTIONS: Final = frozenset({Action("read.view"), Action("write.action")})
+ENTRY_KINDS: Final = ("function", "action", "view")
+ENTRY_KIND_ACTIONS: Final = {
+    "function": Action("read.function"),
+    "action": Action("write.action"),
+    "view": Action("read.view"),
+}
+# The key a kind of entry has in a ``catalog`` of a grant and in the answers that list it.
+ENTRY_PLURALS: Final = {"function": "functions", "action": "actions", "view": "views"}
+# The names of functions, actions and views (one name space for functions and actions, one for
+# views): the pattern of the catalog formats and of the entry resources of a policy.
+ENTRY_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{1,62}$")
+
 # B6.11 access levels: a closed ladder per graph, expanded to action globs.
 ACCESS_LEVELS: Final = ("none", "read", "write")
+# The level of a caller whose grants on a graph are catalog grants only: not a rung of the
+# ladder (it reaches no action of ``read``), shown by ``whoami``, ``start`` and ``policy explain``.
+CATALOG_LEVEL: Final = "catalog"
+LEVELS_SHOWN: Final = (*ACCESS_LEVELS, CATALOG_LEVEL)
 # A project scope may also say ``maintain`` for a named graph: ``write`` for the
 # project's callers, plus these actions for an admin token bound to the project.
 MAINTAIN_LEVEL: Final = "maintain"
@@ -86,6 +111,8 @@ PROJECT_MAINT_ACTIONS: Final = tuple(
 )
 # ... and ``read.get``: check and migration findings quote the graph's data.
 PROJECT_ADMIN_ACTIONS: Final = (*PROJECT_MAINT_ACTIONS, Action("read.get"))
+# The write actions a level may expand to, and what the ladder of ``graph_level`` tests.
+LEVEL_WRITE_ACTIONS: Final = WRITE_ACTIONS - ENTRY_ACTIONS
 _LEVEL_READS: Final = tuple(
     Action(f"read.{verb}")
     for verb in ("list", "get", "find", "traverse", "history", "describe", "query", "function")

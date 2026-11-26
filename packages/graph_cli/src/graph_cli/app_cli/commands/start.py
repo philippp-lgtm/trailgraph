@@ -26,6 +26,7 @@ from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.output_schemas import INTEGER, STRING, array, enum, obj
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
+from graph_cli.kernel.actions import LEVELS_SHOWN
 from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import as_list, as_object, req_str
@@ -69,7 +70,7 @@ OUTPUT: Final = obj(
                 {
                     "name": STRING,
                     "title": NULLABLE_STRING,
-                    "level": enum("none", "read", "write"),
+                    "level": enum(*LEVELS_SHOWN),
                     "withheld": array(STRING),
                     "skill": NULLABLE_STRING,
                     "counts": {"anyOf": [COUNTS, {"type": "null"}]},

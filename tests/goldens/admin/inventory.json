@@ -2644,6 +2644,27 @@
           "summary": "Decide on one marking of the graph, by CURIE (needs --action read.get): does the caller hold it. Excludes --type, --attribute and --relation."
         },
         {
+          "name": "--function",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Decide on one published function of the graph (read.function on the entry): does the caller's grant name it. Excludes --view, --entry-action, --action, --type, --attribute, --relation and --marking."
+        },
+        {
+          "name": "--view",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Decide on one published view of the graph (read.view on the entry), as --function does."
+        },
+        {
+          "name": "--entry-action",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Decide on one published action of the graph (write.action on the entry), as --function does; --action stays the policy action."
+        },
+        {
           "name": "--file",
           "type": "file",
           "required": false,
@@ -2674,6 +2695,10 @@
         {
           "command": "graph-admin policy explain --graph <graph> --action read.get --marking <curie>",
           "summary": "Whether the caller holds one marking."
+        },
+        {
+          "command": "graph-admin policy explain --graph <graph> --role <value> --function <name>",
+          "summary": "Whether a role's catalog grant names one function."
         },
         {
           "command": "graph-admin policy explain --graph <graph> --role <value> --role <value> --project <value>",

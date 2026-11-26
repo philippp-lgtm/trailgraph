@@ -484,8 +484,9 @@ def view_sections(
     known: dict[str, tuple[ToolColumn, ...]],
 ) -> tuple[ToolSection, ...]:
     """The sections of a view; a ``rows`` section carries the columns of its function as the
-    caller sees them, found among the ``functions`` the caller may use. A view is listed only for a
-    caller who may run the functions of its ``rows`` sections, so describe and call never get
+    caller sees them, found among the ``functions`` (those that fit the caller's read view: a view
+    runs its row functions whether or not the caller may use them as tools). A view is listed only
+    for a caller who may run the functions of its ``rows`` sections, so describe and call never get
     ``None`` (no such function: the rows stay untyped) from a real catalog; it is the defensive
     answer for an entry that does not fit it. ``known`` holds the columns worked out already, by
     function name, and gets those this call works out: typing a function resolves its query."""
